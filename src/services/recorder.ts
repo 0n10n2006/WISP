@@ -50,8 +50,54 @@ function pickMime(): string {
   return options.find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
 }
 
-async function blobToBase64(blob: Blob): Promise<string> {
-  const buf = new Uint8Array(await blob.arrayBuffer());
+/** 16-bit PCM WAV from mono float samples. */
+export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array {
+  const out = new DataView(new ArrayBuffer(44 + samples.length * 2));
+  const str = (o: number, t: string) =>
+    [...t].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF");
+  out.setUint32(4, 36 + samples.length * 2, true);
+  str(8, "WAVE");
+  str(12, "fmt ");
+  out.setUint32(16, 16, true);
+  out.setUint16(20, 1, true); // PCM
+  out.setUint16(22, 1, true); // mono
+  out.setUint32(24, sampleRate, true);
+  out.setUint32(28, sampleRate * 2, true);
+  out.setUint16(32, 2, true);
+  out.setUint16(34, 16, true);
+  str(36, "data");
+  out.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const v = Math.max(-1, Math.min(1, samples[i]!));
+    out.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+  }
+  return new Uint8Array(out.buffer);
+}
+
+const WAV_RATE = 16_000;
+
+/** Gemini documents WAV/MP3/OGG/FLAC input, not WebM, so recordings are re-encoded. */
+async function toWav(blob: Blob): Promise<Uint8Array | null> {
+  try {
+    const raw = await blob.arrayBuffer();
+    const decoder = new AudioContext();
+    const decoded = await decoder.decodeAudioData(raw);
+    void decoder.close().catch(() => {});
+    const frames = Math.ceil(decoded.duration * WAV_RATE);
+    const offline = new OfflineAudioContext(1, frames, WAV_RATE);
+    const src = offline.createBufferSource();
+    src.buffer = decoded;
+    src.connect(offline.destination);
+    src.start();
+    const rendered = await offline.startRendering();
+    return encodeWav(rendered.getChannelData(0), WAV_RATE);
+  } catch {
+    return null;
+  }
+}
+
+function bytesToBase64(buf: Uint8Array): string {
   let bin = "";
   const chunk = 0x8000;
   for (let i = 0; i < buf.length; i += chunk) {
@@ -124,7 +170,16 @@ export function createMediaRecorder(): AudioRecorder {
           const blob = new Blob(chunks, { type: mimeType });
           chunks = [];
           teardown();
-          resolve({ base64: await blobToBase64(blob), mimeType, durationMs });
+          const wav = await toWav(blob);
+          resolve(
+            wav
+              ? { base64: bytesToBase64(wav), mimeType: "audio/wav", durationMs }
+              : {
+                  base64: bytesToBase64(new Uint8Array(await blob.arrayBuffer())),
+                  mimeType,
+                  durationMs,
+                },
+          );
         };
         r.stop();
         recorder = null;
