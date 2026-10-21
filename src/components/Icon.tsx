@@ -20,7 +20,9 @@ export type IconName =
   | "key"
   | "info"
   | "plus"
-  | "chevron-right";
+  | "chevron-right"
+  | "speaker"
+  | "talk";
 
 const PATHS: Record<IconName, string> = {
   send: "M4 10h10M10 5l5 5-5 5",
@@ -45,6 +47,8 @@ const PATHS: Record<IconName, string> = {
   info: "M10 2.5a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15zM10 9v5M10 6.5v.01",
   plus: "M10 4v12M4 10h12",
   "chevron-right": "M8 5l5 5-5 5",
+  speaker: "M3 8h3l4-3.5v11L6 12H3zM13.5 7.5a3.5 3.5 0 0 1 0 5M15.5 5.5a6.5 6.5 0 0 1 0 9",
+  talk: "M4 4h12v9H9l-4 3v-3H4zM7.5 8.5h.01M10 8.5h.01M12.5 8.5h.01",
 };
 
 export function Icon({

@@ -243,7 +243,7 @@ export function DataTab() {
       {snapshot?.warnings.map((w) => (
         <div key={w} className="banner banner-warning" role="alert">
           <div className="banner-body">
-            <strong>Storage problem</strong>
+            <strong>Notice</strong>
             <p>{w}</p>
           </div>
         </div>

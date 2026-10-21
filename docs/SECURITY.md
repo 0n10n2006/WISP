@@ -38,6 +38,8 @@ code; if you change one of the boundaries below, update this file in the same ch
 - Microphone capture is push-to-talk with a visible "Listening…" state and a Stop control. Audio is discarded
   after transcription unless the user enables retention.
 - The clipboard is read only on an explicit action; it is never polled.
+- Text-to-speech uses local Windows voices; spoken answers never leave the PC. Voice input is push-to-talk only.
+- Crash reports are written locally, redacted, and never uploaded.
 - No analytics or telemetry. `telemetryOptIn` is forced to `false`.
 
 ## Resilience

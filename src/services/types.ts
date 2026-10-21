@@ -31,6 +31,8 @@ export interface Settings {
   selectedModel: string;
   voiceEnabled: boolean;
   speakResponses: boolean;
+  ttsVoice: string;
+  ttsRate: number;
   screenContextEnabled: boolean;
   dictationAutoInsert: boolean;
   retainAudio: boolean;
@@ -138,6 +140,8 @@ export const DEFAULT_SETTINGS: Settings = {
   selectedModel: "gemini-2.5-flash",
   voiceEnabled: true,
   speakResponses: false,
+  ttsVoice: "",
+  ttsRate: 1,
   screenContextEnabled: true,
   dictationAutoInsert: false,
   retainAudio: false,

@@ -69,10 +69,24 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] Turning memory off stops memories being used (ask "what units do I prefer?").
 - [ ] `Ctrl+Shift+C` with text copied shows the text and character count; with an image copied it says there's no text.
 
+### Voice
+
+- [ ] `Ctrl+Shift+V` → "Listening…", the orb shows listening; press again → answer appears and is read aloud.
+- [ ] Orb and panel show "Speaking…"; Stop and Esc stop playback immediately.
+- [ ] Pressing the voice shortcut while Wisp is speaking interrupts it and starts listening.
+- [ ] Voice and speed from Settings → Voice are used; "Test voice" works.
+- [ ] With "Allow voice conversation" off, the shortcut explains how to turn it on.
+
+### Crash recovery
+
+- [ ] Kill `wisp.exe` from Task Manager during a request; restart: settings, reminders and history are intact.
+- [ ] Corrupt `%APPDATA%\app.wisp.desktop\settings.json` by hand; Wisp starts with defaults and says so in Settings → About.
+
 ### Theme & accessibility
 
 - [ ] System/Dark/Light switch instantly and persist.
 - [ ] Windows "Animation effects" off (or Motion: Reduced) stops orb breathing.
 - [ ] Windows contrast theme: text and focus rings remain visible.
-- [ ] Core flow (open, type, send, copy, collapse) works with keyboard only.
+- [ ] Core flow (open, type, send, copy, collapse) works with keyboard only; arrow keys move between Settings sections.
+- [ ] Narrator reads the orb state, status changes and confirmation prompts.
 - [ ] 150% text scaling: nothing essential is clipped.

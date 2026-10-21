@@ -52,6 +52,10 @@ pub struct Settings {
     pub selected_model: String,
     pub voice_enabled: bool,
     pub speak_responses: bool,
+    /// Windows voice name for read-aloud; empty means the system default.
+    pub tts_voice: String,
+    /// Speech rate, 0.5–2.0.
+    pub tts_rate: f32,
     pub screen_context_enabled: bool,
     pub dictation_auto_insert: bool,
     pub retain_audio: bool,
@@ -89,6 +93,8 @@ impl Default for Settings {
             selected_model: DEFAULT_MODEL.into(),
             voice_enabled: true,
             speak_responses: false,
+            tts_voice: String::new(),
+            tts_rate: 1.0,
             screen_context_enabled: true,
             dictation_auto_insert: false,
             retain_audio: false,
@@ -138,6 +144,12 @@ impl Settings {
                 "Model name contains unsupported characters",
             ));
         }
+        if !(0.5..=2.0).contains(&s.tts_rate) || !s.tts_rate.is_finite() {
+            return Err(WispError::invalid(
+                "Speech rate must be between 0.5× and 2×",
+            ));
+        }
+        s.tts_voice = s.tts_voice.trim().chars().take(200).collect();
         if s.history_retention_days > 365 {
             return Err(WispError::invalid("History retention must be 0–365 days"));
         }
@@ -281,6 +293,9 @@ mod tests {
             .is_err());
         assert!(Settings::default()
             .patched(&json!({"historyRetentionDays": 9999}))
+            .is_err());
+        assert!(Settings::default()
+            .patched(&json!({"ttsRate": 5.0}))
             .is_err());
         assert!(Settings::default()
             .patched(&json!({"selectedModel": "../etc"}))
