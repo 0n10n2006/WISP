@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { host } from "../services/host";
 import type { Message } from "../state/conversation";
 import { toast } from "../state/toast";
+import { ActionNotes } from "./ActionNotes";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 
@@ -45,9 +46,10 @@ export function MessageList({ messages }: { messages: Message[] }) {
           </div>
         ) : (
           <div key={m.id} className="msg msg-model" aria-busy={m.status === "streaming"}>
+            {m.actions?.length ? <ActionNotes notes={m.actions} /> : null}
             {m.text ? (
               <Markdown text={m.text} onLink={openLink} />
-            ) : (
+            ) : m.actions?.some((a) => a.confirmId) ? null : (
               <p className="msg-pending">Thinking…</p>
             )}
             {m.status === "streaming" && m.text && <span className="cursor" aria-hidden />}

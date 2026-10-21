@@ -6,6 +6,8 @@ import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
 import { createMediaRecorder } from "./recorder";
 import type { WispError } from "./errors";
 import type {
+  ActionEvent,
+  Task,
   AskResult,
   CaptureReady,
   IslandLayout,
@@ -57,10 +59,11 @@ export function createTauriHost(): Host {
       call("test_connection", { key: key ?? null, model: model ?? null }),
     listModels: () => call("list_models"),
 
-    ask(req, onDelta): AskHandle {
-      const channel = new Channel<{ type: "delta"; text: string }>();
+    ask(req, onDelta, onAction): AskHandle {
+      const channel = new Channel<{ type: "delta"; text: string } | ActionEvent>();
       channel.onmessage = (m) => {
         if (m.type === "delta") onDelta(m.text);
+        else onAction?.(m);
       };
       const result = call<AskResult>("ask", { request: req, onEvent: channel });
       return {
@@ -91,6 +94,21 @@ export function createTauriHost(): Host {
     transcribe: (rec) => call("transcribe", { audioBase64: rec.base64, mimeType: rec.mimeType }),
     dictationTarget: () => call("dictation_target"),
     insertText: (text) => call("insert_text", { text }),
+
+    respondAction: (id, approved) => call("action_respond", { id, approved }),
+    tasksList: (includeCompleted) => call("tasks_list", { includeCompleted }),
+    taskCreate: (task) => call("task_create", { task }),
+    taskUpdate: (id, task) => call("task_update", { id, task }),
+    taskComplete: (id, completed) => call("task_complete", { id, completed }),
+    taskSnooze: (id, until) => call("task_snooze", { id, until }),
+    taskDelete: (id) => call("task_delete", { id }),
+    onReminderDue: (cb) => subscribe<Task>("wisp://reminder-due", cb),
+    memoryList: () => call("memory_list"),
+    memoryAdd: (content, category) => call("memory_add", { content, category }),
+    memoryUpdate: (id, content, category, enabled) =>
+      call("memory_update", { id, content, category, enabled }),
+    memoryDelete: (id) => call("memory_delete", { id }),
+    clipboardRead: async () => (await call<{ text: string | null }>("clipboard_read")).text,
 
     historyList: (limit) => call("history_list", { limit: limit ?? null }),
     actionsList: (limit) => call("actions_list", { limit: limit ?? null }),

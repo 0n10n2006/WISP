@@ -5,6 +5,11 @@ import type { WispError } from "./errors";
 import type { AudioRecorder, Recording } from "./recorder";
 import type {
   ActionAudit,
+  ActionEvent,
+  MemoryCategory,
+  MemoryEntry,
+  NewTask,
+  Task,
   CaptureReady,
   SelectionRect,
   AskRequest,
@@ -47,7 +52,13 @@ export interface Host {
   testConnection(key?: string, model?: string): Promise<ConnectionReport>;
   listModels(): Promise<ModelInfo[]>;
 
-  ask(req: AskRequest, onDelta: (text: string) => void): AskHandle;
+  ask(
+    req: AskRequest,
+    onDelta: (text: string) => void,
+    onAction?: (e: ActionEvent) => void,
+  ): AskHandle;
+  /** Answer a confirmation for a model-proposed action. */
+  respondAction(id: string, approved: boolean): Promise<void>;
 
   setIslandExpanded(expanded: boolean): Promise<IslandLayout>;
   onIslandLayout(cb: (l: IslandLayout) => void): Unsubscribe;
@@ -73,6 +84,26 @@ export interface Host {
   transcribe(rec: Recording): Promise<string>;
   dictationTarget(): Promise<{ available: boolean; title: string | null }>;
   insertText(text: string): Promise<void>;
+
+  /** Reminders, memory, clipboard (local). */
+  tasksList(includeCompleted: boolean): Promise<Task[]>;
+  taskCreate(task: NewTask): Promise<Task>;
+  taskUpdate(id: string, task: NewTask): Promise<Task>;
+  taskComplete(id: string, completed: boolean): Promise<Task>;
+  taskSnooze(id: string, until: string): Promise<Task>;
+  taskDelete(id: string): Promise<boolean>;
+  onReminderDue(cb: (t: Task) => void): Unsubscribe;
+  memoryList(): Promise<MemoryEntry[]>;
+  memoryAdd(content: string, category: MemoryCategory): Promise<MemoryEntry>;
+  memoryUpdate(
+    id: string,
+    content: string,
+    category: MemoryCategory,
+    enabled: boolean,
+  ): Promise<MemoryEntry>;
+  memoryDelete(id: string): Promise<boolean>;
+  /** Reads clipboard text once. Only call on an explicit user action. */
+  clipboardRead(): Promise<string | null>;
 
   historyList(limit?: number): Promise<RequestLog[]>;
   actionsList(limit?: number): Promise<ActionAudit[]>;

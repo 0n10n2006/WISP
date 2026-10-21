@@ -205,3 +205,43 @@ export interface SelectionRect {
   viewWidth: number;
   viewHeight: number;
 }
+
+export interface Task {
+  id: string;
+  title: string;
+  notes: string | null;
+  dueAt: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  notificationEnabled: boolean;
+  notifiedAt: string | null;
+}
+
+export interface NewTask {
+  title: string;
+  notes?: string | null;
+  dueAt?: string | null;
+  notificationEnabled?: boolean;
+}
+
+export type MemoryCategory = "preference" | "fact" | "project" | "people" | "other";
+
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  category: MemoryCategory;
+  createdAt: string;
+  updatedAt: string;
+  userApproved: boolean;
+  enabled: boolean;
+}
+
+export type ActionEvent =
+  | { type: "actionProposed"; id: string; kind: string; description: string }
+  | {
+      type: "actionResult";
+      kind: string;
+      description: string;
+      outcome: "done" | "declined" | "rejected" | "failed";
+      message: string;
+    };

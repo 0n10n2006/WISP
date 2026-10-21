@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { ClipboardCard } from "../components/ClipboardCard";
 import { DictationCard } from "../components/DictationCard";
+import { ReminderBanner } from "../components/ReminderBanner";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { Icon } from "../components/Icon";
 import { MessageList } from "../components/MessageList";
@@ -10,6 +12,7 @@ import { useOnline } from "../hooks/useOnline";
 import { useOrbState } from "../hooks/useOrbState";
 import { host } from "../services/host";
 import type { IslandLayout, ShortcutAction } from "../services/types";
+import { useClipboardAssist, useDueReminders } from "../state/assist";
 import { DEFAULT_SCREEN_PROMPT, useCapture } from "../state/capture";
 import { useConversation } from "../state/conversation";
 import { useDictation } from "../state/dictation";
@@ -151,6 +154,7 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
   const hasKey = snapshot?.hasApiKey ?? false;
   const pending = useCapture((c) => c.pending);
   const dictating = useDictation((d) => d.phase !== "idle");
+  const clipboardOpen = useClipboardAssist((c) => c.open);
   const setPending = useCapture((c) => c.setPending);
 
   const submit = () => {
@@ -202,22 +206,6 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
           )}
           <button
             className="icon-btn"
-            onClick={() => void useDictation.getState().start()}
-            aria-label="Dictate"
-            title={`Dictate${snapshot?.settings.globalShortcuts.dictation ? ` (${snapshot.settings.globalShortcuts.dictation})` : ""}`}
-          >
-            <Icon name="mic" />
-          </button>
-          <button
-            className="icon-btn"
-            onClick={() => void host().startCapture()}
-            aria-label="Select an area to ask about"
-            title={`Select an area to ask about${snapshot?.settings.globalShortcuts.selectToAsk ? ` (${snapshot.settings.globalShortcuts.selectToAsk})` : ""}`}
-          >
-            <Icon name="screen" />
-          </button>
-          <button
-            className="icon-btn"
             onClick={() => void host().openSettings()}
             aria-label="Settings"
             title="Settings"
@@ -245,9 +233,12 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
 
       {dictating ? (
         <DictationCard />
+      ) : clipboardOpen ? (
+        <ClipboardCard />
       ) : (
         <>
           <div className="panel-body">
+            <ReminderBanner />
             {!hasKey && snapshot && <SetupCard />}
             {messages.length === 0 && hasKey ? <EmptyState /> : <MessageList messages={messages} />}
           </div>
@@ -290,17 +281,46 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
               onEscape={onCollapse}
               busy={requestActive}
             />
-            <p className="footnote">
-              {online ? (
-                <>
-                  {snapshot?.settings.selectedModel ?? "Gemini"} · prompts are sent to Google Gemini
-                </>
-              ) : (
-                <span className="offline">
-                  <Icon name="warning" size={12} /> Offline. Local features still work.
-                </span>
-              )}
-            </p>
+            <div className="composer-row">
+              <div className="composer-tools" role="toolbar" aria-label="Add context">
+                <button
+                  className="icon-btn icon-btn-small"
+                  onClick={() => void host().startCapture()}
+                  aria-label="Select an area to ask about"
+                  title={`Select an area to ask about${snapshot?.settings.globalShortcuts.selectToAsk ? ` (${snapshot.settings.globalShortcuts.selectToAsk})` : ""}`}
+                >
+                  <Icon name="screen" />
+                </button>
+                <button
+                  className="icon-btn icon-btn-small"
+                  onClick={() => void useDictation.getState().start()}
+                  aria-label="Dictate"
+                  title={`Dictate${snapshot?.settings.globalShortcuts.dictation ? ` (${snapshot.settings.globalShortcuts.dictation})` : ""}`}
+                >
+                  <Icon name="mic" />
+                </button>
+                <button
+                  className="icon-btn icon-btn-small"
+                  onClick={() => void useClipboardAssist.getState().openAssist()}
+                  aria-label="Clipboard help"
+                  title={`Clipboard help${snapshot?.settings.globalShortcuts.clipboardAssist ? ` (${snapshot.settings.globalShortcuts.clipboardAssist})` : ""}`}
+                >
+                  <Icon name="clipboard" />
+                </button>
+              </div>
+              <p className="footnote">
+                {online ? (
+                  <>
+                    {snapshot?.settings.selectedModel ?? "Gemini"} · prompts are sent to Google
+                    Gemini
+                  </>
+                ) : (
+                  <span className="offline">
+                    <Icon name="warning" size={12} /> Offline. Local features still work.
+                  </span>
+                )}
+              </p>
+            </div>
           </footer>
         </>
       )}
@@ -325,6 +345,7 @@ export function Island() {
   useEffect(() => {
     const offLayout = host().onIslandLayout(setLayout);
     const offFocus = host().onFocusPrompt(() => setLayout((l) => ({ ...l, expanded: true })));
+    const offReminder = host().onReminderDue((t) => useDueReminders.getState().push(t));
     const offCapture = host().onCaptureReady((c) => {
       useCapture.getState().setPending(c);
       void host().setIslandExpanded(true).then(setLayout);
@@ -338,13 +359,18 @@ export function Island() {
         void host().startCapture();
         return;
       }
+      if (action === "clipboardAssist") {
+        void host().setIslandExpanded(true).then(setLayout);
+        void useClipboardAssist.getState().openAssist();
+        return;
+      }
       if (action === "dictation") {
         void host().setIslandExpanded(true).then(setLayout);
         void useDictation.getState().toggle();
         return;
       }
       if (!shortcutHandlers.some((h) => h(action))) {
-        toast("That feature arrives in a later build", "neutral", 2200);
+        toast("That feature isn't available yet", "neutral", 2200);
       }
     });
     return () => {
@@ -353,6 +379,7 @@ export function Island() {
       offShortcut();
       offCapture();
       offCaptureError();
+      offReminder();
     };
   }, []);
 

@@ -1265,3 +1265,206 @@ html[data-window="overlay"] body {
   color: var(--color-text-secondary);
   margin-bottom: 4px;
 }
+
+/* ---------- Actions ---------- */
+.actions {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.action-confirm {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-accent);
+  background: var(--color-surface);
+}
+.action-confirm p {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+.action-confirm .row-start {
+  margin-top: var(--space-2);
+}
+.action-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+.action-done .icon {
+  color: var(--color-success);
+}
+.action-declined .icon,
+.action-rejected .icon,
+.action-failed .icon {
+  color: var(--color-warning);
+}
+
+/* ---------- Lists & forms ---------- */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.group form label,
+form.group label,
+.form-grid label {
+  display: block;
+  font-weight: 500;
+  margin: var(--space-2) 0 4px;
+  font-size: var(--text-sm);
+}
+.heading-row {
+  margin-top: 0;
+  align-items: center;
+}
+.heading-row h3 {
+  margin: 0;
+}
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+.item-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--color-border);
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.item > input[type="checkbox"]:not(.switch) {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+}
+.item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.item-title {
+  word-break: break-word;
+}
+.item-sub {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.item-sub.overdue {
+  color: var(--color-warning);
+}
+.item-done .item-title {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
+}
+.item-actions {
+  display: flex;
+  gap: 2px;
+}
+.switch-small {
+  width: 34px;
+  height: 20px;
+}
+.switch-small::after {
+  width: 14px;
+  height: 14px;
+}
+.switch-small:checked::after {
+  transform: translateX(14px);
+}
+.memory-edit {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.memory-edit input {
+  flex: 1 1 200px;
+}
+
+/* ---------- Clipboard & reminders ---------- */
+.clipboard-card {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+}
+.card-head {
+  margin: 0 0 var(--space-2);
+  align-items: center;
+}
+.card-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.clip-preview {
+  margin: 0 0 var(--space-2);
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-accent-2);
+  background: var(--color-surface);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: var(--text-sm);
+}
+.clip-question {
+  margin-top: var(--space-3);
+}
+.clip-question input {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+}
+.reminders-due {
+  padding-top: var(--space-2);
+}
+.banner-reminder {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-accent);
+}
+.banner-reminder .banner-icon {
+  color: var(--color-accent);
+}
+.composer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 4px;
+}
+.composer-tools {
+  display: flex;
+  gap: 2px;
+  margin-left: -4px;
+}
+.icon-btn-small {
+  width: 28px;
+  height: 28px;
+}
+.composer-row .footnote {
+  flex: 1;
+  margin: 0;
+  text-align: right;
+}
