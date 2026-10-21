@@ -4,6 +4,7 @@
 pub mod ask;
 pub mod capture;
 pub mod data;
+pub mod dictation;
 pub mod settings;
 pub mod system;
 

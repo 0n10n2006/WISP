@@ -2,6 +2,7 @@
 
 mod capture;
 mod commands;
+mod foreground;
 mod secrets;
 mod shortcuts;
 mod state;
@@ -50,6 +51,7 @@ pub fn run() {
             let _ = db.prune_history(settings.history_retention_days.max(1), settings.content_history);
             app.manage(AppState {
                 capture: Mutex::new(None),
+                insert_target: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
                 settings_store: store,
                 startup_warnings: Mutex::new(warnings),
@@ -121,6 +123,9 @@ pub fn run() {
             commands::capture::capture_preview,
             commands::capture::capture_select,
             commands::capture::capture_cancel,
+            commands::dictation::dictation_target,
+            commands::dictation::transcribe,
+            commands::dictation::insert_text,
             commands::system::set_island_expanded,
             commands::system::hide_island,
             commands::system::open_settings,

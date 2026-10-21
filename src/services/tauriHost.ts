@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toWispError } from "./errors";
 import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
+import { createMediaRecorder } from "./recorder";
 import type { WispError } from "./errors";
 import type {
   AskResult,
@@ -85,6 +86,11 @@ export function createTauriHost(): Host {
     captureCancel: () => call("capture_cancel"),
     onCaptureReady: (cb) => subscribe<CaptureReady>("wisp://capture-ready", cb),
     onCaptureError: (cb) => subscribe<WispError>("wisp://capture-error", cb),
+
+    createRecorder: () => createMediaRecorder(),
+    transcribe: (rec) => call("transcribe", { audioBase64: rec.base64, mimeType: rec.mimeType }),
+    dictationTarget: () => call("dictation_target"),
+    insertText: (text) => call("insert_text", { text }),
 
     historyList: (limit) => call("history_list", { limit: limit ?? null }),
     actionsList: (limit) => call("actions_list", { limit: limit ?? null }),

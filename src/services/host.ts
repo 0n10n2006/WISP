@@ -2,6 +2,7 @@
 // `tauriHost` talks to Rust; `mockHost` lets the whole UI run in a browser.
 
 import type { WispError } from "./errors";
+import type { AudioRecorder, Recording } from "./recorder";
 import type {
   ActionAudit,
   CaptureReady,
@@ -66,6 +67,12 @@ export interface Host {
   captureCancel(): Promise<void>;
   onCaptureReady(cb: (c: CaptureReady) => void): Unsubscribe;
   onCaptureError(cb: (e: WispError) => void): Unsubscribe;
+
+  /** Dictation. */
+  createRecorder(): AudioRecorder;
+  transcribe(rec: Recording): Promise<string>;
+  dictationTarget(): Promise<{ available: boolean; title: string | null }>;
+  insertText(text: string): Promise<void>;
 
   historyList(limit?: number): Promise<RequestLog[]>;
   actionsList(limit?: number): Promise<ActionAudit[]>;

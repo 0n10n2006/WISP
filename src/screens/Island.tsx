@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { DictationCard } from "../components/DictationCard";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { Icon } from "../components/Icon";
 import { MessageList } from "../components/MessageList";
@@ -11,6 +12,7 @@ import { host } from "../services/host";
 import type { IslandLayout, ShortcutAction } from "../services/types";
 import { DEFAULT_SCREEN_PROMPT, useCapture } from "../state/capture";
 import { useConversation } from "../state/conversation";
+import { useDictation } from "../state/dictation";
 import { ORB_LABELS } from "../state/orb";
 import { useSettings } from "../state/settings";
 import { toast } from "../state/toast";
@@ -148,6 +150,7 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
 
   const hasKey = snapshot?.hasApiKey ?? false;
   const pending = useCapture((c) => c.pending);
+  const dictating = useDictation((d) => d.phase !== "idle");
   const setPending = useCapture((c) => c.setPending);
 
   const submit = () => {
@@ -199,6 +202,14 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
           )}
           <button
             className="icon-btn"
+            onClick={() => void useDictation.getState().start()}
+            aria-label="Dictate"
+            title={`Dictate${snapshot?.settings.globalShortcuts.dictation ? ` (${snapshot.settings.globalShortcuts.dictation})` : ""}`}
+          >
+            <Icon name="mic" />
+          </button>
+          <button
+            className="icon-btn"
             onClick={() => void host().startCapture()}
             aria-label="Select an area to ask about"
             title={`Select an area to ask about${snapshot?.settings.globalShortcuts.selectToAsk ? ` (${snapshot.settings.globalShortcuts.selectToAsk})` : ""}`}
@@ -232,59 +243,67 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
         </div>
       </header>
 
-      <div className="panel-body">
-        {!hasKey && snapshot && <SetupCard />}
-        {messages.length === 0 && hasKey ? <EmptyState /> : <MessageList messages={messages} />}
-      </div>
-
-      {error && (
-        <ErrorBanner
-          error={error}
-          onRetry={() => void retry()}
-          onSettings={() => void host().openSettings(settingsTabFor(error.code))}
-          onDismiss={dismissError}
-        />
-      )}
-
-      <footer className="panel-footer">
-        {pending && (
-          <div className="attachment">
-            <img src={pending.dataUrl} alt="Selected screen area" />
-            <div className="attachment-text">
-              <strong>Screen area attached</strong>
-              Sent to Google Gemini only when you press Send.
-            </div>
-            <button
-              className="icon-btn"
-              onClick={() => setPending(null)}
-              aria-label="Remove screen area"
-              title="Remove"
-            >
-              <Icon name="close" size={14} />
-            </button>
+      {dictating ? (
+        <DictationCard />
+      ) : (
+        <>
+          <div className="panel-body">
+            {!hasKey && snapshot && <SetupCard />}
+            {messages.length === 0 && hasKey ? <EmptyState /> : <MessageList messages={messages} />}
           </div>
-        )}
-        <PromptBox
-          ref={prompt}
-          value={draft}
-          onChange={setDraft}
-          allowEmpty={!!pending}
-          placeholder={pending ? "Ask about this area (optional)" : undefined}
-          onSubmit={submit}
-          onCancel={cancel}
-          onEscape={onCollapse}
-          busy={requestActive}
-        />
-        <p className="footnote">
-          {online ? (
-            <>{snapshot?.settings.selectedModel ?? "Gemini"} · prompts are sent to Google Gemini</>
-          ) : (
-            <span className="offline">
-              <Icon name="warning" size={12} /> Offline. Local features still work.
-            </span>
+
+          {error && (
+            <ErrorBanner
+              error={error}
+              onRetry={() => void retry()}
+              onSettings={() => void host().openSettings(settingsTabFor(error.code))}
+              onDismiss={dismissError}
+            />
           )}
-        </p>
-      </footer>
+
+          <footer className="panel-footer">
+            {pending && (
+              <div className="attachment">
+                <img src={pending.dataUrl} alt="Selected screen area" />
+                <div className="attachment-text">
+                  <strong>Screen area attached</strong>
+                  Sent to Google Gemini only when you press Send.
+                </div>
+                <button
+                  className="icon-btn"
+                  onClick={() => setPending(null)}
+                  aria-label="Remove screen area"
+                  title="Remove"
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              </div>
+            )}
+            <PromptBox
+              ref={prompt}
+              value={draft}
+              onChange={setDraft}
+              allowEmpty={!!pending}
+              placeholder={pending ? "Ask about this area (optional)" : undefined}
+              onSubmit={submit}
+              onCancel={cancel}
+              onEscape={onCollapse}
+              busy={requestActive}
+            />
+            <p className="footnote">
+              {online ? (
+                <>
+                  {snapshot?.settings.selectedModel ?? "Gemini"} · prompts are sent to Google Gemini
+                </>
+              ) : (
+                <span className="offline">
+                  <Icon name="warning" size={12} /> Offline. Local features still work.
+                </span>
+              )}
+            </p>
+          </footer>
+        </>
+      )}
     </section>
   );
 }
@@ -317,6 +336,11 @@ export function Island() {
     const offShortcut = host().onShortcut((action) => {
       if (action === "selectToAsk") {
         void host().startCapture();
+        return;
+      }
+      if (action === "dictation") {
+        void host().setIslandExpanded(true).then(setLayout);
+        void useDictation.getState().toggle();
         return;
       }
       if (!shortcutHandlers.some((h) => h(action))) {

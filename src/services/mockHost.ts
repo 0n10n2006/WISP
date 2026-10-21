@@ -4,6 +4,7 @@
 
 import type { WispError } from "./errors";
 import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
+import { createFakeRecorder } from "./recorder";
 import {
   DEFAULT_SETTINGS,
   type ActionAudit,
@@ -430,6 +431,16 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     captureCancel: async () => {},
     onCaptureReady: (cb) => on(listeners.captureReady, cb),
     onCaptureError: (cb) => on(listeners.captureError, cb),
+
+    createRecorder: () => createFakeRecorder(),
+    transcribe: async (rec) => {
+      if (!hasKey)
+        throw err("missing_key", "Add your Gemini API key in Settings → Model to ask Wisp.");
+      await new Promise((r) => setTimeout(r, 200));
+      return rec.durationMs < 0 ? "" : "This is a simulated transcript from the browser preview.";
+    },
+    dictationTarget: async () => ({ available: true, title: "Untitled - Notepad" }),
+    insertText: async () => {},
 
     historyList: async (limit = 200) => requests.slice(0, limit),
     actionsList: async (limit = 200) => actions.slice(0, limit),
