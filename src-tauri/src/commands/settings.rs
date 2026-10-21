@@ -62,6 +62,14 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             .prune_history(new.history_retention_days.max(1), false);
     }
     crate::hotkeys::set_enabled(new.hold_to_talk && new.voice_enabled);
+    if old.tucked != new.tucked {
+        let open =
+            app.state::<AppState>().island.lock().expect("island").mode == windows::NotchMode::Open;
+        if !open {
+            windows::set_island_visible(app, windows::sliver_wanted(app));
+        }
+        let _ = app.emit("wisp://tucked", new.tucked);
+    }
     if old.global_shortcuts != new.global_shortcuts {
         shortcuts::register_all(app, &new.global_shortcuts);
     }
