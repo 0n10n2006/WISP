@@ -6,26 +6,6 @@ import { useActivity } from "../../src/state/activity";
 import { useVoice } from "../../src/state/voice";
 import { setupMockHost } from "../helpers";
 
-class FakeUtterance {
-  text: string;
-  voice: unknown = null;
-  rate = 1;
-  onend: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  constructor(text: string) {
-    this.text = text;
-  }
-}
-
-const spoken: FakeUtterance[] = [];
-const synth = {
-  speak: vi.fn((u: FakeUtterance) => spoken.push(u)),
-  cancel: vi.fn(),
-  getVoices: () => [],
-  addEventListener: () => {},
-  removeEventListener: () => {},
-};
-
 function recorder(): AudioRecorder {
   return {
     start: vi.fn(async () => {}),
@@ -36,22 +16,18 @@ function recorder(): AudioRecorder {
 
 describe("voice conversation", () => {
   beforeEach(() => {
-    spoken.length = 0;
-    vi.stubGlobal("speechSynthesis", synth);
-    vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
     useVoice.getState().cancel();
-    useActivity.setState({ listening: false, speaking: false });
+    useActivity.setState({ listening: false });
   });
-  afterEach(() => vi.unstubAllGlobals());
 
-  it("listens, asks with voice context, and reads the answer aloud", async () => {
+  it("listens, asks with voice context, and answers in text only", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     vi.spyOn(h, "createRecorder").mockReturnValue(recorder());
     const ask = vi.spyOn(h, "ask");
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    await user.click(await screen.findByRole("button", { name: /talk to wisp/i }));
+    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
     expect(
       await screen.findByText("Listening…", { selector: ".dictation-title" }),
     ).toBeInTheDocument();
@@ -61,12 +37,12 @@ describe("voice conversation", () => {
       contextKind: "voice",
       prompt: "This is a simulated transcript from the browser preview.",
     });
-    await waitFor(() => expect(spoken).toHaveLength(1), { timeout: 5000 });
-    expect(useActivity.getState().speaking).toBe(true);
-    expect(await screen.findByText("Speaking…", { selector: ".speaking-bar" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Stop" }));
-    expect(synth.cancel).toHaveBeenCalled();
-    expect(useActivity.getState().speaking).toBe(false);
+    expect(await screen.findByText(/simulated answer/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    // Wisp never talks back.
+    expect("speechSynthesis" in window && vi.isMockFunction(window.speechSynthesis?.speak)).toBe(
+      false,
+    );
+    expect(useActivity.getState().listening).toBe(false);
   });
 
   it("respects the voice setting", async () => {

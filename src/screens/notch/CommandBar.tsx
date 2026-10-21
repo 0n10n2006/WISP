@@ -1,0 +1,336 @@
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Icon, type IconName } from "../../components/Icon";
+import { WispMark } from "../../components/WispMark";
+import { useOrbState } from "../../hooks/useOrbState";
+import { barResults, type BarResult } from "../../lib/commands";
+import { host } from "../../services/host";
+import type { Catalogue } from "../../services/types";
+import { DEFAULT_SCREEN_PROMPT, useCapture } from "../../state/capture";
+import { useConversation } from "../../state/conversation";
+import { useDictation } from "../../state/dictation";
+import { useNotch } from "../../state/notch";
+import { ORB_LABELS } from "../../state/orb";
+import { useSettings } from "../../state/settings";
+import { useVoice } from "../../state/voice";
+import { runResult } from "./actions";
+
+export interface CommandBarHandle {
+  focus(): void;
+  /** Submit the current selection (or a pending screen capture). */
+  submit(): void;
+}
+
+const NO_STARS: string[] = [];
+let catalogueCache: Catalogue | null = null;
+let cachePromise: Promise<Catalogue> | null = null;
+
+/** The launcher catalogue, loaded once per session (and refreshed in the background). */
+export function useCatalogue(): Catalogue | null {
+  const [cat, setCat] = useState<Catalogue | null>(catalogueCache);
+  useEffect(() => {
+    let alive = true;
+    cachePromise ??= host()
+      .launcherList()
+      .then((c) => (catalogueCache = c))
+      .catch(() => ({ items: [], recent: [] }));
+    void cachePromise.then((c) => alive && setCat(c));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return cat;
+}
+
+/** Drop the cache after a launch so "recent" stays fresh. */
+export function invalidateCatalogue(): void {
+  cachePromise = null;
+}
+
+function resultIcon(r: BarResult): IconName {
+  if (r.kind === "ask") return "spark";
+  if (r.kind === "app")
+    return r.item.kind === "game" ? "play" : r.item.kind === "system" ? "settings" : "grid";
+  switch (r.command.type) {
+    case "power":
+      return r.command.action === "lock"
+        ? "lock"
+        : r.command.action === "sleep"
+          ? "sleep"
+          : "power";
+    case "timer":
+    case "stopTimer":
+      return "timer";
+    case "remind":
+      return "calendar";
+    case "volume":
+      return "volume";
+    case "mute":
+      return r.command.muted ? "mute" : "volume";
+    case "media":
+      return r.command.command === "next"
+        ? "next"
+        : r.command.command === "previous"
+          ? "prev"
+          : "play";
+    case "darkMode":
+      return r.command.dark ? "moon" : "sun";
+    case "radio":
+      return r.command.kind === "wifi" ? "wifi" : "bluetooth";
+    case "showMe":
+      return "target";
+    case "research":
+    case "replica":
+      return "bot";
+    case "selectArea":
+      return "lasso";
+    case "dictate":
+      return "mic";
+    case "tuck":
+      return "chevron-up";
+    default:
+      return "chevron-right";
+  }
+}
+
+export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(function CommandBar(
+  { onClose },
+  ref,
+) {
+  const input = useRef<HTMLInputElement>(null);
+  const submitRef = useRef<() => void>(() => {});
+  useImperativeHandle(ref, () => ({
+    focus: () => input.current?.focus(),
+    submit: () => submitRef.current(),
+  }));
+  const query = useNotch((n) => n.query);
+  const setQuery = useNotch((n) => n.setQuery);
+  const web = useNotch((n) => n.web);
+  const think = useNotch((n) => n.think);
+  const setWeb = useNotch((n) => n.setWeb);
+  const setThink = useNotch((n) => n.setThink);
+  const requestActive = useConversation((c) => c.requestActive);
+  const cancel = useConversation((c) => c.cancel);
+  const pending = useCapture((c) => c.pending);
+  const starred = useSettings((s) => s.snapshot?.settings.starredApps ?? NO_STARS);
+  const shortcuts = useSettings((s) => s.snapshot?.settings.globalShortcuts);
+  const memoryOn = useSettings((s) => s.snapshot?.settings.useMemory ?? false);
+  const memoryForChat = useConversation((c) => c.memoryForChat);
+  const setMemoryForChat = useConversation((c) => c.setMemoryForChat);
+  const state = useOrbState();
+  const catalogue = useCatalogue();
+  // The highlighted row resets whenever the query changes.
+  const [sel, setSel] = useState({ query: "", index: 0 });
+  const selected = sel.query === query ? sel.index : 0;
+
+  const results = useMemo(
+    () =>
+      pending ? [] : barResults(query, catalogue?.items ?? [], starred, catalogue?.recent ?? []),
+    [query, catalogue, starred, pending],
+  );
+
+  const submit = (r: BarResult | undefined) => {
+    if (pending) {
+      const prompt = query.trim() || DEFAULT_SCREEN_PROMPT;
+      useCapture.getState().setPending(null);
+      setQuery("");
+      void useConversation.getState().ask(prompt, {
+        contextKind: "screen",
+        attachments: [{ mimeType: pending.mimeType, dataBase64: pending.dataBase64 }],
+        imagePreview: pending.dataUrl,
+        web: false,
+        think,
+      });
+      return;
+    }
+    if (!r) return;
+    if (r.kind === "app") invalidateCatalogue();
+    void runResult(r, { web, think });
+  };
+
+  useEffect(() => {
+    submitRef.current = () => submit(results[selected]);
+  });
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown" && results.length) {
+      e.preventDefault();
+      setSel({ query, index: (selected + 1) % results.length });
+    } else if (e.key === "ArrowUp" && results.length) {
+      e.preventDefault();
+      setSel({ query, index: (selected - 1 + results.length) % results.length });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const r = results[selected];
+      // Shift+Enter asks with "think harder" for this one question.
+      if (e.shiftKey && r?.kind === "ask") void runResult(r, { web, think: true });
+      else submit(r);
+    } else if (e.key === "Tab" && query.trim() && !e.shiftKey) {
+      // Tab adds (or removes) the web for this question.
+      e.preventDefault();
+      setWeb(!web);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (requestActive) cancel();
+      else if (pending) useCapture.getState().setPending(null);
+      else onClose();
+    }
+  };
+
+  const listId = "bar-results";
+  const activeId = results[selected] ? `bar-r-${selected}` : undefined;
+  const placeholder = pending
+    ? "Ask about this area (optional)"
+    : "Ask, open an app, or type a command…";
+
+  return (
+    <div className="cmd">
+      <div className="cmd-row">
+        <span className="cmd-mark" title={ORB_LABELS[state]}>
+          <WispMark state={state} size={22} />
+        </span>
+        <input
+          ref={input}
+          className="cmd-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          aria-label="Ask Wisp or search"
+          role="combobox"
+          aria-expanded={results.length > 0}
+          aria-controls={listId}
+          aria-activedescendant={activeId}
+          aria-autocomplete="list"
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={8000}
+        />
+        <span className="sr-only" aria-live="polite">
+          {ORB_LABELS[state]}
+        </span>
+        {requestActive ? (
+          <button
+            className="icon-btn stop"
+            onClick={cancel}
+            aria-label="Stop answer"
+            title="Stop (Esc)"
+          >
+            <Icon name="stop" size={16} />
+          </button>
+        ) : (
+          <div className="cmd-tools" role="toolbar" aria-label="Options">
+            <button
+              className={`chip-toggle ${web ? "on" : ""}`}
+              aria-pressed={web}
+              onClick={() => setWeb(!web)}
+              title="Search the web for this answer (Tab)"
+            >
+              <Icon name="globe" size={15} />
+              <span>Web</span>
+            </button>
+            <button
+              className={`chip-toggle ${think ? "on" : ""}`}
+              aria-pressed={think}
+              onClick={() => setThink(!think)}
+              title="Think harder: slower, better for tricky questions (Shift+Enter)"
+            >
+              <Icon name="spark" size={15} />
+              <span>Think</span>
+            </button>
+            {memoryOn && (
+              <button
+                className={`icon-btn icon-btn-small ${memoryForChat ? "icon-btn-on" : ""}`}
+                onClick={() => setMemoryForChat(!memoryForChat)}
+                aria-label="Use memory in this conversation"
+                aria-pressed={memoryForChat}
+                title={
+                  memoryForChat
+                    ? "Memory is used in this conversation. Click to turn off."
+                    : "Memory is off for this conversation."
+                }
+              >
+                <Icon name="memory" size={16} />
+              </button>
+            )}
+            <span className="cmd-sep" aria-hidden />
+            <button
+              className="icon-btn icon-btn-small"
+              onClick={() => void host().startCapture()}
+              aria-label="Select an area to ask about"
+              title={`Circle or select an area${shortcuts?.selectToAsk ? ` (${shortcuts.selectToAsk})` : ""}`}
+            >
+              <Icon name="lasso" size={17} />
+            </button>
+            <button
+              className="icon-btn icon-btn-small"
+              onClick={() => void useDictation.getState().start()}
+              aria-label="Dictate"
+              title="Dictate (or hold Ctrl+Win)"
+            >
+              <Icon name="mic" size={17} />
+            </button>
+            <button
+              className="icon-btn icon-btn-small"
+              onClick={() => void useVoice.getState().start()}
+              aria-label="Ask by voice"
+              title="Ask by voice (or hold Win+Alt)"
+            >
+              <Icon name="talk" size={17} />
+            </button>
+            <button
+              className="icon-btn icon-btn-small"
+              onClick={() => void host().openSettings()}
+              aria-label="Settings"
+              title="Settings"
+            >
+              <Icon name="settings" size={17} />
+            </button>
+            <button
+              className="icon-btn icon-btn-small"
+              onClick={onClose}
+              aria-label="Close"
+              title="Close (Esc)"
+            >
+              <Icon name="chevron-up" size={17} />
+            </button>
+          </div>
+        )}
+      </div>
+      {results.length > 0 && (
+        <ul className="cmd-results" id={listId} role="listbox" aria-label="Results">
+          {results.map((r, i) => (
+            <li
+              key={`${r.kind}-${r.id}`}
+              id={`bar-r-${i}`}
+              role="option"
+              aria-selected={i === selected}
+              className={`cmd-result ${i === selected ? "selected" : ""}`}
+              onMouseEnter={() => setSel({ query, index: i })}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => submit(r)}
+            >
+              <span className={`cmd-result-icon kind-${r.kind}`}>
+                <Icon name={resultIcon(r)} size={16} />
+              </span>
+              <span className="cmd-result-title">{r.title}</span>
+              <span className="cmd-result-hint">
+                {r.kind === "ask" ? (
+                  <>
+                    {web ? "Ask with web" : think ? "Ask, thinking harder" : "Ask Wisp"}
+                    {i === selected && <kbd>Enter</kbd>}
+                  </>
+                ) : (
+                  <>
+                    {r.hint}
+                    {i === selected && <kbd>Enter</kbd>}
+                  </>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+});

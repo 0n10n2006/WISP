@@ -126,6 +126,45 @@
   --orb-glyph: var(--palette-ink-900);
 }
 
+/* ---------- Accent colours (Settings → Notch & personality) ---------- */
+:root[data-accent="lavender"] {
+  --color-accent: var(--palette-lavender);
+  --color-accent-2: var(--palette-cyan);
+  --orb-halo: var(--palette-lavender);
+}
+:root[data-accent="ember"] {
+  --color-accent: #ffb27a;
+  --color-accent-2: #ff8d9a;
+  --orb-halo: #ffb27a;
+}
+:root[data-accent="mint"] {
+  --color-accent: var(--palette-green);
+  --color-accent-2: var(--palette-cyan);
+  --orb-halo: var(--palette-green);
+}
+:root[data-theme="light"][data-accent="lavender"] {
+  --color-accent: var(--palette-lavender-deep);
+  --color-accent-2: var(--palette-cyan-deep);
+}
+:root[data-theme="light"][data-accent="ember"] {
+  --color-accent: #b45309;
+  --color-accent-2: var(--palette-rose-deep);
+}
+:root[data-theme="light"][data-accent="mint"] {
+  --color-accent: var(--palette-green-deep);
+  --color-accent-2: var(--palette-cyan-deep);
+}
+
+/* The notch is always dark, like a hardware notch, in both themes. */
+:root {
+  --notch-bg: rgb(9 12 22 / 0.97);
+  --notch-border: rgb(170 182 200 / 0.16);
+  --notch-text: #eef3fa;
+  --notch-muted: #94a1b6;
+  --notch-hover: rgb(255 255 255 / 0.07);
+  --notch-shadow: 0 14px 36px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.35);
+}
+
 /* ---------- Windows high contrast / forced colours ---------- */
 @media (forced-colors: active) {
   :root {
@@ -142,5 +181,10 @@
     --color-on-accent: HighlightText;
     --color-focus: Highlight;
     --shadow-panel: none;
+    --notch-bg: Canvas;
+    --notch-border: CanvasText;
+    --notch-text: CanvasText;
+    --notch-muted: GrayText;
+    --notch-shadow: none;
   }
 }

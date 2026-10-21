@@ -16,16 +16,8 @@ import { toast } from "../../state/toast";
 import { StatusLine, Toggle, useStatus } from "./common";
 
 /** `datetime-local` value ↔ ISO string helpers (local time). */
-export function toLocalInput(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-export function fromLocalInput(v: string): string | null {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
+export { fromLocalInput, toLocalInput } from "../../lib/time";
+import { fromLocalInput, toLocalInput } from "../../lib/time";
 
 const fmtDue = (iso: string | null) =>
   iso

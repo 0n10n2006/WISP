@@ -25,7 +25,7 @@ async function openIsland() {
 describe("dictation", () => {
   beforeEach(() => {
     useDictation.getState().cancel();
-    useActivity.setState({ listening: false, speaking: false });
+    useActivity.setState({ listening: false });
   });
 
   it("records, shows an editable transcript and inserts the edited text", async () => {

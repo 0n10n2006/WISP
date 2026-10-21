@@ -10,6 +10,11 @@ use wisp_core::gemini::GeminiClient;
 use wisp_core::retry::RetryPolicy;
 use wisp_core::ErrorCode;
 
+static PERSONA: wisp_core::settings::Persona = wisp_core::settings::Persona {
+    tone: wisp_core::settings::Tone::Concise,
+    instructions: String::new(),
+};
+
 const KEY: &str = "test-key-123456";
 
 fn ask(prompt: &str) -> AskRequest {
@@ -21,6 +26,8 @@ fn ask(prompt: &str) -> AskRequest {
         context_kind: ContextKind::Text,
         use_memory: false,
         enable_tools: false,
+        think: false,
+        web: false,
     }
 }
 
@@ -29,6 +36,9 @@ fn ctx() -> PromptContext<'static> {
         now_local: "2026-10-21T12:00:00Z",
         memories: &[],
         allowed_apps: &[],
+        model: "gemini-2.5-flash",
+        fast: true,
+        persona: &PERSONA,
     }
 }
 
@@ -433,4 +443,80 @@ async fn update_check_without_releases() {
         .unwrap();
     assert!(!info.available);
     assert!(info.latest.is_none());
+}
+
+#[tokio::test]
+async fn grounded_answers_collect_sources() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wiremock::matchers::body_string_contains("google_search"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(sse(&[
+            r#"{"candidates":[{"content":{"parts":[{"text":"It is sunny."}]}}]}"#,
+            r#"{"candidates":[{"content":{"parts":[{"text":""}]},"finishReason":"STOP","groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://weather.example/leeds","title":"Weather Example"}},{"web":{"uri":"https://weather.example/leeds","title":"dup"}},{"web":{"uri":"javascript:alert(1)","title":"bad"}}]}}]}"#,
+        ])))
+        .mount(&server)
+        .await;
+    let mut req = ask("weather in leeds");
+    req.web = true;
+    let out = client(&server)
+        .stream(
+            KEY,
+            "m",
+            &build_request(&req, &ctx()),
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+    assert_eq!(out.text, "It is sunny.");
+    assert_eq!(out.sources.len(), 1);
+    assert_eq!(out.sources[0].title, "Weather Example");
+}
+
+#[tokio::test]
+async fn weather_search_and_forecast() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/search"))
+        .and(query_param("name", "Leeds"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"results":[{"name":"Leeds","latitude":53.8,"longitude":-1.55,"country":"United Kingdom","admin1":"England"}]}"#,
+        ))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/forecast"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"current":{"temperature_2m":12.5,"weather_code":61,"wind_speed_10m":18.0,"is_day":1},
+               "daily":{"time":["2026-10-21","2026-10-22"],"temperature_2m_max":[14,15],"temperature_2m_min":[8,9],"weather_code":[61,3]}}"#,
+        ))
+        .mount(&server)
+        .await;
+    let places = wisp_core::net::search_places(&server.uri(), "Leeds")
+        .await
+        .unwrap();
+    assert_eq!(places[0].name, "Leeds, England, United Kingdom");
+    let w = wisp_core::net::forecast(&server.uri(), &places[0])
+        .await
+        .unwrap();
+    assert_eq!(w.label, "Rain");
+    assert_eq!(w.days.len(), 2);
+    assert_eq!(w.days[1].label, "Overcast");
+    assert!(wisp_core::net::search_places(&server.uri(), "x")
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn speed_test_measures_download() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0u8; 2_000_000]))
+        .mount(&server)
+        .await;
+    let r = wisp_core::net::speed_test(&format!("{}/down", server.uri()))
+        .await
+        .unwrap();
+    assert_eq!(r.bytes, 2_000_000);
+    assert!(r.mbps > 0.0);
 }

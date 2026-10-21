@@ -38,7 +38,7 @@ describe("select to ask", () => {
     await user.click(await screen.findByRole("button", { name: /select an area/i }));
     await user.click(await screen.findByRole("button", { name: /remove screen area/i }));
     expect(screen.queryByText(/screen area attached/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
     expect(ask).not.toHaveBeenCalled();
   });
 
@@ -64,6 +64,7 @@ describe("selection overlay", () => {
     render(<App />);
     const overlay = await screen.findByRole("application");
     await waitFor(() => expect(overlay.style.backgroundImage).toContain("data:image"));
+    fireEvent.click(screen.getByRole("radio", { name: /box/i }));
 
     fireEvent.pointerDown(overlay, { button: 0, clientX: 10, clientY: 10 });
     fireEvent.pointerMove(overlay, { clientX: 12, clientY: 12 });
@@ -92,5 +93,32 @@ describe("selection overlay", () => {
     fireEvent.keyDown(await screen.findByRole("application"), { key: "Enter" });
     await waitFor(() => expect(select).toHaveBeenCalledOnce());
     expect(select.mock.calls[0]![1]).toMatchObject({ x: 0, y: 0 });
+  });
+});
+
+describe("lasso", () => {
+  it("circles an area and sends the path, not just a box", async () => {
+    try {
+      localStorage.removeItem("wisp.overlay.mode");
+    } catch {
+      /* ignore */
+    }
+    const h = await setupMockHost({ windowKind: "overlay" });
+    const lasso = vi.spyOn(h, "captureSelectLasso");
+    render(<App />);
+    const overlay = await screen.findByRole("application");
+    expect(screen.getByRole("radio", { name: /circle/i })).toHaveAttribute("aria-checked", "true");
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 100, clientY: 100 });
+    for (const [x, y] of [
+      [200, 90],
+      [260, 160],
+      [200, 240],
+      [110, 200],
+    ])
+      fireEvent.pointerMove(overlay, { clientX: x, clientY: y });
+    expect(screen.getByTestId("lasso")).toBeInTheDocument();
+    fireEvent.pointerUp(overlay);
+    await waitFor(() => expect(lasso).toHaveBeenCalledOnce());
+    expect(lasso.mock.calls[0]![1]).toHaveLength(5);
   });
 });

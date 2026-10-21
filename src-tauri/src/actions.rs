@@ -5,7 +5,7 @@ use crate::state::AppState;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
-use wisp_core::storage::NewTask;
+use wisp_core::storage::{NewTask, Repeat};
 use wisp_core::tools::ValidatedAction;
 use wisp_core::{ErrorCode, Result, WispError};
 
@@ -41,6 +41,7 @@ pub fn execute(app: &AppHandle, action: &ValidatedAction) -> Result<String> {
                 notes: notes.clone(),
                 due_at: Some(*due_at),
                 notification_enabled: true,
+                repeat: Repeat::None,
             })?;
             let _ = app.emit("wisp://data-changed", "tasks");
             Ok(format!(

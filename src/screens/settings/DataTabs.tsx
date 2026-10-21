@@ -193,6 +193,11 @@ const DELETE_COPY: Record<DeleteScope, { label: string; title: string; body: str
     title: "Delete all memory?",
     body: "Everything you've asked Wisp to remember will be removed.",
   },
+  clipboard: {
+    label: "Delete clipboard history",
+    title: "Delete clipboard history?",
+    body: "Everything in Wisp's clipboard history, including pinned items, will be removed.",
+  },
   tasks: {
     label: "Delete all reminders",
     title: "Delete all reminders?",
@@ -234,6 +239,7 @@ export function DataTab() {
     },
     { scope: "memory", what: "Memory", count: stats?.memories },
     { scope: "tasks", what: "Reminders", count: stats?.tasks },
+    { scope: "clipboard", what: "Clipboard history", count: stats?.clips },
     { scope: "settings", what: "Settings" },
   ];
 

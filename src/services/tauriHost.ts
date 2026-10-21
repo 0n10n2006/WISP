@@ -13,6 +13,7 @@ import type {
   IslandLayout,
   SettingsSnapshot,
   ShortcutAction,
+  HoldEvent,
 } from "./types";
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -39,7 +40,13 @@ function subscribe<T>(event: string, cb: (payload: T) => void): Unsubscribe {
 export function createTauriHost(): Host {
   const label = getCurrentWindow().label;
   const kind: WindowKind =
-    label === "island" ? "island" : label.startsWith("overlay") ? "overlay" : "settings";
+    label === "island"
+      ? "island"
+      : label.startsWith("overlay")
+        ? "overlay"
+        : label === "highlight"
+          ? "highlight"
+          : "settings";
 
   return {
     kind: "tauri",
@@ -72,10 +79,15 @@ export function createTauriHost(): Host {
       };
     },
 
-    setIslandExpanded: (expanded) => call<IslandLayout>("set_island_expanded", { expanded }),
+    setIslandMode: (mode, height) =>
+      call<IslandLayout>("set_island_mode", { mode, height: height ?? null }),
     onIslandLayout: (cb) => subscribe<IslandLayout>("wisp://layout", cb),
     hideIsland: () => call("hide_island"),
-    startDragging: () => getCurrentWindow().startDragging(),
+    setTucked: (tucked) => call("set_tucked", { tucked }),
+    onTucked: (cb) => subscribe<boolean>("wisp://tucked", cb),
+    onBlur: (cb) => subscribe<null>("wisp://blur", () => cb()),
+    prewarm: () => void invoke("prewarm").catch(() => {}),
+    onHold: (cb) => subscribe<HoldEvent>("wisp://hold", cb),
     openSettings: (tab) => call("open_settings", { tab: tab ?? null }),
     onSettingsTab: (cb) => subscribe<string>("wisp://settings-tab", cb),
     onFocusPrompt: (cb) => subscribe<null>("wisp://focus-prompt", () => cb()),
@@ -86,7 +98,11 @@ export function createTauriHost(): Host {
     overlayMonitor: () => Number(new URLSearchParams(window.location.search).get("monitor") ?? 0),
     capturePreview: (monitor) => call("capture_preview", { monitor }),
     captureSelect: (monitor, rect) => call("capture_select", { monitor, rect }),
+    captureSelectLasso: (monitor, points, viewWidth, viewHeight) =>
+      call("capture_select_lasso", { monitor, points, viewWidth, viewHeight }),
     captureCancel: () => call("capture_cancel"),
+    showMe: (question) => call("show_me", { question }),
+    highlightsGet: () => call("highlights_get"),
     onCaptureReady: (cb) => subscribe<CaptureReady>("wisp://capture-ready", cb),
     onCaptureError: (cb) => subscribe<WispError>("wisp://capture-error", cb),
 
@@ -125,5 +141,34 @@ export function createTauriHost(): Host {
 
     openExternal: (url) => call("open_external", { url }),
     copyText: (text) => call("copy_text", { text }),
+
+    controlsState: () => call("controls_state"),
+    setVolume: (percent) => call("set_volume", { percent: Math.round(percent) }),
+    setMuted: (muted) => call("set_muted", { muted }),
+    mediaCommand: (command) => call("media_command", { command }),
+    setRadio: (kind, on) => call("set_radio", { kind, on }),
+    setDarkMode: (dark) => call("set_dark_mode", { dark }),
+    statsSnapshot: () => call("stats_snapshot"),
+    speedTest: () => call("speed_test"),
+    weatherSearch: (query) => call("weather_search", { query }),
+    weatherGet: () => call("weather_get"),
+    clipsList: (kind) => call("clips_list", { kind: kind ?? null }),
+    clipPin: (id, pinned) => call("clip_pin", { id, pinned }),
+    clipDelete: (id) => call("clip_delete", { id }),
+    clipsClear: (includePinned) => call("clips_clear", { includePinned }),
+    clipCopy: (id) => call("clip_copy", { id }),
+    launcherList: () => call("launcher_list"),
+    launchItem: (item) => call("launch_item", { item }),
+    powerAction: (action) => call("power_action", { action }),
+    wallpaperInfo: () => call("wallpaper_info"),
+    wallpaperThumb: (path) => call("wallpaper_thumb", { path }),
+    wallpaperPick: () => call("wallpaper_pick"),
+    wallpaperSet: (path) => call("wallpaper_set", { path }),
+    agentStart: (kind) => call("agent_start", { kind }),
+    agentCancel: (id) => call("agent_cancel", { id }),
+    agentsList: () => call("agents_list"),
+    agentDelete: (id) => call("agent_delete", { id }),
+    agentOpen: (id) => call("agent_open", { id }),
+    foregroundApp: () => call("foreground_app"),
   };
 }

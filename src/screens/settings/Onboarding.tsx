@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Icon } from "../../components/Icon";
-import { Orb } from "../../components/Orb";
+import { WispMark } from "../../components/WispMark";
 import { presentError, toWispError, type WispError } from "../../services/errors";
 import { host } from "../../services/host";
 import type { ModelInfo } from "../../services/types";
@@ -57,7 +57,7 @@ export function Onboarding({ onFinish }: { onFinish(): void }) {
   return (
     <div className="onboarding">
       <div className="onboarding-hero">
-        <Orb state={step === "done" ? "success" : "idle"} size={72} decorative />
+        <WispMark state={step === "done" ? "success" : "idle"} size={64} />
         <div>
           <h1>Meet Wisp</h1>
           <p className="lead">A small assistant that stays out of the way until you need it.</p>
@@ -193,17 +193,25 @@ export function Onboarding({ onFinish }: { onFinish(): void }) {
       {step === "done" && (
         <section className="card">
           <h2>You're set</h2>
-          <p>Wisp lives in the corner of your screen. Click the orb, or use these shortcuts:</p>
+          <p>
+            Wisp rests as a thin glow at the top of your screen. Hover it for a peek, click it to
+            open the command bar, or use these:
+          </p>
           <ul className="hints">
             <li>
-              <kbd>{snapshot?.settings.globalShortcuts.toggleIsland}</kbd> show or hide Wisp
+              <kbd>{snapshot?.settings.globalShortcuts.toggleIsland}</kbd> open the command bar:
+              ask, open apps, run commands
             </li>
             <li>
-              <kbd>{snapshot?.settings.globalShortcuts.selectToAsk}</kbd> select an area of the
-              screen to ask about
+              <kbd>{snapshot?.settings.globalShortcuts.selectToAsk}</kbd> circle anything on screen
+              to ask about it
             </li>
             <li>
-              <kbd>{snapshot?.settings.globalShortcuts.dictation}</kbd> dictate text
+              Hold <kbd>Ctrl</kbd>+<kbd>Win</kbd> to dictate into any app · hold <kbd>Win</kbd>+
+              <kbd>Alt</kbd> to ask by voice
+            </li>
+            <li>
+              <kbd>{snapshot?.settings.globalShortcuts.tuck}</kbd> tuck Wisp away completely
             </li>
           </ul>
           <p className="muted">You can change shortcuts in Settings → Shortcuts.</p>

@@ -9,6 +9,7 @@ export interface Shortcuts {
   dictation: string;
   clipboardAssist: string;
   voice: string;
+  tuck: string;
 }
 
 export type ShortcutAction = keyof Shortcuts;
@@ -31,9 +32,20 @@ export interface Settings {
   globalShortcuts: Shortcuts;
   selectedModel: string;
   voiceEnabled: boolean;
-  speakResponses: boolean;
-  ttsVoice: string;
-  ttsRate: number;
+  /** Skip the model's thinking step for much faster answers. */
+  fastMode: boolean;
+  dictationStyle: DictationStyle;
+  /** Hold Ctrl+Win to dictate, Win+Alt to ask by voice. */
+  holdToTalk: boolean;
+  autoHideFullscreen: boolean;
+  tucked: boolean;
+  clipboardHistory: boolean;
+  weatherPlace: WeatherPlace | null;
+  persona: Persona;
+  accent: Accent;
+  starredApps: string[];
+  focusMinutes: number;
+  recentWallpapers: string[];
   screenContextEnabled: boolean;
   dictationAutoInsert: boolean;
   retainAudio: boolean;
@@ -43,6 +55,21 @@ export interface Settings {
   notificationsEnabled: boolean;
   telemetryOptIn: boolean;
   allowedApps: AllowedApp[];
+}
+
+export type DictationStyle = "verbatim" | "clean" | "formal";
+export type Tone = "concise" | "friendly" | "professional";
+export type Accent = "cyan" | "lavender" | "ember" | "mint";
+
+export interface Persona {
+  tone: Tone;
+  instructions: string;
+}
+
+export interface WeatherPlace {
+  name: string;
+  latitude: number;
+  longitude: number;
 }
 
 export interface ShortcutIssue {
@@ -98,6 +125,15 @@ export interface AskRequest {
   contextKind: ContextKind;
   useMemory: boolean;
   enableTools: boolean;
+  /** Let the model think longer (slower, better for hard questions). */
+  think?: boolean;
+  /** Ground the answer with Google Search. */
+  web?: boolean;
+}
+
+export interface Source {
+  title: string;
+  url: string;
 }
 
 export interface Usage {
@@ -112,20 +148,24 @@ export interface AskResult {
   latencyMs: number;
   usage: Usage | null;
   finishReason: string | null;
+  sources: Source[];
 }
 
+export type NotchMode = "sliver" | "peek" | "open";
+
 export interface IslandLayout {
+  mode: NotchMode;
   expanded: boolean;
-  alignRight: boolean;
-  alignBottom: boolean;
+  height: number;
 }
 
 export const DEFAULT_SHORTCUTS: Shortcuts = {
-  toggleIsland: "Ctrl+Shift+Space",
+  toggleIsland: "Ctrl+Alt+Space",
   selectToAsk: "Ctrl+Shift+S",
   dictation: "Ctrl+Shift+D",
   clipboardAssist: "Ctrl+Shift+C",
-  voice: "Ctrl+Shift+V",
+  voice: "Ctrl+Alt+V",
+  tuck: "Ctrl+Alt+H",
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -141,9 +181,18 @@ export const DEFAULT_SETTINGS: Settings = {
   globalShortcuts: DEFAULT_SHORTCUTS,
   selectedModel: "gemini-2.5-flash",
   voiceEnabled: true,
-  speakResponses: false,
-  ttsVoice: "",
-  ttsRate: 1,
+  fastMode: true,
+  dictationStyle: "clean",
+  holdToTalk: true,
+  autoHideFullscreen: true,
+  tucked: false,
+  clipboardHistory: false,
+  weatherPlace: null,
+  persona: { tone: "concise", instructions: "" },
+  accent: "cyan",
+  starredApps: [],
+  focusMinutes: 25,
+  recentWallpapers: [],
   screenContextEnabled: true,
   dictationAutoInsert: false,
   retainAudio: false,
@@ -190,10 +239,11 @@ export interface StorageStats {
   tasks: number;
   openTasks: number;
   memories: number;
+  clips: number;
   schemaVersion: number;
 }
 
-export type DeleteScope = "history" | "memory" | "tasks" | "settings" | "everything";
+export type DeleteScope = "history" | "memory" | "tasks" | "clipboard" | "settings" | "everything";
 
 export interface CaptureReady {
   dataUrl: string;
@@ -221,13 +271,17 @@ export interface Task {
   completedAt: string | null;
   notificationEnabled: boolean;
   notifiedAt: string | null;
+  repeat: Repeat;
 }
+
+export type Repeat = "none" | "daily" | "weekdays" | "weekly";
 
 export interface NewTask {
   title: string;
   notes?: string | null;
   dueAt?: string | null;
   notificationEnabled?: boolean;
+  repeat?: Repeat;
 }
 
 export type MemoryCategory = "preference" | "fact" | "project" | "people" | "other";
@@ -262,4 +316,146 @@ export interface UpdateInfo {
   latest: string | null;
   available: boolean;
   url: string | null;
+}
+
+// ---- v0.2 dashboard ---------------------------------------------------------
+
+export interface NowPlaying {
+  title: string;
+  artist: string;
+  playing: boolean;
+  app: string;
+}
+
+export interface RadioInfo {
+  kind: "wifi" | "bluetooth";
+  name: string;
+  on: boolean;
+}
+
+export interface ControlsState {
+  supported: boolean;
+  volume: number | null;
+  muted: boolean;
+  nowPlaying: NowPlaying | null;
+  radios: RadioInfo[];
+  darkMode: boolean;
+}
+
+export type MediaCommand = "playPause" | "next" | "previous";
+
+export interface ProcessStat {
+  name: string;
+  count: number;
+  memoryBytes: number;
+  cpu: number;
+}
+
+export interface DiskStat {
+  mount: string;
+  totalBytes: number;
+  freeBytes: number;
+}
+
+export interface StatsSnapshot {
+  cpu: number;
+  cores: number[];
+  cpuName: string;
+  memoryTotal: number;
+  memoryUsed: number;
+  disks: DiskStat[];
+  netDown: number;
+  netUp: number;
+  uptimeSecs: number;
+  top: ProcessStat[];
+}
+
+export interface SpeedResult {
+  mbps: number;
+  bytes: number;
+  millis: number;
+  latencyMs: number;
+}
+
+export interface DayForecast {
+  date: string;
+  min: number;
+  max: number;
+  code: number;
+  label: string;
+}
+
+export interface Weather {
+  place: string;
+  temperature: number;
+  windKmh: number;
+  code: number;
+  label: string;
+  isDay: boolean;
+  days: DayForecast[];
+}
+
+export interface ClipEntry {
+  id: string;
+  kind: "text" | "link";
+  text: string;
+  createdAt: string;
+  pinned: boolean;
+}
+
+export interface LaunchItem {
+  id: string;
+  name: string;
+  kind: "app" | "game" | "system";
+  target: string;
+}
+
+export interface AppUsage {
+  id: string;
+  lastUsed: string;
+  launches: number;
+}
+
+export interface Catalogue {
+  items: LaunchItem[];
+  recent: AppUsage[];
+}
+
+export type PowerAction = "lock" | "sleep" | "restart" | "shutdown" | "cancel";
+
+export interface WallpaperInfo {
+  current: string | null;
+  recent: string[];
+}
+
+export type AgentKind = { kind: "replica" } | { kind: "research"; topic: string };
+
+export interface AgentJob {
+  id: string;
+  kind: "replica" | "research";
+  title: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  progress: number;
+  detail: string | null;
+  outputPath: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+export interface Highlight {
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface HoldEvent {
+  chord: "dictate" | "ask";
+  phase: "start" | "stop" | "cancel";
 }

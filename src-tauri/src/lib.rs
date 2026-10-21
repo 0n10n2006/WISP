@@ -1,24 +1,32 @@
 //! Wisp desktop host (Tauri 2). OS integration lives here; logic lives in `wisp-core`.
 
 mod actions;
+mod agents;
 mod apps;
 mod capture;
+mod clipboard_history;
 mod commands;
 mod crash;
 mod foreground;
+mod hotkeys;
+mod power;
 mod reminders;
 mod secrets;
 mod selftest;
 mod shortcuts;
 mod state;
+mod stats;
+mod system_controls;
+mod system_theme;
 mod tray;
+mod wallpaper;
+mod watch;
 mod windows;
 
 use state::AppState;
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 use wisp_core::gemini::GeminiClient;
 use wisp_core::settings::SettingsStore;
 use wisp_core::storage::Db;
@@ -34,6 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart"]),
@@ -61,6 +70,7 @@ pub fn run() {
                 }
             };
             let _ = db.prune_history(settings.history_retention_days.max(1), settings.content_history);
+            let _ = db.fail_interrupted_jobs();
             selftest::mark("database");
             app.manage(AppState {
                 capture: Mutex::new(None),
@@ -78,8 +88,9 @@ pub fn run() {
                 requests: Mutex::new(HashMap::new()),
                 shortcut_issues: Mutex::new(Vec::new()),
                 island: Mutex::new(Default::default()),
-                anchor: Mutex::new(None),
-                move_generation: AtomicU64::new(0),
+                fullscreen_active: Mutex::new(false),
+                stats: Default::default(),
+                highlights: Mutex::new(Vec::new()),
             });
 
             let handle = app.handle().clone();
@@ -93,17 +104,22 @@ pub fn run() {
             if let Some(win) = windows::island(&handle) {
                 let _ = win.set_always_on_top(settings.always_on_top);
                 let autostarted = std::env::args().any(|a| a == "--autostart");
-                let show = settings.island_visible && !(settings.start_hidden && autostarted);
+                let show = !settings.tucked && !(settings.start_hidden && autostarted);
                 if show || !settings.onboarding_complete || self_test {
                     let _ = win.show();
                 }
                 let h = handle.clone();
                 win.on_window_event(move |e| {
-                    if let WindowEvent::Moved(pos) = e {
-                        windows::on_island_moved(&h, *pos);
+                    // Clicking elsewhere lets the UI decide whether to fold away.
+                    if let WindowEvent::Focused(false) = e {
+                        let _ = h.emit_to(windows::ISLAND, "wisp://blur", ());
                     }
                 });
             }
+            watch::spawn(handle.clone());
+            clipboard_history::spawn(handle.clone());
+            hotkeys::set_enabled(settings.hold_to_talk && settings.voice_enabled);
+            hotkeys::install(handle.clone());
             if !settings.onboarding_complete && !self_test {
                 windows::open_settings(&handle, Some("welcome".into()));
             }
@@ -118,7 +134,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = e {
                 if win.label() == windows::ISLAND {
                     api.prevent_close();
-                    windows::set_island_visible(win.app_handle(), false);
+                    windows::close_bar(win.app_handle());
                 }
             }
         })
@@ -136,6 +152,7 @@ pub fn run() {
             commands::ask::ask,
             commands::ask::ask_cancel,
             commands::ask::action_respond,
+            commands::ask::prewarm,
             commands::data::history_list,
             commands::data::actions_list,
             commands::data::data_stats,
@@ -146,6 +163,9 @@ pub fn run() {
             commands::capture::capture_preview,
             commands::capture::capture_select,
             commands::capture::capture_cancel,
+            commands::capture::capture_select_lasso,
+            commands::capture::show_me,
+            commands::capture::highlights_get,
             commands::dictation::dictation_target,
             commands::dictation::transcribe,
             commands::dictation::insert_text,
@@ -165,10 +185,40 @@ pub fn run() {
             commands::system::ui_ready,
             commands::system::set_island_expanded,
             commands::system::hide_island,
+            commands::system::set_island_mode,
+            commands::system::set_tucked,
             commands::system::open_settings,
             commands::system::quit_app,
             commands::system::open_external,
             commands::system::copy_text,
+            commands::dashboard::controls_state,
+            commands::dashboard::set_volume,
+            commands::dashboard::set_muted,
+            commands::dashboard::media_command,
+            commands::dashboard::set_radio,
+            commands::dashboard::set_dark_mode,
+            commands::dashboard::stats_snapshot,
+            commands::dashboard::speed_test,
+            commands::dashboard::weather_search,
+            commands::dashboard::weather_get,
+            commands::dashboard::clips_list,
+            commands::dashboard::clip_pin,
+            commands::dashboard::clip_delete,
+            commands::dashboard::clips_clear,
+            commands::dashboard::clip_copy,
+            commands::dashboard::launcher_list,
+            commands::dashboard::launch_item,
+            commands::dashboard::power_action,
+            commands::dashboard::wallpaper_info,
+            commands::dashboard::wallpaper_thumb,
+            commands::dashboard::wallpaper_pick,
+            commands::dashboard::wallpaper_set,
+            commands::dashboard::agent_start,
+            commands::dashboard::agent_cancel,
+            commands::dashboard::agents_list,
+            commands::dashboard::agent_delete,
+            commands::dashboard::agent_open,
+            commands::dashboard::foreground_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Wisp");

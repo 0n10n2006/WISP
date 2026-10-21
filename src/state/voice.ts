@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { toWispError, type WispError } from "../services/errors";
 import { host } from "../services/host";
 import type { AudioRecorder } from "../services/recorder";
-import { speak, stopSpeaking } from "../services/speech";
 import { useActivity } from "./activity";
 import { useConversation } from "./conversation";
 import { useSettings } from "./settings";
@@ -27,15 +26,6 @@ let recorder: AudioRecorder | null = null;
 let limit: ReturnType<typeof setTimeout> | null = null;
 let generation = 0;
 
-/** Read the latest answer aloud with the user's voice settings. */
-export async function speakLatestAnswer(): Promise<void> {
-  const msgs = useConversation.getState().messages;
-  const last = [...msgs].reverse().find((m) => m.role === "model" && m.status === "done");
-  if (!last?.text) return;
-  const s = useSettings.getState().snapshot?.settings;
-  await speak(last.text, { voice: s?.ttsVoice || undefined, rate: s?.ttsRate ?? 1 });
-}
-
 export const useVoice = create<VoiceState>((set, get) => ({
   phase: "idle",
   level: 0,
@@ -59,8 +49,6 @@ export const useVoice = create<VoiceState>((set, get) => ({
       });
       return;
     }
-    // Pressing talk interrupts any answer being read aloud.
-    stopSpeaking();
     generation += 1;
     set({ phase: "listening", error: null, level: 0 });
     recorder = host().createRecorder();
@@ -99,9 +87,8 @@ export const useVoice = create<VoiceState>((set, get) => ({
         return;
       }
       set({ phase: "idle" });
+      // Answers to voice questions are shown as text; Wisp never talks back.
       await useConversation.getState().ask(text, { contextKind: "voice" });
-      if (gen !== generation || useConversation.getState().error) return;
-      await speakLatestAnswer();
     } catch (e) {
       if (gen !== generation) return;
       set({ phase: "error", error: toWispError(e) });
@@ -114,7 +101,6 @@ export const useVoice = create<VoiceState>((set, get) => ({
     recorder?.cancel();
     recorder = null;
     useActivity.getState().setListening(false);
-    stopSpeaking();
     set({ phase: "idle", level: 0, error: null });
   },
 }));

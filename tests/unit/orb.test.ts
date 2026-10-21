@@ -2,7 +2,6 @@ import { deriveOrbState, ORB_LABELS, type OrbInputs } from "../../src/state/orb"
 
 const base: OrbInputs = {
   listening: false,
-  speaking: false,
   requestActive: false,
   errorSeverity: null,
   successFlash: false,
@@ -17,7 +16,6 @@ describe("deriveOrbState", () => {
     expect(
       deriveOrbState({ ...base, listening: true, requestActive: true, errorSeverity: "error" }),
     ).toBe("listening");
-    expect(deriveOrbState({ ...base, speaking: true, requestActive: true })).toBe("speaking");
   });
 
   it("orders thinking > error > warning > success", () => {
@@ -33,6 +31,6 @@ describe("deriveOrbState", () => {
 
   it("has a text label for every state", () => {
     for (const label of Object.values(ORB_LABELS)) expect(label.length).toBeGreaterThan(0);
-    expect(Object.keys(ORB_LABELS)).toHaveLength(7);
+    expect(Object.keys(ORB_LABELS)).toHaveLength(6);
   });
 });

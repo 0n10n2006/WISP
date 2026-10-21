@@ -43,6 +43,7 @@ pub fn data_delete(
         "history" => state.db.delete_data(DataScope::History)?,
         "memory" => state.db.delete_data(DataScope::Memory)?,
         "tasks" => state.db.delete_data(DataScope::Tasks)?,
+        "clipboard" => state.db.delete_data(DataScope::Clipboard)?,
         "settings" => reset_settings(&state, true)?,
         "everything" => {
             state.db.delete_data(DataScope::All)?;

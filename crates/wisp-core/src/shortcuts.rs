@@ -16,28 +16,32 @@ pub struct Shortcuts {
     pub dictation: String,
     pub clipboard_assist: String,
     pub voice: String,
+    /// Tuck the notch away / bring it back.
+    pub tuck: String,
 }
 
 impl Default for Shortcuts {
     fn default() -> Self {
         Self {
-            toggle_island: "Ctrl+Shift+Space".into(),
+            toggle_island: "Ctrl+Alt+Space".into(),
             select_to_ask: "Ctrl+Shift+S".into(),
             dictation: "Ctrl+Shift+D".into(),
             clipboard_assist: "Ctrl+Shift+C".into(),
-            voice: "Ctrl+Shift+V".into(),
+            voice: "Ctrl+Alt+V".into(),
+            tuck: "Ctrl+Alt+H".into(),
         }
     }
 }
 
 impl Shortcuts {
-    pub fn entries(&self) -> [(&'static str, &str); 5] {
+    pub fn entries(&self) -> [(&'static str, &str); 6] {
         [
             ("toggleIsland", &self.toggle_island),
             ("selectToAsk", &self.select_to_ask),
             ("dictation", &self.dictation),
             ("clipboardAssist", &self.clipboard_assist),
             ("voice", &self.voice),
+            ("tuck", &self.tuck),
         ]
     }
 
@@ -46,12 +50,13 @@ impl Shortcuts {
     pub fn validated(&self) -> Result<Self> {
         let mut out = self.clone();
         let mut seen: BTreeMap<String, &'static str> = BTreeMap::new();
-        let fields: [(&'static str, &mut String); 5] = [
+        let fields: [(&'static str, &mut String); 6] = [
             ("toggleIsland", &mut out.toggle_island),
             ("selectToAsk", &mut out.select_to_ask),
             ("dictation", &mut out.dictation),
             ("clipboardAssist", &mut out.clipboard_assist),
             ("voice", &mut out.voice),
+            ("tuck", &mut out.tuck),
         ];
         for (name, value) in fields {
             if value.trim().is_empty() {
@@ -239,7 +244,7 @@ mod tests {
     #[test]
     fn detects_conflicts() {
         let s = Shortcuts {
-            dictation: "ctrl+shift+space".into(),
+            dictation: "ctrl+alt+space".into(),
             ..Shortcuts::default()
         };
         let err = s.validated().unwrap_err();

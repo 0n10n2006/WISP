@@ -1,21 +1,12 @@
 use crate::secrets::SecretStore;
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use wisp_core::gemini::GeminiClient;
 use wisp_core::settings::{Settings, SettingsStore};
 use wisp_core::storage::Db;
 
-#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IslandLayout {
-    pub expanded: bool,
-    /// The orb sits at the right edge of the expanded panel.
-    pub align_right: bool,
-    /// The orb sits at the bottom edge of the expanded panel.
-    pub align_bottom: bool,
-}
+pub use crate::windows::IslandLayout;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,9 +33,11 @@ pub struct AppState {
     pub requests: Mutex<HashMap<String, CancellationToken>>,
     pub shortcut_issues: Mutex<Vec<ShortcutIssue>>,
     pub island: Mutex<IslandLayout>,
-    /// Orb (collapsed) top-left position in physical pixels.
-    pub anchor: Mutex<Option<(i32, i32)>>,
-    pub move_generation: AtomicU64,
+    /// A fullscreen app is in front (the sliver hides).
+    pub fullscreen_active: Mutex<bool>,
+    pub stats: crate::stats::Stats,
+    /// Regions for the Show-me overlay.
+    pub highlights: Mutex<Vec<wisp_core::capture::Highlight>>,
 }
 
 impl AppState {

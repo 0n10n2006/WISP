@@ -23,6 +23,13 @@ import {
   type Settings,
   type SettingsSnapshot,
   type ShortcutAction,
+  type AgentJob,
+  type ClipEntry,
+  type ControlsState,
+  type HoldEvent,
+  type LaunchItem,
+  type AppUsage,
+  type NotchMode,
 } from "./types";
 
 const STORAGE_KEY = "wisp.mock.settings";
@@ -190,7 +197,76 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     reminder: new Set<(t: Task) => void>(),
     captureReady: new Set<(c: CaptureReady) => void>(),
     captureError: new Set<(e: WispError) => void>(),
+    tucked: new Set<(t: boolean) => void>(),
+    blur: new Set<() => void>(),
+    hold: new Set<(e: HoldEvent) => void>(),
   };
+  let layout: IslandLayout = { mode: "sliver", expanded: false, height: 0 };
+  const setLayout = (mode: NotchMode, height?: number) => {
+    layout = {
+      mode,
+      expanded: mode === "open",
+      height: mode === "open" ? Math.max(96, height ?? layout.height) : layout.height,
+    };
+    listeners.layout.forEach((cb) => cb(layout));
+    return layout;
+  };
+  const now = Date.now();
+  let clips: ClipEntry[] = [
+    {
+      id: "clip-1",
+      kind: "link",
+      text: "https://github.com/0n10n2006/WISP",
+      createdAt: new Date(now - 60_000).toISOString(),
+      pinned: true,
+    },
+    {
+      id: "clip-2",
+      kind: "text",
+      text: "Meeting moved to Thursday 3pm — bring the Q3 numbers.",
+      createdAt: new Date(now - 300_000).toISOString(),
+      pinned: false,
+    },
+    {
+      id: "clip-3",
+      kind: "text",
+      text: "const answer = items.filter((i) => i.done).length;",
+      createdAt: new Date(now - 900_000).toISOString(),
+      pinned: false,
+    },
+  ];
+  const clipsChanged = () => listeners.data.forEach((cb) => cb("clipboard"));
+  const catalogue: LaunchItem[] = [
+    { id: "lnk:spotify", name: "Spotify", kind: "app", target: "C:\\Spotify.lnk" },
+    { id: "lnk:code", name: "Visual Studio Code", kind: "app", target: "C:\\Code.lnk" },
+    { id: "lnk:word", name: "Word", kind: "app", target: "C:\\Word.lnk" },
+    { id: "lnk:chrome", name: "Google Chrome", kind: "app", target: "C:\\Chrome.lnk" },
+    { id: "lnk:discord", name: "Discord", kind: "app", target: "C:\\Discord.lnk" },
+    { id: "steam:570", name: "Dota 2", kind: "game", target: "steam://rungameid/570" },
+    { id: "steam:620", name: "Portal 2", kind: "game", target: "steam://rungameid/620" },
+    { id: "uri:ms-calculator:", name: "Calculator", kind: "system", target: "ms-calculator:" },
+    { id: "uri:ms-settings:", name: "Settings", kind: "system", target: "ms-settings:" },
+    {
+      id: "uri:ms-settings:display",
+      name: "Display settings",
+      kind: "system",
+      target: "ms-settings:display",
+    },
+  ];
+  let usage: AppUsage[] = [];
+  let controls: ControlsState = {
+    supported: true,
+    volume: 42,
+    muted: false,
+    nowPlaying: { title: "Weightless", artist: "Marconi Union", playing: true, app: "Spotify" },
+    radios: [
+      { kind: "wifi", name: "Wi-Fi", on: true },
+      { kind: "bluetooth", name: "Bluetooth", on: false },
+    ],
+    darkMode: true,
+  };
+  let jobs: AgentJob[] = [];
+  const jobsChanged = () => listeners.data.forEach((cb) => cb("jobs"));
   let requests: RequestLog[] = [];
   let tasks: Task[] = [];
   let memories: MemoryEntry[] = [];
@@ -209,6 +285,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       completedAt: null,
       notificationEnabled: t.notificationEnabled ?? true,
       notifiedAt: null,
+      repeat: t.repeat ?? "none",
     };
   };
   const taskChanged = () => listeners.data.forEach((cb) => cb("tasks"));
@@ -253,7 +330,8 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     tasks: tasks.length,
     openTasks: tasks.filter((t) => !t.completedAt).length,
     memories: memories.length,
-    schemaVersion: 1,
+    clips: clips.length,
+    schemaVersion: 2,
   });
 
   const snapshot = (): SettingsSnapshot => ({
@@ -262,7 +340,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     shortcutIssues: [],
     recoveredFrom: null,
     warnings: [],
-    version: "0.1.0-preview",
+    version: "0.2.0-preview",
   });
   const emit = () => {
     const s = snapshot();
@@ -336,9 +414,18 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
             completedAt: null,
             notificationEnabled: true,
             notifiedAt: new Date().toISOString(),
+            repeat: "none",
           }),
         ),
-      focus: () => listeners.focus.forEach((cb) => cb()),
+      focus: () => {
+        setLayout("open");
+        listeners.focus.forEach((cb) => cb());
+      },
+      hold: (e: HoldEvent) => {
+        if (e.phase === "start" && layout.mode !== "open") setLayout("peek");
+        listeners.hold.forEach((cb) => cb(e));
+      },
+      blur: () => listeners.blur.forEach((cb) => cb()),
     };
   }
 
@@ -519,6 +606,12 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
           latencyMs: Date.now() - started,
           usage: null,
           finishReason: "STOP",
+          sources: req.web
+            ? [
+                { title: "Wikipedia", url: "https://en.wikipedia.org/wiki/Will-o%27-the-wisp" },
+                { title: "Example News", url: "https://example.com/news" },
+              ]
+            : [],
         };
       })();
       const result = run.then(
@@ -534,18 +627,20 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       return { result, cancel: () => ctl.abort() };
     },
 
-    setIslandExpanded: async (expanded) => {
-      const l = { expanded, alignRight: false, alignBottom: false };
-      listeners.layout.forEach((cb) => cb(l));
-      return l;
-    },
+    setIslandMode: async (mode, height) => setLayout(mode, height),
     onIslandLayout: (cb) => on(listeners.layout, cb),
     hideIsland: async () => {
-      listeners.layout.forEach((cb) =>
-        cb({ expanded: false, alignRight: false, alignBottom: false }),
-      );
+      setLayout("sliver");
     },
-    startDragging: async () => {},
+    setTucked: async (tucked) => {
+      settings = { ...settings, tucked };
+      save();
+      listeners.tucked.forEach((cb) => cb(tucked));
+    },
+    onTucked: (cb) => on(listeners.tucked, cb),
+    onBlur: (cb) => on(listeners.blur, cb),
+    prewarm: () => {},
+    onHold: (cb) => on(listeners.hold, cb),
     openSettings: async (tab) => {
       if (kind === "settings") {
         if (tab) listeners.tab.forEach((cb) => cb(tab));
@@ -583,7 +678,26 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       if (Math.abs(rect.width) < 8 || Math.abs(rect.height) < 8)
         throw err("invalid", "That selection is too small. Drag to select an area.");
     },
+    captureSelectLasso: async (_monitor, points) => {
+      if (points.length < 3) throw err("invalid", "Draw around the area you want to ask about");
+    },
     captureCancel: async () => {},
+    showMe: async (question) => {
+      if (!hasKey)
+        throw err("missing_key", "Add your Gemini API key in Settings → Model to ask Wisp.");
+      if (!settings.screenContextEnabled)
+        throw err(
+          "permission_denied",
+          "Screen features are turned off. Turn them on in Settings → Privacy.",
+        );
+      await new Promise((r) => setTimeout(r, 300));
+      return question.toLowerCase().includes("nothing")
+        ? []
+        : [{ label: "Settings button", x: 0.86, y: 0.02, width: 0.05, height: 0.05 }];
+    },
+    highlightsGet: async () => [
+      { label: "Settings button", x: 0.86, y: 0.04, width: 0.06, height: 0.06 },
+    ],
     onCaptureReady: (cb) => on(listeners.captureReady, cb),
     onCaptureError: (cb) => on(listeners.captureError, cb),
 
@@ -670,7 +784,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       } catch {
         /* permission denied in the preview */
       }
-      return "Wisp is a small, spirit-like AI companion for Windows. It floats on the desktop as a glowing orb and helps with quick questions, screen regions, dictation and simple tasks, while keeping data local by default.";
+      return "Wisp is a small, spirit-like AI companion for Windows. It lives in a slim notch at the top of the screen and helps with quick questions, screen regions, dictation and simple tasks, while keeping data local by default.";
     },
 
     installedApps: async () => [
@@ -688,7 +802,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       },
     ],
     checkForUpdates: async () => ({
-      current: "0.1.0-preview",
+      current: "0.2.0-preview",
       latest: "0.1.0",
       available: false,
       url: null,
@@ -706,6 +820,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       }
       if (scope === "memory" || scope === "everything") memories = [];
       if (scope === "tasks" || scope === "everything") tasks = [];
+      if (scope === "clipboard" || scope === "everything") clips = [];
       if (scope === "settings" || scope === "everything") {
         settings = {
           ...DEFAULT_SETTINGS,
@@ -725,7 +840,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       JSON.stringify(
         {
           generatedAt: new Date().toISOString(),
-          appVersion: "0.1.0-preview",
+          appVersion: "0.2.0-preview",
           os: "browser-preview",
           hasApiKey: hasKey,
           settings: {
@@ -755,5 +870,187 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     copyText: async (text) => {
       await navigator.clipboard?.writeText(text);
     },
+
+    controlsState: async () => controls,
+    setVolume: async (percent) => {
+      controls = { ...controls, volume: Math.round(percent), muted: percent === 0 };
+    },
+    setMuted: async (muted) => {
+      controls = { ...controls, muted };
+    },
+    mediaCommand: async (command) => {
+      if (!controls.nowPlaying) throw err("unsupported", "Nothing is playing right now.");
+      if (command === "playPause")
+        controls = {
+          ...controls,
+          nowPlaying: { ...controls.nowPlaying, playing: !controls.nowPlaying.playing },
+        };
+    },
+    setRadio: async (kind, on) => {
+      controls = {
+        ...controls,
+        radios: controls.radios.map((r) => (r.kind === kind ? { ...r, on } : r)),
+      };
+    },
+    setDarkMode: async (dark) => {
+      controls = { ...controls, darkMode: dark };
+    },
+    statsSnapshot: async () => {
+      const wobble = (base: number) =>
+        Math.max(0, Math.min(100, base + (Math.random() - 0.5) * 20));
+      const cores = Array.from({ length: 8 }, (_, i) => wobble(15 + i * 6));
+      return {
+        cpu: cores.reduce((a, b) => a + b, 0) / cores.length,
+        cores,
+        cpuName: "Preview CPU @ 3.6GHz",
+        memoryTotal: 16 * 1024 ** 3,
+        memoryUsed: 9.4 * 1024 ** 3,
+        disks: [{ mount: "C:\\", totalBytes: 512e9, freeBytes: 188e9 }],
+        netDown: 1.8e6 + Math.random() * 4e5,
+        netUp: 2.2e5,
+        uptimeSecs: 3 * 86400 + 4 * 3600,
+        top: [
+          { name: "chrome", count: 14, memoryBytes: 2.1e9, cpu: 6.2 },
+          { name: "Code", count: 6, memoryBytes: 1.2e9, cpu: 3.1 },
+          { name: "Discord", count: 4, memoryBytes: 6.1e8, cpu: 0.8 },
+          { name: "explorer", count: 1, memoryBytes: 2.2e8, cpu: 0.2 },
+          { name: "wisp", count: 1, memoryBytes: 9.0e7, cpu: 0.1 },
+        ],
+      };
+    },
+    speedTest: async () => {
+      await new Promise((r) => setTimeout(r, 900));
+      return { mbps: 212.4, bytes: 25_000_000, millis: 940, latencyMs: 18 };
+    },
+    weatherSearch: async (query) => {
+      if (query.trim().length < 2)
+        throw err("invalid", "Type at least two letters of a town or city");
+      return [
+        { name: "London, England, United Kingdom", latitude: 51.5, longitude: -0.12 },
+        { name: "London, Ontario, Canada", latitude: 42.98, longitude: -81.24 },
+      ];
+    },
+    weatherGet: async () =>
+      settings.weatherPlace
+        ? {
+            place: settings.weatherPlace.name,
+            temperature: 14.2,
+            windKmh: 11,
+            code: 2,
+            label: "Partly cloudy",
+            isDay: true,
+            days: ["Mon", "Tue", "Wed", "Thu", "Fri"].map((_, i) => ({
+              date: new Date(Date.now() + i * 86400_000).toISOString().slice(0, 10),
+              min: 8 + i,
+              max: 15 + (i % 3),
+              code: [2, 61, 3, 0, 80][i]!,
+              label: ["Partly cloudy", "Rain", "Overcast", "Clear", "Showers"][i]!,
+            })),
+          }
+        : null,
+    clipsList: async (k) =>
+      [...clips]
+        .filter((c) => !k || c.kind === k)
+        .sort((a, b) =>
+          a.pinned === b.pinned ? b.createdAt.localeCompare(a.createdAt) : a.pinned ? -1 : 1,
+        ),
+    clipPin: async (id, pinned) => {
+      clips = clips.map((c) => (c.id === id ? { ...c, pinned } : c));
+      clipsChanged();
+      return true;
+    },
+    clipDelete: async (id) => {
+      clips = clips.filter((c) => c.id !== id);
+      clipsChanged();
+      return true;
+    },
+    clipsClear: async (includePinned) => {
+      const before = clips.length;
+      clips = clips.filter((c) => c.pinned && !includePinned);
+      clipsChanged();
+      return before - clips.length;
+    },
+    clipCopy: async (id) => {
+      const c = clips.find((x) => x.id === id);
+      if (c) await navigator.clipboard?.writeText(c.text).catch(() => {});
+    },
+    launcherList: async () => ({ items: catalogue, recent: usage }),
+    launchItem: async (item) => {
+      if (!catalogue.some((c) => c.id === item.id))
+        throw err("invalid", "That launcher entry doesn't match its target");
+      const prev = usage.find((u) => u.id === item.id);
+      usage = [
+        { id: item.id, lastUsed: new Date().toISOString(), launches: (prev?.launches ?? 0) + 1 },
+        ...usage.filter((u) => u.id !== item.id),
+      ];
+    },
+    powerAction: async () => {},
+    wallpaperInfo: async () => ({ current: null, recent: settings.recentWallpapers }),
+    wallpaperThumb: async () => `data:image/svg+xml;base64,${btoa(sampleCaptureSvg(320, 180))}`,
+    wallpaperPick: async () => {
+      const path = `C:\\Users\\you\\Pictures\\wallpaper-${settings.recentWallpapers.length + 1}.jpg`;
+      settings = {
+        ...settings,
+        recentWallpapers: [path, ...settings.recentWallpapers].slice(0, 12),
+      };
+      save();
+      return path;
+    },
+    wallpaperSet: async (path) => {
+      settings = {
+        ...settings,
+        recentWallpapers: [path, ...settings.recentWallpapers.filter((p) => p !== path)],
+      };
+      save();
+    },
+    agentStart: async (k) => {
+      if (!hasKey)
+        throw err("missing_key", "Add your Gemini API key in Settings → Model to ask Wisp.");
+      const job: AgentJob = {
+        id: `job-${Date.now()}`,
+        kind: k.kind,
+        title: k.kind === "research" ? `Research: ${k.topic}` : "Recreate this screen as HTML",
+        status: "running",
+        progress: 0.1,
+        detail: k.kind === "research" ? "Searching the web…" : "Studying the layout…",
+        outputPath: null,
+        createdAt: new Date().toISOString(),
+        finishedAt: null,
+      };
+      jobs = [job, ...jobs];
+      jobsChanged();
+      setTimeout(() => {
+        jobs = jobs.map((j) =>
+          j.id === job.id && j.status === "running"
+            ? {
+                ...j,
+                status: "done",
+                progress: 1,
+                detail: "Saved",
+                outputPath: `Documents\\Wisp\\${k.kind === "research" ? "brief.md" : "replica.html"}`,
+                finishedAt: new Date().toISOString(),
+              }
+            : j,
+        );
+        jobsChanged();
+      }, 1500);
+      return job;
+    },
+    agentCancel: async (id) => {
+      jobs = jobs.map((j) =>
+        j.id === id && j.status === "running"
+          ? { ...j, status: "cancelled", detail: "Cancelled", finishedAt: new Date().toISOString() }
+          : j,
+      );
+      jobsChanged();
+    },
+    agentsList: async () => jobs,
+    agentDelete: async (id) => {
+      jobs = jobs.filter((j) => j.id !== id);
+      jobsChanged();
+      return true;
+    },
+    agentOpen: async () => {},
+    foregroundApp: async () => "code",
   };
 }

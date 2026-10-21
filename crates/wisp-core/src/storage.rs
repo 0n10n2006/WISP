@@ -60,6 +60,34 @@ const MIGRATIONS: &[&str] = &[
         enabled INTEGER NOT NULL DEFAULT 1
     );
     "#,
+    // v2: repeating reminders, clipboard history, launcher usage, agent jobs
+    r#"
+    ALTER TABLE tasks ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none';
+    CREATE TABLE clipboard (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        pinned INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX clipboard_created ON clipboard(created_at);
+    CREATE TABLE app_usage (
+        id TEXT PRIMARY KEY,
+        last_used TEXT NOT NULL,
+        launches INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE agent_jobs (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        progress REAL NOT NULL DEFAULT 0,
+        detail TEXT,
+        output_path TEXT,
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+    );
+    "#,
 ];
 
 pub use crate::tools::MAX_MEMORY_CHARS;
@@ -184,6 +212,69 @@ pub struct Task {
     pub completed_at: Option<DateTime<Utc>>,
     pub notification_enabled: bool,
     pub notified_at: Option<DateTime<Utc>>,
+    pub repeat: Repeat,
+}
+
+/// How a reminder recurs after it fires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Repeat {
+    #[default]
+    None,
+    Daily,
+    Weekdays,
+    Weekly,
+}
+
+impl Repeat {
+    fn as_str(self) -> &'static str {
+        match self {
+            Repeat::None => "none",
+            Repeat::Daily => "daily",
+            Repeat::Weekdays => "weekdays",
+            Repeat::Weekly => "weekly",
+        }
+    }
+    fn parse(s: &str) -> Self {
+        match s {
+            "daily" => Repeat::Daily,
+            "weekdays" => Repeat::Weekdays,
+            "weekly" => Repeat::Weekly,
+            _ => Repeat::None,
+        }
+    }
+}
+
+/// The first occurrence strictly after `now`, stepping from `due`.
+/// Weekdays are judged in the user's local `offset`.
+pub fn next_occurrence(
+    due: DateTime<Utc>,
+    repeat: Repeat,
+    now: DateTime<Utc>,
+    offset: chrono::FixedOffset,
+) -> Option<DateTime<Utc>> {
+    use chrono::{Datelike, Duration, Weekday};
+    let step = match repeat {
+        Repeat::None => return None,
+        Repeat::Daily | Repeat::Weekdays => Duration::days(1),
+        Repeat::Weekly => Duration::days(7),
+    };
+    let mut next = due;
+    for _ in 0..4000 {
+        next += step;
+        if repeat == Repeat::Weekdays
+            && matches!(
+                next.with_timezone(&offset).weekday(),
+                Weekday::Sat | Weekday::Sun
+            )
+        {
+            continue;
+        }
+        if next > now {
+            return Some(next);
+        }
+    }
+    None
 }
 
 impl Task {
@@ -197,6 +288,7 @@ impl Task {
             completed_at: opt_ts(r.get(5)?),
             notification_enabled: r.get::<_, i64>(6)? != 0,
             notified_at: opt_ts(r.get(7)?),
+            repeat: Repeat::parse(&r.get::<_, String>(8)?),
         })
     }
 }
@@ -211,6 +303,8 @@ pub struct NewTask {
     pub due_at: Option<DateTime<Utc>>,
     #[serde(default = "yes")]
     pub notification_enabled: bool,
+    #[serde(default)]
+    pub repeat: Repeat,
 }
 
 fn yes() -> bool {
@@ -272,6 +366,7 @@ pub struct StorageStats {
     pub tasks: u64,
     pub open_tasks: u64,
     pub memories: u64,
+    pub clips: u64,
     pub schema_version: u32,
 }
 
@@ -281,6 +376,7 @@ pub enum DataScope {
     History,
     Memory,
     Tasks,
+    Clipboard,
     All,
 }
 
@@ -457,7 +553,7 @@ impl Db {
     // ---- tasks ----------------------------------------------------------
 
     const TASK_COLS: &'static str =
-        "id, title, notes, due_at, created_at, completed_at, notification_enabled, notified_at";
+        "id, title, notes, due_at, created_at, completed_at, notification_enabled, notified_at, repeat";
 
     pub fn create_task(&self, t: &NewTask) -> Result<Task> {
         let title = tools::validate_title(&t.title)?;
@@ -474,11 +570,16 @@ impl Db {
             completed_at: None,
             notification_enabled: t.notification_enabled,
             notified_at: None,
+            repeat: if t.due_at.is_some() {
+                t.repeat
+            } else {
+                Repeat::None
+            },
         };
         self.with(|c| {
             c.execute(
                 &format!(
-                    "INSERT INTO tasks ({}) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, NULL)",
+                    "INSERT INTO tasks ({}) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, NULL, ?7)",
                     Self::TASK_COLS
                 ),
                 params![
@@ -487,7 +588,8 @@ impl Db {
                     task.notes,
                     task.due_at.as_ref().map(ts),
                     ts(&task.created_at),
-                    task.notification_enabled as i64
+                    task.notification_enabled as i64,
+                    task.repeat.as_str()
                 ],
             )
         })?;
@@ -540,14 +642,15 @@ impl Db {
         self.with(|c| {
             c.execute(
                 "UPDATE tasks SET title = ?2, notes = ?3, due_at = ?4, notification_enabled = ?5,
-                 notified_at = CASE WHEN ?6 THEN NULL ELSE notified_at END WHERE id = ?1",
+                 notified_at = CASE WHEN ?6 THEN NULL ELSE notified_at END, repeat = ?7 WHERE id = ?1",
                 params![
                     id,
                     title,
                     notes,
                     t.due_at.as_ref().map(ts),
                     t.notification_enabled as i64,
-                    due_changed
+                    due_changed,
+                    if t.due_at.is_some() { t.repeat } else { Repeat::None }.as_str()
                 ],
             )
         })?;
@@ -598,12 +701,33 @@ impl Db {
         })
     }
 
+    /// Record that a reminder fired. Repeating reminders move to their next
+    /// occurrence instead, so they fire again.
     pub fn mark_notified(&self, id: &str) -> Result<()> {
+        self.mark_notified_at(id, now(), *chrono::Local::now().offset())
+    }
+
+    pub fn mark_notified_at(
+        &self,
+        id: &str,
+        at: DateTime<Utc>,
+        offset: chrono::FixedOffset,
+    ) -> Result<()> {
+        let task = self.require_task(id)?;
+        let next = task
+            .due_at
+            .and_then(|d| next_occurrence(d, task.repeat, at, offset));
         self.with(|c| {
-            c.execute(
-                "UPDATE tasks SET notified_at = ?2 WHERE id = ?1",
-                params![id, ts(&now())],
-            )
+            match next {
+                Some(n) => c.execute(
+                    "UPDATE tasks SET due_at = ?2, notified_at = NULL WHERE id = ?1",
+                    params![id, ts(&n)],
+                ),
+                None => c.execute(
+                    "UPDATE tasks SET notified_at = ?2 WHERE id = ?1",
+                    params![id, ts(&at)],
+                ),
+            }
             .map(|_| ())
         })
     }
@@ -714,6 +838,13 @@ impl Db {
             if matches!(scope, DataScope::Tasks | DataScope::All) {
                 tx.execute("DELETE FROM tasks", [])?;
             }
+            if matches!(scope, DataScope::Clipboard | DataScope::All) {
+                tx.execute("DELETE FROM clipboard", [])?;
+            }
+            if matches!(scope, DataScope::All) {
+                tx.execute("DELETE FROM app_usage", [])?;
+                tx.execute("DELETE FROM agent_jobs", [])?;
+            }
             tx.commit()?;
             // Reclaim space so deleted text doesn't linger in the file.
             c.execute_batch("VACUUM")
@@ -732,9 +863,441 @@ impl Db {
                 tasks: count("SELECT COUNT(*) FROM tasks")?,
                 open_tasks: count("SELECT COUNT(*) FROM tasks WHERE completed_at IS NULL")?,
                 memories: count("SELECT COUNT(*) FROM memory")?,
+                clips: count("SELECT COUNT(*) FROM clipboard")?,
                 schema_version: c.pragma_query_value(None, "user_version", |r| r.get(0))?,
             })
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard history, launcher usage, agent jobs (schema v2).
+
+pub const MAX_CLIPS: usize = 100;
+pub const MAX_CLIP_CHARS: usize = 20_000;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipEntry {
+    pub id: String,
+    /// "text" or "link".
+    pub kind: String,
+    pub text: String,
+    pub created_at: DateTime<Utc>,
+    pub pinned: bool,
+}
+
+/// Heuristic: text that looks like a password, key or token is never stored,
+/// even if the source app didn't mark it as private.
+pub fn looks_sensitive(text: &str) -> bool {
+    let t = text.trim();
+    if crate::redact::redact(t) != t {
+        return true;
+    }
+    let lower = t.to_ascii_lowercase();
+    if lower.contains("-----begin") && lower.contains("private key") {
+        return true;
+    }
+    // A single "word" of 16–128 chars mixing letters, digits and symbols.
+    if !t.contains(char::is_whitespace) && (16..=128).contains(&t.len()) && !t.contains("://") {
+        let upper = t.chars().any(|c| c.is_ascii_uppercase());
+        let lowerc = t.chars().any(|c| c.is_ascii_lowercase());
+        let digit = t.chars().any(|c| c.is_ascii_digit());
+        let symbol = t.chars().any(|c| !c.is_ascii_alphanumeric());
+        if [upper, lowerc, digit, symbol]
+            .iter()
+            .filter(|b| **b)
+            .count()
+            >= 3
+        {
+            return true;
+        }
+    }
+    false
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppUsage {
+    pub id: String,
+    pub last_used: DateTime<Utc>,
+    pub launches: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentJob {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    /// "running" | "done" | "failed" | "cancelled"
+    pub status: String,
+    pub progress: f32,
+    pub detail: Option<String>,
+    pub output_path: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+impl AgentJob {
+    fn from_row(r: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: r.get(0)?,
+            kind: r.get(1)?,
+            title: r.get(2)?,
+            status: r.get(3)?,
+            progress: r.get::<_, f64>(4)? as f32,
+            detail: r.get(5)?,
+            output_path: r.get(6)?,
+            created_at: parse_ts(&r.get::<_, String>(7)?),
+            finished_at: opt_ts(r.get(8)?),
+        })
+    }
+}
+
+impl Db {
+    /// Add a clipboard entry; returns `None` when it is skipped.
+    pub fn add_clip(&self, text: &str) -> Result<Option<ClipEntry>> {
+        let trimmed = text.trim();
+        if trimmed.is_empty()
+            || trimmed.chars().count() > MAX_CLIP_CHARS * 5
+            || looks_sensitive(trimmed)
+        {
+            return Ok(None);
+        }
+        let stored: String = trimmed.chars().take(MAX_CLIP_CHARS).collect();
+        let kind = if !stored.contains('\n') && tools::validate_url(&stored).is_ok() {
+            "link"
+        } else {
+            "text"
+        };
+        let entry = ClipEntry {
+            id: new_id(),
+            kind: kind.into(),
+            text: stored,
+            created_at: now(),
+            pinned: false,
+        };
+        self.with(|c| {
+            let tx = c.transaction()?;
+            // Re-copying moves an entry to the top (keeping its pin).
+            let pinned: Option<i64> = tx
+                .query_row("SELECT pinned FROM clipboard WHERE text = ?1", params![entry.text], |r| r.get(0))
+                .optional()?;
+            tx.execute("DELETE FROM clipboard WHERE text = ?1", params![entry.text])?;
+            tx.execute(
+                "INSERT INTO clipboard (id, kind, text, created_at, pinned) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![entry.id, entry.kind, entry.text, ts(&entry.created_at), pinned.unwrap_or(0)],
+            )?;
+            tx.execute(
+                "DELETE FROM clipboard WHERE pinned = 0 AND id NOT IN
+                 (SELECT id FROM clipboard WHERE pinned = 0 ORDER BY created_at DESC LIMIT ?1)",
+                params![MAX_CLIPS as i64],
+            )?;
+            tx.commit()
+        })?;
+        Ok(Some(entry))
+    }
+
+    pub fn list_clips(&self, kind: Option<&str>) -> Result<Vec<ClipEntry>> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT id, kind, text, created_at, pinned FROM clipboard
+                 WHERE (?1 IS NULL OR kind = ?1) ORDER BY pinned DESC, created_at DESC LIMIT 200",
+            )?;
+            let rows = stmt.query_map(params![kind], |r| {
+                Ok(ClipEntry {
+                    id: r.get(0)?,
+                    kind: r.get(1)?,
+                    text: r.get(2)?,
+                    created_at: parse_ts(&r.get::<_, String>(3)?),
+                    pinned: r.get::<_, i64>(4)? != 0,
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
+    pub fn pin_clip(&self, id: &str, pinned: bool) -> Result<bool> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE clipboard SET pinned = ?2 WHERE id = ?1",
+                params![id, pinned as i64],
+            )
+            .map(|n| n > 0)
+        })
+    }
+
+    pub fn delete_clip(&self, id: &str) -> Result<bool> {
+        self.with(|c| {
+            c.execute("DELETE FROM clipboard WHERE id = ?1", params![id])
+                .map(|n| n > 0)
+        })
+    }
+
+    /// Remove unpinned entries (or everything with `include_pinned`).
+    pub fn clear_clips(&self, include_pinned: bool) -> Result<u64> {
+        let sql = if include_pinned {
+            "DELETE FROM clipboard"
+        } else {
+            "DELETE FROM clipboard WHERE pinned = 0"
+        };
+        self.with(|c| c.execute(sql, []).map(|n| n as u64))
+    }
+
+    pub fn record_launch(&self, id: &str) -> Result<()> {
+        if id.is_empty() || id.len() > 500 {
+            return Err(WispError::invalid("Invalid app id"));
+        }
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO app_usage (id, last_used, launches) VALUES (?1, ?2, 1)
+                 ON CONFLICT(id) DO UPDATE SET last_used = excluded.last_used, launches = launches + 1",
+                params![id, ts(&now())],
+            )
+            .map(|_| ())
+        })
+    }
+
+    pub fn recent_apps(&self, limit: u32) -> Result<Vec<AppUsage>> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT id, last_used, launches FROM app_usage ORDER BY last_used DESC LIMIT ?1",
+            )?;
+            let rows = stmt.query_map(params![limit.min(100)], |r| {
+                Ok(AppUsage {
+                    id: r.get(0)?,
+                    last_used: parse_ts(&r.get::<_, String>(1)?),
+                    launches: r.get::<_, i64>(2)? as u32,
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
+    const JOB_COLS: &'static str =
+        "id, kind, title, status, progress, detail, output_path, created_at, finished_at";
+
+    pub fn create_job(&self, kind: &str, title: &str) -> Result<AgentJob> {
+        let job = AgentJob {
+            id: new_id(),
+            kind: kind.into(),
+            title: title.chars().take(200).collect(),
+            status: "running".into(),
+            progress: 0.0,
+            detail: None,
+            output_path: None,
+            created_at: now(),
+            finished_at: None,
+        };
+        self.with(|c| {
+            c.execute(
+                &format!(
+                    "INSERT INTO agent_jobs ({}) VALUES (?1, ?2, ?3, ?4, 0, NULL, NULL, ?5, NULL)",
+                    Self::JOB_COLS
+                ),
+                params![job.id, job.kind, job.title, job.status, ts(&job.created_at)],
+            )
+        })?;
+        Ok(job)
+    }
+
+    pub fn update_job(
+        &self,
+        id: &str,
+        status: &str,
+        progress: f32,
+        detail: Option<&str>,
+        output_path: Option<&str>,
+    ) -> Result<Option<AgentJob>> {
+        let finished = (status != "running").then(|| ts(&now()));
+        self.with(|c| {
+            c.execute(
+                "UPDATE agent_jobs SET status = ?2, progress = ?3, detail = ?4,
+                 output_path = COALESCE(?5, output_path), finished_at = COALESCE(?6, finished_at) WHERE id = ?1",
+                params![id, status, progress.clamp(0.0, 1.0) as f64, detail.map(crate::redact::redact), output_path, finished],
+            )?;
+            c.query_row(
+                &format!("SELECT {} FROM agent_jobs WHERE id = ?1", Self::JOB_COLS),
+                params![id],
+                AgentJob::from_row,
+            )
+            .optional()
+        })
+    }
+
+    pub fn list_jobs(&self, limit: u32) -> Result<Vec<AgentJob>> {
+        self.with(|c| {
+            let mut stmt = c.prepare(&format!(
+                "SELECT {} FROM agent_jobs ORDER BY created_at DESC LIMIT ?1",
+                Self::JOB_COLS
+            ))?;
+            let rows = stmt.query_map(params![limit.min(200)], AgentJob::from_row)?;
+            rows.collect()
+        })
+    }
+
+    pub fn delete_job(&self, id: &str) -> Result<bool> {
+        self.with(|c| {
+            c.execute("DELETE FROM agent_jobs WHERE id = ?1", params![id])
+                .map(|n| n > 0)
+        })
+    }
+
+    /// Jobs still "running" from a previous session were interrupted.
+    pub fn fail_interrupted_jobs(&self) -> Result<u64> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE agent_jobs SET status = 'failed', detail = 'Interrupted when Wisp closed', finished_at = ?1
+                 WHERE status = 'running'",
+                params![ts(&now())],
+            )
+            .map(|n| n as u64)
+        })
+    }
+}
+
+#[cfg(test)]
+mod v2_tests {
+    use super::*;
+    use chrono::{Duration, FixedOffset, TimeZone};
+
+    fn db() -> Db {
+        Db::open_in_memory().unwrap()
+    }
+
+    #[test]
+    fn recurrence() {
+        let utc = FixedOffset::east_opt(0).unwrap();
+        // Friday 2026-10-23 09:00 UTC
+        let fri = Utc.with_ymd_and_hms(2026, 10, 23, 9, 0, 0).unwrap();
+        let after = fri + Duration::minutes(1);
+        assert_eq!(next_occurrence(fri, Repeat::None, after, utc), None);
+        assert_eq!(
+            next_occurrence(fri, Repeat::Daily, after, utc),
+            Some(fri + Duration::days(1))
+        );
+        assert_eq!(
+            next_occurrence(fri, Repeat::Weekly, after, utc),
+            Some(fri + Duration::days(7))
+        );
+        // Weekdays skip Saturday and Sunday → Monday.
+        assert_eq!(
+            next_occurrence(fri, Repeat::Weekdays, after, utc),
+            Some(fri + Duration::days(3))
+        );
+        // Catches up if Wisp was off for days.
+        let later = fri + Duration::days(10);
+        assert!(next_occurrence(fri, Repeat::Daily, later, utc).unwrap() > later);
+    }
+
+    #[test]
+    fn repeating_reminder_reschedules_instead_of_finishing() {
+        let d = db();
+        // Whole seconds: the database stores millisecond precision.
+        let due = Utc.timestamp_opt(Utc::now().timestamp() + 300, 0).unwrap();
+        let t = d
+            .create_task(&NewTask {
+                title: "Stand up".into(),
+                notes: None,
+                due_at: Some(due),
+                notification_enabled: true,
+                repeat: Repeat::Daily,
+            })
+            .unwrap();
+        assert_eq!(t.repeat, Repeat::Daily);
+        d.mark_notified_at(
+            &t.id,
+            due + Duration::seconds(1),
+            FixedOffset::east_opt(0).unwrap(),
+        )
+        .unwrap();
+        let t2 = d.get_task(&t.id).unwrap().unwrap();
+        assert_eq!(t2.due_at, Some(due + Duration::days(1)));
+        assert!(t2.notified_at.is_none());
+        // Undated tasks can't repeat.
+        let u = d
+            .create_task(&NewTask {
+                title: "Someday".into(),
+                notes: None,
+                due_at: None,
+                notification_enabled: true,
+                repeat: Repeat::Weekly,
+            })
+            .unwrap();
+        assert_eq!(u.repeat, Repeat::None);
+    }
+
+    #[test]
+    fn clipboard_history_dedupes_caps_and_skips_secrets() {
+        let d = db();
+        assert!(d.add_clip("   ").unwrap().is_none());
+        assert!(d
+            .add_clip("AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI")
+            .unwrap()
+            .is_none());
+        assert!(d.add_clip("Tr0ub4dor&3xyzQw9!").unwrap().is_none());
+        let link = d.add_clip("https://example.com/page").unwrap().unwrap();
+        assert_eq!(link.kind, "link");
+        d.add_clip("hello world").unwrap();
+        d.pin_clip(&link.id, true).unwrap();
+        d.add_clip("https://example.com/page").unwrap();
+        let all = d.list_clips(None).unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all[0].pinned, "re-copied entry keeps its pin");
+        for i in 0..MAX_CLIPS + 10 {
+            d.add_clip(&format!("note number {i}")).unwrap();
+        }
+        let all = d.list_clips(None).unwrap();
+        assert_eq!(
+            all.len(),
+            MAX_CLIPS + 1,
+            "pinned entries don't count toward the cap"
+        );
+        assert_eq!(d.list_clips(Some("link")).unwrap().len(), 1);
+        d.clear_clips(false).unwrap();
+        assert_eq!(d.list_clips(None).unwrap().len(), 1);
+        d.clear_clips(true).unwrap();
+        assert!(d.list_clips(None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn sensitive_heuristic_keeps_normal_text() {
+        assert!(!looks_sensitive("Meeting at 3pm in room 4B"));
+        assert!(!looks_sensitive("https://github.com/0n10n2006/WISP"));
+        assert!(!looks_sensitive("supercalifragilistic"));
+        assert!(looks_sensitive("-----BEGIN RSA PRIVATE KEY-----\nabc"));
+    }
+
+    #[test]
+    fn launcher_usage_and_jobs() {
+        let d = db();
+        d.record_launch("lnk:spotify").unwrap();
+        d.record_launch("lnk:spotify").unwrap();
+        d.record_launch("uri:ms-calculator:").unwrap();
+        let recent = d.recent_apps(10).unwrap();
+        assert_eq!(recent.len(), 2);
+        assert_eq!(
+            recent
+                .iter()
+                .find(|r| r.id == "lnk:spotify")
+                .unwrap()
+                .launches,
+            2
+        );
+        assert!(d.record_launch("").is_err());
+
+        let j = d.create_job("replica", "Replica of example.com").unwrap();
+        let j = d
+            .update_job(&j.id, "running", 0.5, Some("Analysing"), None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(j.progress, 0.5);
+        assert_eq!(d.fail_interrupted_jobs().unwrap(), 1);
+        let j = d.list_jobs(10).unwrap().remove(0);
+        assert_eq!(j.status, "failed");
+        assert!(j.finished_at.is_some());
+        assert!(d.delete_job(&j.id).unwrap());
     }
 }
 
@@ -833,6 +1396,7 @@ mod tests {
                 notes: None,
                 due_at: Some(due),
                 notification_enabled: true,
+                repeat: Repeat::None,
             })
             .unwrap();
         assert_eq!(d.list_tasks(false).unwrap().len(), 1);
@@ -862,13 +1426,15 @@ mod tests {
             title: " ".into(),
             notes: None,
             due_at: None,
-            notification_enabled: true
+            notification_enabled: true,
+            repeat: Repeat::None,
         }));
         assert!(bad(NewTask {
             title: "x".into(),
             notes: None,
             due_at: Some(Utc::now() - Duration::days(1)),
-            notification_enabled: true
+            notification_enabled: true,
+            repeat: Repeat::None,
         }));
         // Undated tasks are fine.
         assert!(d
@@ -876,7 +1442,8 @@ mod tests {
                 title: "Someday".into(),
                 notes: Some("  ".into()),
                 due_at: None,
-                notification_enabled: true
+                notification_enabled: true,
+                repeat: Repeat::None,
             })
             .unwrap()
             .notes
@@ -893,6 +1460,7 @@ mod tests {
                 notes: None,
                 due_at: Some(Utc::now() + Duration::minutes(5)),
                 notification_enabled: true,
+                repeat: Repeat::None,
             })
             .unwrap();
         d.mark_notified(&t.id).unwrap();
@@ -904,6 +1472,7 @@ mod tests {
                     notes: Some("n".into()),
                     due_at: Some(Utc::now() + Duration::hours(2)),
                     notification_enabled: true,
+                    repeat: Repeat::None,
                 },
             )
             .unwrap();
@@ -940,6 +1509,7 @@ mod tests {
             notes: None,
             due_at: None,
             notification_enabled: true,
+            repeat: Repeat::None,
         })
         .unwrap();
         d.log_request(&RequestLog::new("ask", "m", "text")).unwrap();

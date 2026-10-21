@@ -1,7 +1,7 @@
 use super::CmdResult;
 use crate::state::IslandLayout;
-use crate::windows;
-use tauri::AppHandle;
+use crate::windows::{self, NotchMode};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
 use wisp_core::tools::{validate_url, MAX_COPY_CHARS};
@@ -9,13 +9,39 @@ use wisp_core::{ErrorCode, WispError};
 
 #[tauri::command]
 pub fn set_island_expanded(app: AppHandle, expanded: bool) -> IslandLayout {
-    windows::set_island_expanded(&app, expanded)
+    if expanded {
+        windows::set_island_expanded(&app, true)
+    } else {
+        windows::close_bar(&app);
+        *app.state::<crate::state::AppState>()
+            .island
+            .lock()
+            .expect("island")
+    }
+}
+
+/// Switch notch mode; `height` sizes the open bar to its content.
+#[tauri::command]
+pub fn set_island_mode(app: AppHandle, mode: NotchMode, height: Option<f64>) -> IslandLayout {
+    if mode == NotchMode::Open {
+        windows::set_mode(&app, mode, height)
+    } else {
+        let layout = windows::set_mode(&app, mode, None);
+        if mode == NotchMode::Sliver {
+            windows::set_island_visible(&app, windows::sliver_wanted(&app));
+        }
+        layout
+    }
 }
 
 #[tauri::command]
 pub fn hide_island(app: AppHandle) {
-    windows::set_island_expanded(&app, false);
-    windows::set_island_visible(&app, false);
+    windows::close_bar(&app);
+}
+
+#[tauri::command]
+pub fn set_tucked(app: AppHandle, tucked: bool) {
+    windows::set_tucked(&app, tucked);
 }
 
 #[tauri::command]

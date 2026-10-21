@@ -181,6 +181,21 @@ impl GeminiClient {
         Ok(out)
     }
 
+    /// Warm up DNS/TLS/HTTP2 to the API host (a tiny model-list call that
+    /// doesn't count toward generation quota). Errors are ignored.
+    pub async fn prewarm(&self, key: &str) {
+        let url = format!("{}/v1beta/models", self.base_url);
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            self.http
+                .get(url)
+                .header("x-goog-api-key", key)
+                .query(&[("pageSize", "1")])
+                .send(),
+        )
+        .await;
+    }
+
     /// Validate a key and report whether `model` is available to it.
     pub async fn test_connection(&self, key: &str, model: &str) -> Result<ConnectionReport> {
         let started = std::time::Instant::now();

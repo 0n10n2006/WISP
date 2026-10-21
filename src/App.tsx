@@ -1,11 +1,17 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { useThemeEffect } from "./hooks/useTheme";
+import { Notch } from "./screens/notch/Notch";
 import { host } from "./services/host";
-import { Island } from "./screens/Island";
-import { SelectOverlay } from "./screens/SelectOverlay";
-import { SettingsApp } from "./screens/settings/SettingsApp";
-import { subscribeSettings, useSettings } from "./state/settings";
 import { DEFAULT_SETTINGS } from "./services/types";
+import { subscribeSettings, useSettings } from "./state/settings";
+
+const SelectOverlay = lazy(() =>
+  import("./screens/SelectOverlay").then((m) => ({ default: m.SelectOverlay })),
+);
+const Highlight = lazy(() => import("./screens/Highlight"));
+const SettingsApp = lazy(() =>
+  import("./screens/settings/SettingsApp").then((m) => ({ default: m.SettingsApp })),
+);
 
 export function App() {
   const snapshot = useSettings((s) => s.snapshot);
@@ -23,6 +29,10 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.window = kind;
   }, [kind]);
+  const accent = settings.accent;
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent;
+  }, [accent]);
 
   // Pause decorative animation whenever Wisp isn't visible (PRD §22.1).
   useEffect(() => {
@@ -42,7 +52,16 @@ export function App() {
     };
   }, []);
 
-  if (kind === "island") return <Island />;
-  if (kind === "overlay") return <SelectOverlay />;
-  return <SettingsApp />;
+  if (kind === "island") return <Notch />;
+  return (
+    <Suspense fallback={null}>
+      {kind === "overlay" ? (
+        <SelectOverlay />
+      ) : kind === "highlight" ? (
+        <Highlight />
+      ) : (
+        <SettingsApp />
+      )}
+    </Suspense>
+  );
 }

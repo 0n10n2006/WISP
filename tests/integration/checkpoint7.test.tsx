@@ -15,19 +15,6 @@ async function island() {
 }
 
 describe("island controls", () => {
-  it("pins and unpins Wisp from the panel", async () => {
-    await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
-    const user = await island();
-    const pin = await screen.findByRole("button", { name: /keep wisp on top/i });
-    expect(pin).toHaveAttribute("aria-pressed", "true");
-    await user.click(pin);
-    await waitFor(() => expect(useSettings.getState().snapshot?.settings.alwaysOnTop).toBe(false));
-    expect(screen.getByRole("button", { name: /keep wisp on top/i })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-  });
-
   it("lets a conversation opt out of memory", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const ask = vi.spyOn(h, "ask");
@@ -35,7 +22,7 @@ describe("island controls", () => {
     await user.click(
       await screen.findByRole("button", { name: /use memory in this conversation/i }),
     );
-    await user.type(screen.getByRole("textbox", { name: "Ask Wisp" }), "hi{Enter}");
+    await user.type(screen.getByRole("combobox", { name: /ask wisp/i }), "hi{Enter}");
     await waitFor(() => expect(ask).toHaveBeenCalled());
     expect(ask.mock.calls[0]![0].useMemory).toBe(false);
     // A new conversation turns memory back on.
@@ -47,7 +34,10 @@ describe("island controls", () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const ask = vi.spyOn(h, "ask");
     const user = await island();
-    await user.type(await screen.findByRole("textbox", { name: "Ask Wisp" }), "test /quota{Enter}");
+    await user.type(
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
+      "test /quota{Enter}",
+    );
     const btn = await screen.findByRole("button", {
       name: /switch to gemini 2.5 flash-lite and retry/i,
     });
@@ -56,13 +46,17 @@ describe("island controls", () => {
       expect(useSettings.getState().snapshot?.settings.selectedModel).toBe("gemini-2.5-flash-lite"),
     );
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(useConversation.getState().requestActive).toBe(false));
   });
 
   it("copies a single code block", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const copy = vi.spyOn(h, "copyText").mockResolvedValue();
     const user = await island();
-    await user.type(await screen.findByRole("textbox", { name: "Ask Wisp" }), "code please{Enter}");
+    await user.type(
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
+      "code please{Enter}",
+    );
     await screen.findByRole("button", { name: "Copy" }, { timeout: 5000 });
     await user.click(screen.getByRole("button", { name: "Copy code" }));
     expect(copy).toHaveBeenCalledWith('const wisp = "quietly capable";');

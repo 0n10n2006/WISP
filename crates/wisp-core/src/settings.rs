@@ -31,6 +31,55 @@ pub enum MotionPreference {
     Full,
 }
 
+pub const MAX_PERSONA_CHARS: usize = 1000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DictationStyle {
+    /// Exactly as spoken.
+    Verbatim,
+    /// Remove filler words and fix grammar, keep the speaker's voice.
+    #[default]
+    Clean,
+    /// Polished, professional wording.
+    Formal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Tone {
+    #[default]
+    Concise,
+    Friendly,
+    Professional,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Accent {
+    #[default]
+    Cyan,
+    Lavender,
+    Ember,
+    Mint,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Persona {
+    pub tone: Tone,
+    /// Free-form instructions appended to Wisp's system prompt.
+    pub instructions: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeatherPlace {
+    pub name: String,
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WindowPosition {
     pub x: i32,
@@ -53,11 +102,27 @@ pub struct Settings {
     pub global_shortcuts: Shortcuts,
     pub selected_model: String,
     pub voice_enabled: bool,
-    pub speak_responses: bool,
-    /// Windows voice name for read-aloud; empty means the system default.
-    pub tts_voice: String,
-    /// Speech rate, 0.5–2.0.
-    pub tts_rate: f32,
+    /// Skip the model's "thinking" step for much faster answers.
+    pub fast_mode: bool,
+    pub dictation_style: DictationStyle,
+    /// Hold Ctrl+Win to dictate and Win+Alt to ask by voice.
+    pub hold_to_talk: bool,
+    /// Hide the notch while a fullscreen app (game, video) is in front.
+    pub auto_hide_fullscreen: bool,
+    /// The notch is tucked away until summoned.
+    pub tucked: bool,
+    /// Local clipboard history (off by default; never records excluded content).
+    pub clipboard_history: bool,
+    /// Place used for the weather card; `None` turns weather off.
+    pub weather_place: Option<WeatherPlace>,
+    pub persona: Persona,
+    pub accent: Accent,
+    /// Launcher ids the user starred.
+    pub starred_apps: Vec<String>,
+    /// Default focus-timer length in minutes.
+    pub focus_minutes: u32,
+    /// Wallpapers set from the dashboard, most recent first.
+    pub recent_wallpapers: Vec<String>,
     pub screen_context_enabled: bool,
     pub dictation_auto_insert: bool,
     pub retain_audio: bool,
@@ -95,9 +160,18 @@ impl Default for Settings {
             global_shortcuts: Shortcuts::default(),
             selected_model: DEFAULT_MODEL.into(),
             voice_enabled: true,
-            speak_responses: false,
-            tts_voice: String::new(),
-            tts_rate: 1.0,
+            fast_mode: true,
+            dictation_style: DictationStyle::Clean,
+            hold_to_talk: true,
+            auto_hide_fullscreen: true,
+            tucked: false,
+            clipboard_history: false,
+            weather_place: None,
+            persona: Persona::default(),
+            accent: Accent::Cyan,
+            starred_apps: Vec::new(),
+            focus_minutes: 25,
+            recent_wallpapers: Vec::new(),
             screen_context_enabled: true,
             dictation_auto_insert: false,
             retain_audio: false,
@@ -152,12 +226,31 @@ impl Settings {
                 "Island size must be between 100% and 130%",
             ));
         }
-        if !(0.5..=2.0).contains(&s.tts_rate) || !s.tts_rate.is_finite() {
-            return Err(WispError::invalid(
-                "Speech rate must be between 0.5× and 2×",
-            ));
+        s.persona.instructions = s.persona.instructions.trim().to_string();
+        if s.persona.instructions.chars().count() > MAX_PERSONA_CHARS {
+            return Err(WispError::invalid(format!(
+                "Custom instructions must be under {MAX_PERSONA_CHARS} characters"
+            )));
         }
-        s.tts_voice = s.tts_voice.trim().chars().take(200).collect();
+        if !(1..=180).contains(&s.focus_minutes) {
+            return Err(WispError::invalid("Focus length must be 1–180 minutes"));
+        }
+        if s.starred_apps.len() > 50 || s.starred_apps.iter().any(|a| a.len() > 500) {
+            return Err(WispError::invalid("Too many starred apps"));
+        }
+        if s.recent_wallpapers.len() > 12 || s.recent_wallpapers.iter().any(|p| p.len() > 1000) {
+            return Err(WispError::invalid("Too many recent wallpapers"));
+        }
+        if let Some(p) = &mut s.weather_place {
+            p.name = p.name.trim().chars().take(120).collect();
+            let ok = p.latitude.is_finite()
+                && p.longitude.is_finite()
+                && (-90.0..=90.0).contains(&p.latitude)
+                && (-180.0..=180.0).contains(&p.longitude);
+            if !ok || p.name.is_empty() {
+                return Err(WispError::invalid("Invalid weather location"));
+            }
+        }
         if s.history_retention_days > 365 {
             return Err(WispError::invalid("History retention must be 0–365 days"));
         }
@@ -303,8 +396,21 @@ mod tests {
             .patched(&json!({"historyRetentionDays": 9999}))
             .is_err());
         assert!(Settings::default()
-            .patched(&json!({"ttsRate": 5.0}))
+            .patched(&json!({"focusMinutes": 0}))
             .is_err());
+        assert!(Settings::default()
+            .patched(&json!({"persona": {"instructions": "x".repeat(2000)}}))
+            .is_err());
+        assert!(Settings::default()
+            .patched(
+                &json!({"weatherPlace": {"name": "Nowhere", "latitude": 200.0, "longitude": 0.0}})
+            )
+            .is_err());
+        let ok = Settings::default()
+            .patched(&json!({"weatherPlace": {"name": " Leeds ", "latitude": 53.8, "longitude": -1.55}, "dictationStyle": "formal", "accent": "ember"}))
+            .unwrap();
+        assert_eq!(ok.weather_place.unwrap().name, "Leeds");
+        assert_eq!(ok.dictation_style, DictationStyle::Formal);
         assert!(Settings::default()
             .patched(&json!({"selectedModel": "../etc"}))
             .is_err());
