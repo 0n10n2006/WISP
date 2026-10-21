@@ -1,0 +1,146 @@
+/* Wisp design tokens. Components use only the semantic tokens below —
+   never raw colour values. Dark is the default and most polished theme. */
+
+:root {
+  --font-ui:
+    "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display:
+    "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --text-xs: 0.8125rem; /* 13px */
+  --text-sm: 0.875rem; /* 14px */
+  --text-md: 0.9375rem; /* 15px */
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 220ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Brand palette (raw). Referenced only by semantic tokens. */
+  --palette-navy-950: #0b1020;
+  --palette-navy-900: #121a2b;
+  --palette-navy-800: #1a263b;
+  --palette-navy-700: #26344d;
+  --palette-ink-50: #f4f7fb;
+  --palette-ink-300: #aab6c8;
+  --palette-ink-500: #6f7d93;
+  --palette-cyan: #78e4f2;
+  --palette-lavender: #b6a0ff;
+  --palette-green: #75d6a5;
+  --palette-amber: #f4c978;
+  --palette-rose: #ff8d9a;
+  --palette-paper: #f5f7fb;
+  --palette-white: #ffffff;
+  --palette-ink-900: #172033;
+  --palette-ink-700: #44506a;
+  --palette-line-light: #dde3ee;
+  --palette-cyan-deep: #0b7f8f;
+  --palette-lavender-deep: #6b52d6;
+  --palette-green-deep: #1f7a4f;
+  --palette-amber-deep: #8a5a00;
+  --palette-rose-deep: #b4233a;
+}
+
+/* ---------- Dark (default) ---------- */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: var(--palette-navy-950);
+  --color-surface: var(--palette-navy-900);
+  --color-surface-elevated: var(--palette-navy-800);
+  --color-surface-glass: rgb(18 26 43 / 0.92);
+  --color-border: rgb(170 182 200 / 0.14);
+  --color-border-strong: rgb(170 182 200 / 0.28);
+  --color-text: var(--palette-ink-50);
+  --color-text-secondary: var(--palette-ink-300);
+  --color-text-muted: #8b98ad;
+  --color-accent: var(--palette-cyan);
+  --color-accent-2: var(--palette-lavender);
+  --color-on-accent: var(--palette-navy-950);
+  --color-focus: var(--palette-cyan);
+  --color-success: var(--palette-green);
+  --color-warning: var(--palette-amber);
+  --color-error: var(--palette-rose);
+  --color-success-bg: rgb(117 214 165 / 0.12);
+  --color-warning-bg: rgb(244 201 120 / 0.12);
+  --color-error-bg: rgb(255 141 154 / 0.12);
+  --color-code-bg: rgb(11 16 32 / 0.7);
+  --color-user-bubble: var(--palette-navy-800);
+  --shadow-panel: 0 12px 40px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.3);
+  --orb-core-1: #ffffff;
+  --orb-core-2: #c9f6fb;
+  --orb-core-3: var(--palette-cyan);
+  --orb-core-4: #8c8bf5;
+  --orb-halo: var(--palette-cyan);
+  --orb-halo-2: var(--palette-lavender);
+  --orb-glyph: var(--palette-navy-950);
+}
+
+/* ---------- Light ---------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: var(--palette-paper);
+  --color-surface: var(--palette-white);
+  --color-surface-elevated: #eef2f8;
+  --color-surface-glass: rgb(255 255 255 / 0.96);
+  --color-border: var(--palette-line-light);
+  --color-border-strong: #c3ccdb;
+  --color-text: var(--palette-ink-900);
+  --color-text-secondary: var(--palette-ink-700);
+  --color-text-muted: #5d6880;
+  --color-accent: var(--palette-cyan-deep);
+  --color-accent-2: var(--palette-lavender-deep);
+  --color-on-accent: var(--palette-white);
+  --color-focus: var(--palette-lavender-deep);
+  --color-success: var(--palette-green-deep);
+  --color-warning: var(--palette-amber-deep);
+  --color-error: var(--palette-rose-deep);
+  --color-success-bg: #e3f5ec;
+  --color-warning-bg: #fbf0d9;
+  --color-error-bg: #fde6e9;
+  --color-code-bg: #eef2f8;
+  --color-user-bubble: #eaf0f8;
+  --shadow-panel: 0 12px 32px rgb(23 32 51 / 0.16), 0 2px 6px rgb(23 32 51 / 0.08);
+  --orb-core-1: #ffffff;
+  --orb-core-2: #bff1f7;
+  --orb-core-3: #3fc7da;
+  --orb-core-4: #7d6cf0;
+  --orb-halo: #3fc7da;
+  --orb-halo-2: #9c86ff;
+  --orb-glyph: var(--palette-ink-900);
+}
+
+/* ---------- Windows high contrast / forced colours ---------- */
+@media (forced-colors: active) {
+  :root {
+    --color-bg: Canvas;
+    --color-surface: Canvas;
+    --color-surface-elevated: Canvas;
+    --color-surface-glass: Canvas;
+    --color-border: CanvasText;
+    --color-border-strong: CanvasText;
+    --color-text: CanvasText;
+    --color-text-secondary: CanvasText;
+    --color-text-muted: GrayText;
+    --color-accent: Highlight;
+    --color-on-accent: HighlightText;
+    --color-focus: Highlight;
+    --shadow-panel: none;
+  }
+}

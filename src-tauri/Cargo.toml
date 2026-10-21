@@ -1,0 +1,39 @@
+[package]
+name = "wisp"
+description = "Wisp — a small AI companion for your desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "wisp"
+
+[lib]
+name = "wisp_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = "2.7.4"
+
+[dependencies]
+chrono = "0.4.45"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tauri = { version = "2.12.5", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-clipboard-manager = "2.5.0"
+tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-notification = "2.7.0"
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-single-instance = "2.5.4"
+tokio = { version = "1.54.0", features = ["sync", "time", "macros", "rt"] }
+tokio-util = "0.7.20"
+uuid = { version = "1.28.0", features = ["v4"] }
+wisp-core = { path = "../crates/wisp-core" }
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }

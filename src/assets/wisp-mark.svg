@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Wisp">
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="54%" r="50%">
+      <stop offset="0%" stop-color="#78E4F2" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#B6A0FF" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#B6A0FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="42%" cy="38%" r="62%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="35%" stop-color="#C9F6FB"/>
+      <stop offset="75%" stop-color="#78E4F2"/>
+      <stop offset="100%" stop-color="#8C8BF5"/>
+    </radialGradient>
+    <linearGradient id="trail" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#B6A0FF" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#B6A0FF" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="#0B1020"/>
+  <circle cx="128" cy="136" r="104" fill="url(#halo)"/>
+  <path d="M60 210 C 82 196, 92 178, 98 160" stroke="url(#trail)" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <circle cx="134" cy="124" r="56" fill="url(#core)"/>
+  <circle cx="116" cy="106" r="14" fill="#FFFFFF" fill-opacity="0.85"/>
+</svg>
