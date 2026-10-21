@@ -4,7 +4,9 @@ mod actions;
 mod agents;
 mod apps;
 mod capture;
+mod chrome;
 mod clipboard_history;
+mod com_worker;
 mod commands;
 mod crash;
 mod foreground;
@@ -69,7 +71,6 @@ pub fn run() {
                     Db::open_in_memory()?
                 }
             };
-            let _ = db.prune_history(settings.history_retention_days.max(1), settings.content_history);
             let _ = db.fail_interrupted_jobs();
             selftest::mark("database");
             app.manage(AppState {
@@ -90,6 +91,7 @@ pub fn run() {
                 island: Mutex::new(Default::default()),
                 fullscreen_active: Mutex::new(false),
                 stats: Default::default(),
+                catalogue: Mutex::new(None),
                 highlights: Mutex::new(Vec::new()),
             });
 
@@ -98,16 +100,16 @@ pub fn run() {
             tray::create(&handle)?;
             selftest::mark("tray");
             reminders::spawn(handle.clone());
-            shortcuts::register_all(&handle, &settings.global_shortcuts);
-            selftest::mark("shortcuts");
             windows::place_island_initially(&handle);
             if let Some(win) = windows::island(&handle) {
+                chrome::borderless(&win);
                 let _ = win.set_always_on_top(settings.always_on_top);
                 let autostarted = std::env::args().any(|a| a == "--autostart");
                 let show = !settings.tucked && !(settings.start_hidden && autostarted);
                 if show || !settings.onboarding_complete || self_test {
                     let _ = win.show();
                 }
+                selftest::mark("sliver-shown");
                 let h = handle.clone();
                 win.on_window_event(move |e| {
                     // Clicking elsewhere lets the UI decide whether to fold away.
@@ -116,10 +118,29 @@ pub fn run() {
                     }
                 });
             }
+            // Registering global shortcuts can take a few hundred ms; do it
+            // right after the notch is on screen instead of before.
+            let sc = handle.clone();
+            let shortcut_settings = settings.global_shortcuts.clone();
+            let _ = handle.run_on_main_thread(move || {
+                shortcuts::register_all(&sc, &shortcut_settings);
+                selftest::mark("shortcuts");
+            });
             watch::spawn(handle.clone());
             clipboard_history::spawn(handle.clone());
             hotkeys::set_enabled(settings.hold_to_talk && settings.voice_enabled);
             hotkeys::install(handle.clone());
+            // Housekeeping that doesn't need to delay the notch appearing.
+            let warm = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                let s = warm.state::<AppState>().settings();
+                let _ = warm
+                    .state::<AppState>()
+                    .db
+                    .prune_history(s.history_retention_days.max(1), s.content_history);
+                commands::dashboard::cached_catalogue(&warm, false).await;
+            });
             if !settings.onboarding_complete && !self_test {
                 windows::open_settings(&handle, Some("welcome".into()));
             }
@@ -192,6 +213,7 @@ pub fn run() {
             commands::system::open_external,
             commands::system::copy_text,
             commands::dashboard::controls_state,
+            commands::dashboard::now_playing,
             commands::dashboard::set_volume,
             commands::dashboard::set_muted,
             commands::dashboard::media_command,

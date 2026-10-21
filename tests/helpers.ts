@@ -1,4 +1,4 @@
-import { act } from "@testing-library/react";
+import { act } from "@testing-library/preact";
 import { setHost, type Host } from "../src/services/host";
 import { createMockHost, type MockHostOptions } from "../src/services/mockHost";
 import { useClipboardAssist, useDueReminders } from "../src/state/assist";

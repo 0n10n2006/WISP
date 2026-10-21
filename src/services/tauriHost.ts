@@ -143,6 +143,7 @@ export function createTauriHost(): Host {
     copyText: (text) => call("copy_text", { text }),
 
     controlsState: () => call("controls_state"),
+    nowPlaying: () => call("now_playing"),
     setVolume: (percent) => call("set_volume", { percent: Math.round(percent) }),
     setMuted: (muted) => call("set_muted", { muted }),
     mediaCommand: (command) => call("media_command", { command }),
@@ -157,7 +158,7 @@ export function createTauriHost(): Host {
     clipDelete: (id) => call("clip_delete", { id }),
     clipsClear: (includePinned) => call("clips_clear", { includePinned }),
     clipCopy: (id) => call("clip_copy", { id }),
-    launcherList: () => call("launcher_list"),
+    launcherList: (refresh) => call("launcher_list", { refresh: refresh ?? false }),
     launchItem: (item) => call("launch_item", { item }),
     powerAction: (action) => call("power_action", { action }),
     wallpaperInfo: () => call("wallpaper_info"),

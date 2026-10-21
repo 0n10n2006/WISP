@@ -1,5 +1,8 @@
 /* The notch: sliver → peek → command bar, plus the dashboard tabs.
-   Colours come only from tokens.css. */
+   Colours come only from tokens.css. The notch is always dark, like a
+   hardware notch, and sits flush with the top of the screen: no outlines,
+   concave "shoulders" where it meets the edge, and a soft shadow that fits
+   inside the window so it is never clipped. */
 
 html[data-window="island"],
 html[data-window="island"] body,
@@ -9,6 +12,35 @@ html[data-window="highlight"] body {
   overflow: hidden;
 }
 
+/* Inside the notch every surface uses the dark notch palette. */
+.peek,
+.bar-wrap {
+  color-scheme: dark;
+  --color-bg: rgb(255 255 255 / 0.04);
+  --color-surface: rgb(255 255 255 / 0.045);
+  --color-surface-elevated: rgb(255 255 255 / 0.08);
+  --color-surface-glass: var(--notch-bg);
+  --color-border: rgb(255 255 255 / 0.07);
+  --color-border-strong: rgb(255 255 255 / 0.14);
+  --color-text: var(--notch-text);
+  --color-text-secondary: #b7c1d3;
+  --color-text-muted: var(--notch-muted);
+  --color-accent: var(--accent-on-dark);
+  --color-accent-2: var(--accent2-on-dark);
+  --color-on-accent: #0a0d16;
+  --color-focus: var(--accent-on-dark);
+  --color-success: #75d6a5;
+  --color-warning: #f4c978;
+  --color-error: #ff8d9a;
+  --color-success-bg: rgb(117 214 165 / 0.12);
+  --color-warning-bg: rgb(244 201 120 / 0.1);
+  --color-error-bg: rgb(255 141 154 / 0.1);
+  --color-code-bg: rgb(0 0 0 / 0.35);
+  --color-user-bubble: rgb(255 255 255 / 0.08);
+  --shadow-panel: 0 8px 24px rgb(0 0 0 / 0.4);
+  color: var(--color-text);
+}
+
 .notch {
   position: relative;
   width: 100%;
@@ -16,6 +48,37 @@ html[data-window="highlight"] body {
   display: flex;
   justify-content: center;
   align-items: flex-start;
+}
+
+/* Concave corners where the notch meets the top edge of the screen. */
+.peek::before,
+.peek::after,
+.bar-wrap::before,
+.bar-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: var(--shoulder);
+  height: var(--shoulder);
+  pointer-events: none;
+}
+.peek::before,
+.bar-wrap::before {
+  left: calc(var(--shoulder) * -1);
+  background: radial-gradient(
+    circle at 0 100%,
+    transparent calc(var(--shoulder) - 0.5px),
+    var(--notch-bg) var(--shoulder)
+  );
+}
+.peek::after,
+.bar-wrap::after {
+  right: calc(var(--shoulder) * -1);
+  background: radial-gradient(
+    circle at 100% 100%,
+    transparent calc(var(--shoulder) - 0.5px),
+    var(--notch-bg) var(--shoulder)
+  );
 }
 
 /* ---------- Sliver & peek ---------- */
@@ -31,64 +94,66 @@ html[data-window="highlight"] body {
 }
 .notch-idle:focus-visible .peek,
 .notch-idle:focus-visible .sliver {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--accent-on-dark);
   outline-offset: 1px;
 }
 .sliver {
   position: relative;
   display: block;
-  width: 120px;
-  height: 5px;
-  margin-top: 0;
-  border-radius: 0 0 6px 6px;
-  background: linear-gradient(90deg, var(--color-accent), var(--color-accent-2));
-  box-shadow:
-    0 0 10px color-mix(in srgb, var(--color-accent) 70%, transparent),
-    0 0 2px color-mix(in srgb, var(--color-accent) 90%, transparent);
-  opacity: 0.85;
+  width: 116px;
+  height: 4px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(90deg, var(--accent-on-dark), var(--accent2-on-dark));
+  opacity: 0.7;
   overflow: hidden;
-  transition:
-    width var(--duration-base) var(--ease),
-    opacity var(--duration-base) var(--ease);
+  transition: opacity var(--duration-base) var(--ease);
 }
-.notch-idle:hover .sliver {
+/* Soft glow on its own composited layer: only its opacity ever changes. */
+.sliver::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: 0 0 8px 1px var(--accent-on-dark);
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease);
+}
+.notch-idle:hover .sliver,
+.notch-idle[data-state="listening"] .sliver,
+.notch-idle[data-state="thinking"] .sliver {
   opacity: 1;
-  width: 150px;
+}
+.notch-idle:hover .sliver::after,
+.notch-idle[data-state="listening"] .sliver::after {
+  opacity: 0.6;
 }
 .sliver-progress {
   position: absolute;
   inset: 0 auto 0 0;
-  background: rgb(255 255 255 / 0.75);
+  background: rgb(255 255 255 / 0.8);
   mix-blend-mode: overlay;
 }
-.notch-idle[data-state="listening"] .sliver,
-.notch-idle[data-state="thinking"] .sliver {
-  width: 160px;
-  opacity: 1;
-}
 .notch-idle[data-state="warning"] .sliver {
-  background: var(--color-warning);
+  background: var(--palette-amber);
 }
 .notch-idle[data-state="error"] .sliver {
-  background: var(--color-error);
+  background: var(--palette-rose);
 }
 
 .peek {
+  --shoulder: 12px;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  padding: 0 14px 2px 12px;
-  border-radius: 0 0 20px 20px;
+  width: calc(100% - 2 * var(--shoulder));
+  height: calc(100% - 14px);
+  padding: 0 16px 0 14px;
+  border-radius: 0 0 18px 18px;
   background: var(--notch-bg);
-  border: 1px solid var(--notch-border);
-  border-top: 0;
-  color: var(--notch-text);
   font-size: var(--text-sm);
-  box-shadow: var(--notch-shadow);
-  animation: notch-drop var(--duration-base) var(--ease);
+  box-shadow: 0 6px 14px -6px rgb(0 0 0 / 0.5);
+  animation: notch-in var(--duration-fast) var(--ease);
 }
 .peek .muted {
   color: var(--notch-muted);
@@ -130,16 +195,15 @@ html[data-window="highlight"] body {
   transition: transform 80ms linear;
 }
 .peek-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--color-accent-2);
-  box-shadow: 0 0 8px var(--color-accent-2);
 }
-@keyframes notch-drop {
+@keyframes notch-in {
   from {
-    transform: translateY(-8px);
-    opacity: 0.4;
+    transform: translateY(-6px);
+    opacity: 0;
   }
 }
 
@@ -169,16 +233,13 @@ html[data-window="highlight"] body {
 .mark-error .mark-alert {
   fill: var(--color-error);
 }
+/* The mark only moves while something is happening. */
 html:not([data-motion="reduced"]) .mark-thinking .mark-arc {
   animation: mark-spin 1.1s linear infinite;
 }
 html:not([data-motion="reduced"]) .mark-listening .mark-core {
-  animation: mark-breathe 1s var(--ease) infinite alternate;
+  animation: mark-breathe 0.9s var(--ease) infinite alternate;
   transform-origin: 128px 160px;
-}
-html:not([data-motion="reduced"]) .mark-idle .mark-flame {
-  animation: mark-flicker 5s ease-in-out infinite;
-  transform-origin: 128px 230px;
 }
 @keyframes mark-spin {
   to {
@@ -187,43 +248,34 @@ html:not([data-motion="reduced"]) .mark-idle .mark-flame {
 }
 @keyframes mark-breathe {
   to {
-    transform: scale(1.25);
-  }
-}
-@keyframes mark-flicker {
-  0%,
-  100% {
-    transform: scale(1) skewX(0);
-  }
-  50% {
-    transform: scale(1.03, 0.98) skewX(-2deg);
+    transform: scale(1.22);
   }
 }
 
 /* ---------- Command bar ---------- */
+.bar-wrap {
+  --shoulder: 14px;
+  position: relative;
+  width: calc(100% - 2 * var(--shoulder));
+  border-radius: 0 0 22px 22px;
+  background: var(--notch-bg);
+  box-shadow: 0 12px 22px -8px rgb(0 0 0 / 0.55);
+  animation: notch-in var(--duration-base) var(--ease);
+}
 .bar {
   box-sizing: border-box;
-  width: calc(100% - 24px);
+  width: 100%;
   max-height: 620px;
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--color-surface) 98%, transparent);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-top: 0;
-  border-radius: 0 0 22px 22px;
-  box-shadow: var(--shadow-panel);
+  border-radius: inherit;
   overflow: hidden;
-  animation: bar-open var(--duration-slow) var(--ease);
-}
-@keyframes bar-open {
-  from {
-    clip-path: inset(0 15% 70% 15% round 0 0 22px 22px);
-    opacity: 0.6;
-  }
 }
 .cmd {
   border-bottom: 1px solid var(--color-border);
+}
+.cmd:last-child {
+  border-bottom: 0;
 }
 .cmd-row {
   display: flex;
@@ -465,7 +517,6 @@ html:not([data-motion="reduced"]) .mark-idle .mark-flame {
   padding: 12px;
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
 }
 .card-title {
   display: flex;
@@ -647,6 +698,7 @@ select.input {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
   gap: 10px;
+  align-items: start;
 }
 .today-side {
   display: grid;
@@ -705,7 +757,12 @@ select.input {
 .focus-body {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+.focus-ring {
+  flex: none;
+  width: 64px;
+  height: 64px;
 }
 .ring-bg {
   fill: none;
@@ -722,6 +779,14 @@ select.input {
 .focus-side {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+.focus-side .row-wrap {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.focus-side .btn-small {
+  padding: 4px 8px;
 }
 .focus-time {
   font-family: var(--font-display);
@@ -1320,4 +1385,118 @@ select.input {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+/* ---------- Restrained accents inside the notch ---------- */
+.bar-wrap .btn {
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.07);
+}
+.bar-wrap .btn:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.12);
+}
+.bar-wrap .btn-primary {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.bar-wrap .btn-primary:hover:not(:disabled) {
+  background: var(--color-accent);
+  filter: brightness(1.08);
+}
+.bar-wrap .btn-ghost {
+  background: transparent;
+}
+.bar-wrap .btn-danger {
+  background: var(--color-error);
+  color: #1a0b0e;
+}
+.dash-tab.active {
+  color: var(--color-text);
+  background: rgb(255 255 255 / 0.1);
+  font-weight: 600;
+}
+.dash-tab.active .icon {
+  color: var(--color-accent);
+}
+.chip {
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.05);
+}
+.chip:hover {
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.1);
+}
+.chip-toggle {
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.05);
+}
+.chip-toggle:hover {
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.1);
+}
+.chip-toggle.on {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+.tile {
+  border-color: transparent;
+}
+.tile.on {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-text);
+}
+.tile.on .icon,
+.tile.on small {
+  color: var(--color-accent);
+  opacity: 1;
+}
+.clip {
+  border-color: transparent;
+}
+.clip.pinned {
+  border-color: transparent;
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+.week-day.active {
+  background: rgb(255 255 255 / 0.12);
+}
+.week-day.active,
+.week-day.active strong {
+  color: var(--color-text);
+}
+.week-day.today {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+.input {
+  border-color: transparent;
+}
+.input:focus {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+.todo-add select.input {
+  width: auto;
+}
+.weather .card-title .icon-btn {
+  opacity: 0;
+}
+.weather:hover .card-title .icon-btn,
+.weather .card-title .icon-btn:focus-visible {
+  opacity: 1;
+}
+.cmd-result.selected .cmd-result-icon {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  color: var(--color-accent);
+}
+.bar-wrap .icon-btn.stop {
+  background: rgb(255 255 255 / 0.9);
+  color: #0a0d16;
+}
+.bar-wrap .attachment,
+.bar-wrap .banner {
+  border-color: transparent;
+}
+.todo-add .input-time {
+  flex: 1 1 200px;
+  min-width: 200px;
 }

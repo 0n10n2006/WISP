@@ -6,7 +6,7 @@ import { host } from "../../services/host";
 import type { LaunchItem } from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { toast } from "../../state/toast";
-import { invalidateCatalogue, useCatalogue } from "../notch/CommandBar";
+import { invalidateCatalogue, useCatalogue } from "../../lib/catalogue";
 
 const NO_STARS: string[] = [];
 
@@ -99,13 +99,23 @@ export default function AppsTab() {
   if (!cat) return <div className="dash-loading" aria-busy="true" />;
   return (
     <div className="apps">
-      <input
-        className="input"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={`Search ${cat.items.length} apps, games and settings`}
-        aria-label="Search apps"
-      />
+      <div className="row">
+        <input
+          className="input"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={`Search ${cat.items.length} apps, games and settings`}
+          aria-label="Search apps"
+        />
+        <button
+          className="icon-btn icon-btn-small"
+          aria-label="Rescan installed apps and games"
+          title="Rescan installed apps and games"
+          onClick={() => invalidateCatalogue(true)}
+        >
+          <Icon name="restart" size={15} />
+        </button>
+      </div>
       {"results" in groups ? (
         groups.results && groups.results.length ? (
           <Section title="Results" items={groups.results} stars={stars} />

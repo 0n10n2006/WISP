@@ -16,7 +16,8 @@ pub const SETTINGS: &str = "settings";
 
 /// Logical sizes per mode (open height is chosen by the UI).
 pub const SLIVER: (f64, f64) = (180.0, 10.0);
-pub const PEEK: (f64, f64) = (380.0, 46.0);
+/// Peek window: the notch shape plus room for its shoulders and shadow.
+pub const PEEK: (f64, f64) = (400.0, 58.0);
 pub const OPEN_WIDTH: f64 = 760.0;
 pub const OPEN_MIN_HEIGHT: f64 = 96.0;
 
@@ -83,6 +84,20 @@ pub fn top_centre(
     (mx + (mw - w) / 2, my, w as u32, h as u32)
 }
 
+/// Physical rect of the island, cached so unchanged layouts cost nothing.
+static LAST_RECT: std::sync::Mutex<Option<(i32, i32, u32, u32)>> = std::sync::Mutex::new(None);
+/// Monitor the open bar lives on; it stays put while the bar resizes.
+type Monitor = (i32, i32, i32, i32, f64);
+static OPEN_MONITOR: std::sync::Mutex<Option<Monitor>> = std::sync::Mutex::new(None);
+
+/// What has to change to go from `old` to `new` (move, resize).
+pub fn rect_changes(old: Option<(i32, i32, u32, u32)>, new: (i32, i32, u32, u32)) -> (bool, bool) {
+    match old {
+        None => (true, true),
+        Some(o) => ((o.0, o.1) != (new.0, new.1), (o.2, o.3) != (new.2, new.3)),
+    }
+}
+
 /// Switch the island's mode. `height` (logical) is used for the open bar.
 pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> IslandLayout {
     let state = app.state::<AppState>();
@@ -90,7 +105,8 @@ pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> Island
         return IslandLayout::default();
     };
     let settings = state.settings();
-    let mut layout = *state.island.lock().expect("island");
+    let before = *state.island.lock().expect("island");
+    let mut layout = before;
     layout.mode = mode;
     layout.expanded = mode == NotchMode::Open;
     let logical = match mode {
@@ -106,16 +122,34 @@ pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> Island
             (OPEN_WIDTH, layout.height)
         }
     };
-    if let Some(m) = target_monitor(&win) {
+    let monitor = {
+        let mut cached = OPEN_MONITOR.lock().expect("monitor");
+        let staying_open = mode == NotchMode::Open && before.mode == NotchMode::Open;
+        if !staying_open || cached.is_none() {
+            *cached = target_monitor(&win);
+        }
+        *cached
+    };
+    if let Some(m) = monitor {
         // Never taller than 85% of the screen.
         let max_h = m.3 as f64 * 0.85 / (m.4 * settings.island_scale as f64);
         let logical = (logical.0, logical.1.min(max_h));
-        let (x, y, w, h) = top_centre(m, logical, settings.island_scale as f64);
-        let _ = win.set_size(Size::Physical(PhysicalSize::new(w, h)));
-        let _ = win.set_position(Position::Physical(PhysicalPosition::new(x, y)));
+        let rect = top_centre(m, logical, settings.island_scale as f64);
+        let mut last = LAST_RECT.lock().expect("rect");
+        let (moved, resized) = rect_changes(*last, rect);
+        // Resize before moving so the window never pokes past the screen edge.
+        if resized {
+            let _ = win.set_size(Size::Physical(PhysicalSize::new(rect.2, rect.3)));
+        }
+        if moved {
+            let _ = win.set_position(Position::Physical(PhysicalPosition::new(rect.0, rect.1)));
+        }
+        *last = Some(rect);
     }
     *state.island.lock().expect("island") = layout;
-    let _ = app.emit_to(ISLAND, "wisp://layout", layout);
+    if layout.mode != before.mode || (layout.height - before.height).abs() > 0.5 {
+        let _ = app.emit_to(ISLAND, "wisp://layout", layout);
+    }
     layout
 }
 
@@ -201,7 +235,9 @@ pub fn set_tucked(app: &AppHandle, tucked: bool) {
 }
 
 pub fn open_settings(app: &AppHandle, tab: Option<String>) {
+    let theme = app.state::<AppState>().settings().theme;
     if let Some(win) = app.get_webview_window(SETTINGS) {
+        crate::chrome::apply_theme(&win, theme);
         let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
@@ -219,12 +255,15 @@ pub fn open_settings(app: &AppHandle, tab: Option<String>) {
         ),
         None => "index.html".to_string(),
     };
-    let _ = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(url.into()))
+    if let Ok(win) = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(url.into()))
         .title("Wisp Settings")
         .inner_size(880.0, 660.0)
         .min_inner_size(640.0, 480.0)
         .center()
-        .build();
+        .build()
+    {
+        crate::chrome::apply_theme(&win, theme);
+    }
 }
 
 #[cfg(test)]
@@ -240,5 +279,14 @@ mod tests {
         let m2 = (1920, 40, 800, 600, 1.0);
         let (x, y, w, _) = top_centre(m2, (OPEN_WIDTH, 300.0), 1.3);
         assert_eq!((x, y, w), (1920, 40, 800));
+    }
+
+    #[test]
+    fn only_changed_parts_are_applied() {
+        let a = (10, 0, 760, 300);
+        assert_eq!(rect_changes(None, a), (true, true));
+        assert_eq!(rect_changes(Some(a), a), (false, false));
+        assert_eq!(rect_changes(Some(a), (10, 0, 760, 340)), (false, true));
+        assert_eq!(rect_changes(Some(a), (20, 0, 760, 300)), (true, false));
     }
 }

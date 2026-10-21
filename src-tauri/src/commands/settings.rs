@@ -62,6 +62,11 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             .prune_history(new.history_retention_days.max(1), false);
     }
     crate::hotkeys::set_enabled(new.hold_to_talk && new.voice_enabled);
+    if old.theme != new.theme {
+        if let Some(win) = app.get_webview_window(windows::SETTINGS) {
+            crate::chrome::apply_theme(&win, new.theme);
+        }
+    }
     if old.tucked != new.tucked {
         let open =
             app.state::<AppState>().island.lock().expect("island").mode == windows::NotchMode::Open;

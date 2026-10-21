@@ -3,7 +3,7 @@ import { host } from "../services/host";
 import type { IslandLayout } from "../services/types";
 
 /** Logical window sizes, mirroring `src-tauri/src/windows.rs`. */
-const SIZES = { sliver: [180, 10], peek: [380, 46], open: [760, 0] } as const;
+const SIZES = { sliver: [180, 10], peek: [400, 58], open: [760, 0] } as const;
 
 /**
  * Browser preview only: simulates the desktop around the notch window so the

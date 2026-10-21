@@ -1,6 +1,5 @@
 // Executes command-bar results. Everything here goes through typed host calls.
 
-import { create } from "zustand";
 import type { BarResult, Command } from "../../lib/commands";
 import { formatMinutes } from "../../lib/commands";
 import { toWispError } from "../../services/errors";
@@ -10,18 +9,8 @@ import { useDictation } from "../../state/dictation";
 import { useNotch } from "../../state/notch";
 import { toast } from "../../state/toast";
 
-/** An inline "are you sure?" strip in the bar. */
-interface ConfirmState {
-  pending: { text: string; label: string; run: () => Promise<void> } | null;
-  ask(text: string, label: string, run: () => Promise<void>): void;
-  clear(): void;
-}
-
-export const useConfirm = create<ConfirmState>((set) => ({
-  pending: null,
-  ask: (text, label, run) => set({ pending: { text, label, run } }),
-  clear: () => set({ pending: null }),
-}));
+export { useConfirm } from "./confirm";
+import { useConfirm } from "./confirm";
 
 async function guarded(fn: () => Promise<unknown>, done?: string) {
   try {

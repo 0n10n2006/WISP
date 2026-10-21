@@ -1,7 +1,7 @@
 {
   "name": "wisp",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,8 +23,7 @@
     "@tauri-apps/plugin-global-shortcut": "^2.4.1",
     "@tauri-apps/plugin-notification": "^2.7.0",
     "@tauri-apps/plugin-opener": "^2.7.2",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
+    "preact": "^10.29.8",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -32,7 +31,7 @@
     "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2.12.4",
     "@testing-library/jest-dom": "^7.0.1",
-    "@testing-library/react": "^16.3.3",
+    "@testing-library/preact": "^3.2.4",
     "@testing-library/user-event": "^14.6.8",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",

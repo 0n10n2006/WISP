@@ -411,7 +411,6 @@ html[data-motion="reduced"] *::after {
 }
 .sidebar {
   background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
   padding: var(--space-4) var(--space-2);
 }
 .brand {
@@ -448,7 +447,6 @@ html[data-motion="reduced"] *::after {
   background: var(--color-surface-elevated);
   color: var(--color-text);
   font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--color-accent);
 }
 .sidebar button:disabled {
   opacity: 0.45;

@@ -29,28 +29,39 @@ fn audit(state: &AppState, kind: &str, summary: &str, outcome: &str) {
         .log_action(&ActionAudit::new(kind, summary, outcome, true));
 }
 
-// ---- Controls ------------------------------------------------------------
+// ---- Controls (run on the shared COM worker) ------------------------------
+
+use crate::com_worker;
 
 #[tauri::command]
 pub async fn controls_state() -> ControlsState {
-    tauri::async_runtime::spawn_blocking(system_controls::state)
+    com_worker::run(system_controls::state)
         .await
         .unwrap_or_default()
 }
 
+/// What's playing, for the notch peek (cached briefly; cheap to call).
+#[tauri::command]
+pub async fn now_playing() -> Option<system_controls::NowPlaying> {
+    com_worker::run(system_controls::now_playing)
+        .await
+        .ok()
+        .flatten()
+}
+
 #[tauri::command]
 pub async fn set_volume(percent: u8) -> CmdResult<()> {
-    blocking(move || system_controls::set_volume(percent.min(100))).await
+    com_worker::run(move || system_controls::set_volume(percent.min(100))).await?
 }
 
 #[tauri::command]
 pub async fn set_muted(muted: bool) -> CmdResult<()> {
-    blocking(move || system_controls::set_muted(muted)).await
+    com_worker::run(move || system_controls::set_muted(muted)).await?
 }
 
 #[tauri::command]
 pub async fn media_command(command: MediaCommand) -> CmdResult<()> {
-    blocking(move || system_controls::media(command)).await
+    com_worker::run(move || system_controls::media(command)).await?
 }
 
 #[tauri::command]
@@ -58,7 +69,7 @@ pub async fn set_radio(kind: String, on: bool) -> CmdResult<()> {
     if kind != "wifi" && kind != "bluetooth" {
         return Err(WispError::invalid("Unknown radio"));
     }
-    blocking(move || system_controls::set_radio(&kind, on)).await
+    com_worker::run(move || system_controls::set_radio(&kind, on)).await?
 }
 
 #[tauri::command]
@@ -160,14 +171,38 @@ pub struct Catalogue {
     pub recent: Vec<AppUsage>,
 }
 
+/// The launcher catalogue, scanned once and then served from memory.
+pub async fn cached_catalogue(app: &AppHandle, refresh: bool) -> std::sync::Arc<Vec<LaunchItem>> {
+    use tauri::Manager;
+    if !refresh {
+        if let Some(c) = app
+            .state::<AppState>()
+            .catalogue
+            .lock()
+            .expect("catalogue")
+            .clone()
+        {
+            return c;
+        }
+    }
+    let items = std::sync::Arc::new(
+        tauri::async_runtime::spawn_blocking(crate::apps::catalogue)
+            .await
+            .unwrap_or_default(),
+    );
+    *app.state::<AppState>().catalogue.lock().expect("catalogue") = Some(items.clone());
+    items
+}
+
 #[tauri::command]
-pub async fn launcher_list(app: AppHandle) -> CmdResult<Catalogue> {
-    let items = tauri::async_runtime::spawn_blocking(crate::apps::catalogue)
-        .await
-        .unwrap_or_default();
+pub async fn launcher_list(app: AppHandle, refresh: Option<bool>) -> CmdResult<Catalogue> {
+    let items = cached_catalogue(&app, refresh.unwrap_or(false)).await;
     use tauri::Manager;
     let recent = app.state::<AppState>().db.recent_apps(20)?;
-    Ok(Catalogue { items, recent })
+    Ok(Catalogue {
+        items: items.as_ref().clone(),
+        recent,
+    })
 }
 
 /// Launch a catalogue item. The target is re-validated here, so the UI can

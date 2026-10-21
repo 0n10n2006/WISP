@@ -48,7 +48,11 @@ pub struct Stats {
 struct Inner {
     sys: System,
     nets: Networks,
+    disks: Disks,
     last: Instant,
+    /// Snapshots taken so far; slower-changing data refreshes less often.
+    ticks: u64,
+    top: Vec<ProcessStat>,
 }
 
 impl Default for Stats {
@@ -99,34 +103,50 @@ impl Stats {
             Inner {
                 sys,
                 nets: Networks::new_with_refreshed_list(),
+                disks: Disks::new_with_refreshed_list(),
                 last: Instant::now(),
+                ticks: 0,
+                top: Vec::new(),
             }
         });
+        inner.ticks += 1;
         inner.sys.refresh_cpu_usage();
         inner.sys.refresh_memory();
-        inner.sys.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing().with_memory().with_cpu(),
-        );
         inner.nets.refresh(true);
+        // Walking every process is the expensive part: do it every other
+        // snapshot. Disk free space changes slowly: every tenth.
+        let refresh_procs = !inner.ticks.is_multiple_of(2);
+        if refresh_procs {
+            inner.sys.refresh_processes_specifics(
+                ProcessesToUpdate::All,
+                true,
+                ProcessRefreshKind::nothing().with_memory().with_cpu(),
+            );
+        }
+        if inner.ticks.is_multiple_of(10) {
+            inner.disks.refresh(true);
+        }
         let elapsed = inner.last.elapsed().as_secs_f64().max(0.2);
         inner.last = Instant::now();
         let (down, up) = inner.nets.iter().fold((0u64, 0u64), |(d, u), (_, n)| {
             (d + n.received(), u + n.transmitted())
         });
         let cores_n = inner.sys.cpus().len().max(1) as f32;
-        let top = top_processes(
-            inner.sys.processes().values().map(|p| {
-                (
-                    p.name().to_string_lossy().into_owned(),
-                    p.memory(),
-                    p.cpu_usage() / cores_n,
-                )
-            }),
-            6,
-        );
-        let disks = Disks::new_with_refreshed_list()
+        if refresh_procs {
+            inner.top = top_processes(
+                inner.sys.processes().values().map(|p| {
+                    (
+                        p.name().to_string_lossy().into_owned(),
+                        p.memory(),
+                        p.cpu_usage() / cores_n,
+                    )
+                }),
+                6,
+            );
+        }
+        let top = inner.top.clone();
+        let disks = inner
+            .disks
             .list()
             .iter()
             .filter(|d| d.total_space() > 0)

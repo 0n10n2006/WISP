@@ -1,18 +1,8 @@
-import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
+import { Suspense, useEffect } from "react";
 import { Icon, type IconName } from "../../components/Icon";
 import { DASHBOARD_TABS, type DashboardTab } from "../../lib/commands";
 import { useNotch } from "../../state/notch";
-
-const TABS: Record<DashboardTab, LazyExoticComponent<ComponentType>> = {
-  today: lazy(() => import("./TodayTab")),
-  controls: lazy(() => import("./ControlsTab")),
-  stats: lazy(() => import("./StatsTab")),
-  clipboard: lazy(() => import("./ClipboardTab")),
-  apps: lazy(() => import("./AppsTab")),
-  agents: lazy(() => import("./AgentsTab")),
-  wallpaper: lazy(() => import("./WallpaperTab")),
-  power: lazy(() => import("./PowerTab")),
-};
+import { preloadAllTabs, TABS } from "./load";
 
 const ICONS: Record<DashboardTab, IconName> = {
   today: "today",
@@ -29,6 +19,10 @@ export default function Dashboard() {
   const tab = useNotch((n) => n.tab);
   const setTab = useNotch((n) => n.setTab);
   const Panel = TABS[tab];
+  useEffect(() => {
+    const t = setTimeout(preloadAllTabs, 300);
+    return () => clearTimeout(t);
+  }, []);
   const move = (dir: 1 | -1) => {
     const i = DASHBOARD_TABS.findIndex((t) => t.id === tab);
     const next = DASHBOARD_TABS[(i + dir + DASHBOARD_TABS.length) % DASHBOARD_TABS.length]!;

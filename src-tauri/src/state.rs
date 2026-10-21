@@ -36,6 +36,8 @@ pub struct AppState {
     /// A fullscreen app is in front (the sliver hides).
     pub fullscreen_active: Mutex<bool>,
     pub stats: crate::stats::Stats,
+    /// Launcher catalogue, built once in the background.
+    pub catalogue: Mutex<Option<std::sync::Arc<Vec<wisp_core::launcher::LaunchItem>>>>,
     /// Regions for the Show-me overlay.
     pub highlights: Mutex<Vec<wisp_core::capture::Highlight>>,
 }
