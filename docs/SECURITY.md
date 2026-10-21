@@ -23,11 +23,12 @@ code; if you change one of the boundaries below, update this file in the same ch
 
 - Allowed tools: `open_app` (user allowlist only), `open_url` (http/https only, no embedded credentials,
   ≤ 2048 chars), `copy_text` (≤ 20 000 chars), `create_reminder` (title ≤ 200, RFC 3339 time, not in the past,
-  ≤ 5 years ahead).
+  ≤ 5 years ahead), `remember` (≤ 500 chars, always confirmed).
+- At most 3 model ↔ tool rounds per request; unanswered confirmations expire after 2 minutes as "declined".
 - There is **no** shell, PowerShell, script or file-write tool. App allowlist entries cannot point at shells
   or script hosts (`cmd.exe`, `powershell.exe`, `wscript.exe`, `mshta.exe`, `rundll32.exe`, …) and may not
   contain arguments or shell metacharacters.
-- `open_app` and `open_url` require user confirmation; every action is written to the audit log with a
+- `open_app`, `open_url` and `remember` require user confirmation; every action is written to the audit log with a
   redacted summary (host only for URLs, character count for copied text).
 
 ## Capture & privacy

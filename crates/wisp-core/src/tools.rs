@@ -36,6 +36,11 @@ pub enum ValidatedAction {
         notes: Option<String>,
         due_at: DateTime<Utc>,
     },
+    /// Save a memory entry. Always asks the user first.
+    Remember {
+        content: String,
+        category: String,
+    },
 }
 
 impl ValidatedAction {
@@ -45,12 +50,16 @@ impl ValidatedAction {
             Self::OpenUrl { .. } => "open_url",
             Self::CopyText { .. } => "copy_text",
             Self::CreateReminder { .. } => "create_reminder",
+            Self::Remember { .. } => "remember",
         }
     }
 
     /// Actions that leave Wisp's own sandbox need the user's confirmation.
     pub fn requires_confirmation(&self) -> bool {
-        matches!(self, Self::OpenApp { .. } | Self::OpenUrl { .. })
+        matches!(
+            self,
+            Self::OpenApp { .. } | Self::OpenUrl { .. } | Self::Remember { .. }
+        )
     }
 
     /// Short description safe for the audit log (no long free text).
@@ -72,6 +81,7 @@ impl ValidatedAction {
                     due_at.to_rfc3339()
                 )
             }
+            Self::Remember { content, .. } => format!("chars={}", content.chars().count()),
         }
     }
 
@@ -84,11 +94,26 @@ impl ValidatedAction {
                 format!("Copy {} characters to the clipboard", text.chars().count())
             }
             Self::CreateReminder { title, due_at, .. } => {
-                format!("Remind you \"{title}\" at {}", due_at.to_rfc3339())
+                let local = due_at.with_timezone(&chrono::Local);
+                format!(
+                    "Remind you \"{title}\" on {}",
+                    local.format("%a %-d %b at %H:%M")
+                )
             }
+            Self::Remember { content, .. } => format!("Remember: \"{content}\""),
         }
     }
 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RememberArgs {
+    content: String,
+    #[serde(default)]
+    category: Option<String>,
+}
+
+pub const MAX_MEMORY_CHARS: usize = 500;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -174,6 +199,17 @@ pub fn validate_call(
                 title,
                 notes,
                 due_at,
+            })
+        }
+        "remember" => {
+            let a: RememberArgs = parse_args(name, args)?;
+            let content = a.content.trim().to_string();
+            if content.is_empty() || content.chars().count() > MAX_MEMORY_CHARS {
+                return Err(WispError::invalid("Memory must be 1–500 characters"));
+            }
+            Ok(ValidatedAction::Remember {
+                content,
+                category: a.category.unwrap_or_else(|| "other".into()),
             })
         }
         other => Err(WispError::invalid(format!(
@@ -336,6 +372,18 @@ pub fn function_declarations() -> Value {
                 },
                 "required": ["title", "due_at"]
             }
+        },
+        {
+            "name": "remember",
+            "description": "Ask the user whether to save a short, lasting fact or preference to Wisp's local memory. Only use when the user asks you to remember something or clearly states a lasting preference. Never save sensitive personal data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": { "type": "string", "description": "One concise sentence" },
+                    "category": { "type": "string", "enum": ["preference", "fact", "project", "people", "other"] }
+                },
+                "required": ["content"]
+            }
         }
     ])
 }
@@ -478,6 +526,26 @@ mod tests {
     }
 
     #[test]
+    fn remember_always_asks() {
+        let a = validate_call(
+            "remember",
+            &json!({"content": " Prefers metric "}),
+            &apps(),
+            now(),
+        )
+        .unwrap();
+        assert!(a.requires_confirmation());
+        assert_eq!(
+            a,
+            ValidatedAction::Remember {
+                content: "Prefers metric".into(),
+                category: "other".into()
+            }
+        );
+        assert!(validate_call("remember", &json!({"content": ""}), &apps(), now()).is_err());
+    }
+
+    #[test]
     fn declarations_cover_all_tools() {
         let names: Vec<String> = function_declarations()
             .as_array()
@@ -487,7 +555,13 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["open_app", "open_url", "copy_text", "create_reminder"]
+            [
+                "open_app",
+                "open_url",
+                "copy_text",
+                "create_reminder",
+                "remember"
+            ]
         );
     }
 }

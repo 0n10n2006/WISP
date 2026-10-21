@@ -9,6 +9,9 @@ import {
   DEFAULT_SETTINGS,
   type ActionAudit,
   type CaptureReady,
+  type MemoryEntry,
+  type NewTask,
+  type Task,
   type RequestLog,
   type StorageStats,
   DEFAULT_SHORTCUTS,
@@ -184,12 +187,43 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     focus: new Set<() => void>(),
     shortcut: new Set<(a: ShortcutAction) => void>(),
     data: new Set<(scope: string) => void>(),
+    reminder: new Set<(t: Task) => void>(),
     captureReady: new Set<(c: CaptureReady) => void>(),
     captureError: new Set<(e: WispError) => void>(),
   };
   let requests: RequestLog[] = [];
+  let tasks: Task[] = [];
+  let memories: MemoryEntry[] = [];
+  const pendingActions = new Map<string, (approved: boolean) => void>();
+  const makeTask = (t: NewTask): Task => {
+    const title = t.title.trim();
+    if (!title) throw err("invalid", "Reminder needs a title");
+    if (t.dueAt && new Date(t.dueAt).getTime() < Date.now() - 60_000)
+      throw err("invalid", "Reminder time is in the past");
+    return {
+      id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      notes: t.notes?.trim() || null,
+      dueAt: t.dueAt ?? null,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+      notificationEnabled: t.notificationEnabled ?? true,
+      notifiedAt: null,
+    };
+  };
+  const taskChanged = () => listeners.data.forEach((cb) => cb("tasks"));
+  const findTask = (id: string) => {
+    const t = tasks.find((x) => x.id === id);
+    if (!t) throw err("invalid", "That reminder no longer exists");
+    return t;
+  };
+  const replaceTask = (t: Task) => {
+    tasks = tasks.map((x) => (x.id === t.id ? t : x));
+    taskChanged();
+    return t;
+  };
   let actions: ActionAudit[] = [];
-  const counts = { tasks: 0, openTasks: 0, memories: 0 };
+
   const logRequest = (
     prompt: string,
     contextKind: string,
@@ -216,7 +250,9 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
   const stats = (): StorageStats => ({
     requests: requests.length,
     actions: actions.length,
-    ...counts,
+    tasks: tasks.length,
+    openTasks: tasks.filter((t) => !t.completedAt).length,
+    memories: memories.length,
     schemaVersion: 1,
   });
 
@@ -259,13 +295,49 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     if (!["system", "dark", "light"].includes(s.theme)) throw err("invalid", "Invalid theme");
     if (s.historyRetentionDays < 0 || s.historyRetentionDays > 365)
       throw err("invalid", "History retention must be 0–365 days");
-    return { ...s, globalShortcuts: shortcuts, telemetryOptIn: false };
+    const names = new Set<string>();
+    const allowedApps = s.allowedApps.map((a) => {
+      const name = a.name.trim().toLowerCase();
+      const target = a.target.trim();
+      const file = target.toLowerCase().split(/[\\/]/).pop() ?? "";
+      if (!name || !target) throw err("invalid", "Allowed apps need a name and a target");
+      if (names.has(name)) throw err("invalid", `App "${name}" is listed twice`);
+      if (/["'&|<>^%;`$]/.test(target) || !/\.(exe|lnk|appref-ms)$/i.test(target))
+        throw err("invalid", "App target must be an .exe or shortcut (.lnk)");
+      if (
+        [
+          "cmd.exe",
+          "powershell.exe",
+          "pwsh.exe",
+          "wscript.exe",
+          "cscript.exe",
+          "mshta.exe",
+        ].includes(file)
+      )
+        throw err("invalid", "Shells and script hosts cannot be allowlisted");
+      names.add(name);
+      return { name, target };
+    });
+    return { ...s, allowedApps, globalShortcuts: shortcuts, telemetryOptIn: false };
   };
 
   // Expose a hook so the preview page can simulate global shortcuts.
   if (typeof window !== "undefined") {
     (window as unknown as { wispMock?: unknown }).wispMock = {
       shortcut: (a: ShortcutAction) => listeners.shortcut.forEach((cb) => cb(a)),
+      reminder: () =>
+        listeners.reminder.forEach((cb) =>
+          cb({
+            id: "preview-reminder",
+            title: "Stand up and stretch",
+            notes: null,
+            dueAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            completedAt: null,
+            notificationEnabled: true,
+            notifiedAt: new Date().toISOString(),
+          }),
+        ),
       focus: () => listeners.focus.forEach((cb) => cb()),
     };
   }
@@ -318,7 +390,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     },
     listModels: async () => MOCK_MODELS,
 
-    ask(req, onDelta): AskHandle {
+    ask(req, onDelta, onAction): AskHandle {
       const ctl = new AbortController();
       const started = Date.now();
       const run = (async (): Promise<AskResult> => {
@@ -350,6 +422,89 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
             },
           );
         if (p.includes("/error")) throw err("internal", "Unexpected failure (ref 1a2b3c4d)");
+        const audit = (
+          actionType: string,
+          summary: string,
+          outcome: ActionAudit["outcome"],
+          confirmed: boolean,
+        ) => {
+          actions = [
+            {
+              id: `act-${Date.now()}-${actions.length}`,
+              timestamp: new Date().toISOString(),
+              actionType,
+              summary,
+              outcome,
+              userConfirmed: confirmed,
+              detail: null,
+            },
+            ...actions,
+          ];
+        };
+        const propose = async (kind: string, description: string): Promise<boolean> => {
+          const id = `confirm-${Date.now()}`;
+          onAction?.({ type: "actionProposed", id, kind, description });
+          const approved = await new Promise<boolean>((resolve) => {
+            pendingActions.set(id, resolve);
+            ctl.signal.addEventListener("abort", () => resolve(false));
+          });
+          pendingActions.delete(id);
+          return approved;
+        };
+        if (p.includes("/open")) {
+          const description = "Open https://example.com in your browser";
+          const ok = await propose("open_url", description);
+          audit("open_url", "host=example.com", ok ? "done" : "declined", ok);
+          onAction?.({
+            type: "actionResult",
+            kind: "open_url",
+            description,
+            outcome: ok ? "done" : "declined",
+            message: ok ? "Opened the link in the default browser." : "You chose not to do this.",
+          });
+        }
+        if (p.includes("/remember")) {
+          const content = "Prefers concise answers";
+          const description = `Remember: "${content}"`;
+          const ok = await propose("remember", description);
+          if (ok) {
+            memories = [
+              {
+                id: `mem-${Date.now()}`,
+                content,
+                category: "preference",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                userApproved: true,
+                enabled: true,
+              },
+              ...memories,
+            ];
+            listeners.data.forEach((cb) => cb("memory"));
+          }
+          audit("remember", "chars=23", ok ? "done" : "declined", ok);
+          onAction?.({
+            type: "actionResult",
+            kind: "remember",
+            description,
+            outcome: ok ? "done" : "declined",
+            message: ok ? "Saved to memory." : "You chose not to do this.",
+          });
+        }
+        if (p.includes("/remind")) {
+          const due = new Date(Date.now() + 3600_000).toISOString();
+          const t = makeTask({ title: "Stretch", dueAt: due });
+          tasks = [...tasks, t];
+          listeners.data.forEach((cb) => cb("tasks"));
+          audit("create_reminder", 'title="Stretch"', "done", false);
+          onAction?.({
+            type: "actionResult",
+            kind: "create_reminder",
+            description: 'Remind you "Stretch" in an hour',
+            outcome: "done",
+            message: "Reminder created.",
+          });
+        }
         const text = mockAnswer(req.prompt);
         const words = text.split(/(\s+)/);
         let streamed = "";
@@ -442,6 +597,82 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     dictationTarget: async () => ({ available: true, title: "Untitled - Notepad" }),
     insertText: async () => {},
 
+    respondAction: async (id, approved) => {
+      pendingActions.get(id)?.(approved);
+    },
+    tasksList: async (includeCompleted) =>
+      [...tasks]
+        .filter((t) => includeCompleted || !t.completedAt)
+        .sort((a, b) => (a.dueAt ?? "9").localeCompare(b.dueAt ?? "9")),
+    taskCreate: async (t) => {
+      const task = makeTask(t);
+      tasks = [...tasks, task];
+      taskChanged();
+      return task;
+    },
+    taskUpdate: async (id, t) => {
+      const base = makeTask(t);
+      return replaceTask({
+        ...findTask(id),
+        title: base.title,
+        notes: base.notes,
+        dueAt: base.dueAt,
+        notifiedAt: null,
+      });
+    },
+    taskComplete: async (id, completed) =>
+      replaceTask({ ...findTask(id), completedAt: completed ? new Date().toISOString() : null }),
+    taskSnooze: async (id, until) =>
+      replaceTask({ ...findTask(id), dueAt: until, notifiedAt: null, completedAt: null }),
+    taskDelete: async (id) => {
+      const before = tasks.length;
+      tasks = tasks.filter((t) => t.id !== id);
+      taskChanged();
+      return tasks.length < before;
+    },
+    onReminderDue: (cb) => on(listeners.reminder, cb),
+    memoryList: async () => memories,
+    memoryAdd: async (content, category) => {
+      const c = content.trim();
+      if (!c || c.length > 500) throw err("invalid", "Memory must be 1–500 characters");
+      const m: MemoryEntry = {
+        id: `mem-${Date.now()}-${memories.length}`,
+        content: c,
+        category,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userApproved: true,
+        enabled: true,
+      };
+      memories = [m, ...memories];
+      listeners.data.forEach((cb) => cb("memory"));
+      return m;
+    },
+    memoryUpdate: async (id, content, category, enabled) => {
+      const c = content.trim();
+      if (!c || c.length > 500) throw err("invalid", "Memory must be 1–500 characters");
+      const m = memories.find((x) => x.id === id);
+      if (!m) throw err("invalid", "That memory no longer exists");
+      const next = { ...m, content: c, category, enabled, updatedAt: new Date().toISOString() };
+      memories = memories.map((x) => (x.id === id ? next : x));
+      listeners.data.forEach((cb) => cb("memory"));
+      return next;
+    },
+    memoryDelete: async (id) => {
+      memories = memories.filter((m) => m.id !== id);
+      listeners.data.forEach((cb) => cb("memory"));
+      return true;
+    },
+    clipboardRead: async () => {
+      try {
+        const t = await navigator.clipboard?.readText();
+        if (t?.trim()) return t;
+      } catch {
+        /* permission denied in the preview */
+      }
+      return "Wisp is a small, spirit-like AI companion for Windows. It floats on the desktop as a glowing orb and helps with quick questions, screen regions, dictation and simple tasks, while keeping data local by default.";
+    },
+
     historyList: async (limit = 200) => requests.slice(0, limit),
     actionsList: async (limit = 200) => actions.slice(0, limit),
     dataStats: async () => stats(),
@@ -450,11 +681,8 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
         requests = [];
         actions = [];
       }
-      if (scope === "memory" || scope === "everything") counts.memories = 0;
-      if (scope === "tasks" || scope === "everything") {
-        counts.tasks = 0;
-        counts.openTasks = 0;
-      }
+      if (scope === "memory" || scope === "everything") memories = [];
+      if (scope === "tasks" || scope === "everything") tasks = [];
       if (scope === "settings" || scope === "everything") {
         settings = {
           ...DEFAULT_SETTINGS,

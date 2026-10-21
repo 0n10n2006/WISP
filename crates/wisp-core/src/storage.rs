@@ -62,7 +62,7 @@ const MIGRATIONS: &[&str] = &[
     "#,
 ];
 
-pub const MAX_MEMORY_CHARS: usize = 500;
+pub use crate::tools::MAX_MEMORY_CHARS;
 pub const MAX_MEMORY_ENTRIES: usize = 200;
 const MAX_LOG_TEXT: usize = 20_000;
 

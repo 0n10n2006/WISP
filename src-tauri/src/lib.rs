@@ -1,8 +1,10 @@
 //! Wisp desktop host (Tauri 2). OS integration lives here; logic lives in `wisp-core`.
 
+mod actions;
 mod capture;
 mod commands;
 mod foreground;
+mod reminders;
 mod secrets;
 mod shortcuts;
 mod state;
@@ -51,6 +53,7 @@ pub fn run() {
             let _ = db.prune_history(settings.history_retention_days.max(1), settings.content_history);
             app.manage(AppState {
                 capture: Mutex::new(None),
+                confirmations: Mutex::new(HashMap::new()),
                 insert_target: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
                 settings_store: store,
@@ -70,6 +73,7 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tray::create(&handle)?;
+            reminders::spawn(handle.clone());
             shortcuts::register_all(&handle, &settings.global_shortcuts);
             windows::place_island_initially(&handle);
             if let Some(win) = windows::island(&handle) {
@@ -113,6 +117,7 @@ pub fn run() {
             commands::settings::validate_shortcut,
             commands::ask::ask,
             commands::ask::ask_cancel,
+            commands::ask::action_respond,
             commands::data::history_list,
             commands::data::actions_list,
             commands::data::data_stats,
@@ -126,6 +131,17 @@ pub fn run() {
             commands::dictation::dictation_target,
             commands::dictation::transcribe,
             commands::dictation::insert_text,
+            commands::local::tasks_list,
+            commands::local::task_create,
+            commands::local::task_update,
+            commands::local::task_complete,
+            commands::local::task_snooze,
+            commands::local::task_delete,
+            commands::local::memory_list,
+            commands::local::memory_add,
+            commands::local::memory_update,
+            commands::local::memory_delete,
+            commands::local::clipboard_read,
             commands::system::set_island_expanded,
             commands::system::hide_island,
             commands::system::open_settings,

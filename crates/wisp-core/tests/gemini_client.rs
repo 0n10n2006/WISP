@@ -343,3 +343,59 @@ async fn function_calls_are_collected() {
     assert_eq!(out.function_calls[0].name, "open_url");
     assert_eq!(out.model_parts.len(), 1);
 }
+
+#[tokio::test]
+async fn function_call_round_trip_echoes_call_and_result() {
+    use wisp_core::gemini::prompt::with_function_results;
+    use wisp_core::gemini::types::FunctionResponse;
+    use wisp_core::tools::validate_call;
+
+    let server = MockServer::start().await;
+    // Round 2: the request must contain our functionResponse.
+    Mock::given(method("POST"))
+        .and(wiremock::matchers::body_string_contains("functionResponse"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(sse(&[
+            r#"{"candidates":[{"content":{"parts":[{"text":"Done — I opened it."}]},"finishReason":"STOP"}]}"#,
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    // Round 1: the model proposes an action (with a thought signature to echo back).
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(sse(&[
+            r#"{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"open_url","args":{"url":"https://example.com"}},"thoughtSignature":"sig123"}]},"finishReason":"STOP"}]}"#,
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let c = client(&server);
+    let mut req = ask("open example.com");
+    req.enable_tools = true;
+    let body = build_request(&req, &ctx());
+    assert!(body.tools.is_some());
+    let first = c
+        .stream(KEY, "m", &body, &CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(first.function_calls.len(), 1);
+    let call = &first.function_calls[0];
+    let action = validate_call(&call.name, &call.args, &[], chrono::Utc::now()).unwrap();
+    assert!(action.requires_confirmation());
+
+    let next = with_function_results(
+        body,
+        first.model_parts.clone(),
+        vec![FunctionResponse {
+            name: call.name.clone(),
+            response: serde_json::json!({"ok": true, "result": "Opened."}),
+        }],
+    );
+    let json = serde_json::to_string(&next).unwrap();
+    assert!(json.contains("\"thoughtSignature\":\"sig123\""));
+    let second = c
+        .stream(KEY, "m", &next, &CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(second.text, "Done — I opened it.");
+}

@@ -26,6 +26,8 @@ pub struct ShortcutIssue {
 }
 
 pub struct AppState {
+    /// Pending action confirmations, by id.
+    pub confirmations: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
     /// The app that was in front before Wisp was summoned (for Insert).
     pub insert_target: Mutex<Option<crate::foreground::Target>>,
     pub capture: Mutex<Option<crate::capture::CaptureSession>>,

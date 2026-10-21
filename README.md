@@ -124,6 +124,19 @@ On Linux you can compile and test the Tauri shell after installing `libwebkit2gt
 | Shortcut doesn't work | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.      |
 | Orb is gone           | Press `Ctrl+Shift+Space`, or click the Wisp tray icon.                                       |
 
+## Actions, reminders, memory, clipboard
+
+- **Actions:** Ask things like "open notepad", "open the Tauri docs" or "remind me to stretch at 3pm". Wisp can
+  open allowlisted apps (**Settings → Actions**), open http(s) links, copy text, create reminders, and suggest
+  memories. Opening apps or links and saving memories always ask first. Everything is logged in **History**.
+  Wisp has no shell or script access.
+- **Reminders:** Create them in **Settings → Reminders** or by asking. They work offline, show a Windows
+  notification when due (you can turn this off), and can be snoozed or marked done from the island.
+- **Memory:** Short notes in **Settings → Memory** that personalise answers. They're sent with requests only
+  while memory is on, and Wisp asks before saving anything from a conversation.
+- **Clipboard help:** Press `Ctrl+Shift+C` (or the clipboard button) to summarise, rewrite or explain the text
+  you copied. Wisp reads the clipboard once, shows you exactly what will be sent, and never monitors it.
+
 ## Dictation
 
 Press `Ctrl+Shift+D` in any app, speak, and press it again (or **Stop**). Wisp sends the audio to Gemini for

@@ -6,6 +6,15 @@ import { SUCCESS_FLASH_MS } from "./orb";
 
 export type MessageStatus = "streaming" | "done" | "stopped" | "failed";
 
+export interface ActionNote {
+  /** Present while waiting for the user's decision. */
+  confirmId?: string;
+  kind: string;
+  description: string;
+  status: "pending" | "done" | "declined" | "rejected" | "failed";
+  message?: string;
+}
+
 export interface Message {
   id: string;
   role: "user" | "model";
@@ -14,6 +23,10 @@ export interface Message {
   contextKind: ContextKind;
   /** Data URL thumbnail for screen-region questions. */
   imagePreview?: string;
+  /** The full prompt when `text` shows a shorter label (e.g. clipboard requests). */
+  sentText?: string;
+  /** Desktop actions the model proposed during this answer. */
+  actions?: ActionNote[];
 }
 
 export interface AskOptions {
@@ -21,6 +34,8 @@ export interface AskOptions {
   attachments?: Attachment[];
   imagePreview?: string;
   useMemory?: boolean;
+  /** What to show in the user's bubble when the prompt itself is long. */
+  displayText?: string;
 }
 
 interface Pending {
@@ -39,6 +54,7 @@ interface ConversationState {
   ask(prompt: string, opts?: AskOptions): Promise<void>;
   cancel(): void;
   retry(): Promise<void>;
+  respondAction(confirmId: string, approved: boolean): void;
   dismissError(): void;
   setError(e: WispError): void;
   clear(): void;
@@ -60,7 +76,7 @@ export function newId(prefix = "m"): string {
 function historyFrom(messages: Message[]): ChatTurn[] {
   return messages
     .filter((m) => (m.status === "done" || m.status === "stopped") && m.text.trim())
-    .map((m) => ({ role: m.role, text: m.text }));
+    .map((m) => ({ role: m.role, text: m.sentText ?? m.text }));
 }
 
 export const useConversation = create<ConversationState>((set, get) => ({
@@ -81,7 +97,8 @@ export const useConversation = create<ConversationState>((set, get) => ({
     const userMsg: Message = {
       id: newId(),
       role: "user",
-      text,
+      text: opts.displayText ?? text,
+      sentText: opts.displayText ? text : undefined,
       status: "done",
       contextKind,
       imagePreview: opts.imagePreview,
@@ -117,6 +134,29 @@ export const useConversation = create<ConversationState>((set, get) => ({
         enableTools: true,
       },
       (delta) => patchModel((m) => ({ ...m, text: m.text + delta })),
+      (ev) =>
+        patchModel((m) => {
+          const notes = [...(m.actions ?? [])];
+          if (ev.type === "actionProposed") {
+            notes.push({
+              confirmId: ev.id,
+              kind: ev.kind,
+              description: ev.description,
+              status: "pending",
+            });
+          } else {
+            const i = notes.findIndex((n) => n.kind === ev.kind && n.status === "pending");
+            const note: ActionNote = {
+              kind: ev.kind,
+              description: ev.description,
+              status: ev.outcome,
+              message: ev.message,
+            };
+            if (i >= 0) notes[i] = note;
+            else notes.push(note);
+          }
+          return { ...m, actions: notes };
+        }),
     );
     active = handle;
     try {
@@ -135,7 +175,7 @@ export const useConversation = create<ConversationState>((set, get) => ({
             ? s.messages.map((m) => (m.id === modelMsg.id ? { ...m, status: "stopped" } : m))
             : s.messages.filter((m) => m.id !== modelMsg.id && m.id !== userMsg.id),
           // Preserve what the user typed when nothing came back.
-          draft: hasText ? s.draft : text,
+          draft: hasText || opts.displayText ? s.draft : text,
         }));
         return;
       }
@@ -146,7 +186,7 @@ export const useConversation = create<ConversationState>((set, get) => ({
         messages: hasText
           ? s.messages.map((m) => (m.id === modelMsg.id ? { ...m, status: "failed" } : m))
           : s.messages.filter((m) => m.id !== modelMsg.id && m.id !== userMsg.id),
-        draft: hasText || s.draft ? s.draft : text,
+        draft: hasText || s.draft || opts.displayText ? s.draft : text,
       }));
     } finally {
       if (active === handle) active = null;
@@ -162,6 +202,20 @@ export const useConversation = create<ConversationState>((set, get) => ({
     if (!failed) return;
     set({ draft: "" });
     await get().ask(failed.prompt, failed.opts);
+  },
+
+  respondAction(confirmId, approved) {
+    set((s) => ({
+      messages: s.messages.map((m) => ({
+        ...m,
+        actions: m.actions?.map((a) =>
+          a.confirmId === confirmId
+            ? { ...a, confirmId: undefined, status: approved ? "pending" : "declined" }
+            : a,
+        ),
+      })),
+    }));
+    void host().respondAction(confirmId, approved);
   },
 
   dismissError: () => set({ error: null }),

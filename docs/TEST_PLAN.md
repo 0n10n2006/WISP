@@ -58,6 +58,17 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] Cancel while listening: microphone indicator in the Windows tray disappears immediately.
 - [ ] With "Keep dictation audio" off, no files appear in `%APPDATA%\app.wisp.desktop\recordings`.
 
+### Actions, reminders, memory, clipboard
+
+- [ ] "Open notepad" shows _Wisp wants to: Open notepad_; Allow opens it, Don't allow doesn't.
+- [ ] "Open powershell" (not allowlisted) is reported as blocked; nothing runs.
+- [ ] Adding `cmd.exe` in Settings → Actions is refused.
+- [ ] "Remind me to stretch in 2 minutes" creates a reminder; a Windows notification appears on time, once.
+- [ ] Reminders survive restart; Done/Snooze from the island banner work.
+- [ ] "Remember that I prefer metric units" asks before saving; the entry appears in Settings → Memory.
+- [ ] Turning memory off stops memories being used (ask "what units do I prefer?").
+- [ ] `Ctrl+Shift+C` with text copied shows the text and character count; with an image copied it says there's no text.
+
 ### Theme & accessibility
 
 - [ ] System/Dark/Light switch instantly and persist.
