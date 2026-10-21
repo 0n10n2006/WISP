@@ -404,3 +404,33 @@ pub fn foreground_app(state: State<'_, AppState>) -> Option<String> {
     let t = (*state.insert_target.lock().expect("target"))?;
     crate::foreground::process_name(t)
 }
+
+// ---- Desktop awareness ------------------------------------------------------
+
+/// The user's open windows, for "switch to …" in the command bar. Titles
+/// stay on this PC.
+#[tauri::command]
+pub async fn open_windows() -> Vec<wisp_core::tools::OpenWindow> {
+    tauri::async_runtime::spawn_blocking(crate::desktop::open_windows)
+        .await
+        .unwrap_or_default()
+}
+
+/// Bring one of those windows to the front.
+#[tauri::command]
+pub async fn switch_window(app: AppHandle, id: i64) -> CmdResult<()> {
+    let ok = tauri::async_runtime::spawn_blocking(move || crate::desktop::focus_window(id))
+        .await
+        .unwrap_or(false);
+    if !ok {
+        return Err(WispError::invalid("That window isn't open any more"));
+    }
+    crate::windows::close_bar(&app);
+    Ok(())
+}
+
+/// Why the notch is hidden right now ("show" when it isn't).
+#[tauri::command]
+pub fn screen_status(state: State<'_, AppState>) -> wisp_core::screen::Cover {
+    *state.cover.lock().expect("cover")
+}

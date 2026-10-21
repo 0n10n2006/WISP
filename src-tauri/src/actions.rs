@@ -57,6 +57,23 @@ pub fn execute(app: &AppHandle, action: &ValidatedAction) -> Result<String> {
             let _ = app.emit("wisp://data-changed", "memory");
             Ok("Saved to memory.".into())
         }
+        ValidatedAction::Launch { item } => {
+            let res = if item.id.starts_with("lnk:") {
+                app.opener().open_path(&item.target, None::<&str>)
+            } else {
+                app.opener().open_url(&item.target, None::<&str>)
+            };
+            res.map_err(|e| failed(format!("Couldn't open {}: {e}", item.name)))?;
+            let _ = state.db.record_launch(&item.id);
+            Ok(format!("Opened {}.", item.name))
+        }
+        ValidatedAction::SwitchTo { id, app: name } => {
+            if crate::desktop::focus_window(*id) {
+                Ok(format!("Switched to {name}."))
+            } else {
+                Err(failed(format!("{name} isn't open any more.")))
+            }
+        }
     }
 }
 

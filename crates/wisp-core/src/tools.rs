@@ -41,6 +41,70 @@ pub enum ValidatedAction {
         content: String,
         category: String,
     },
+    /// Open an installed app or game from the launcher catalogue.
+    Launch {
+        item: crate::launcher::LaunchItem,
+    },
+    /// Bring one of the user's open windows to the front.
+    SwitchTo {
+        id: i64,
+        app: String,
+    },
+}
+
+/// A top-level window the user has open (from the host).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWindow {
+    pub id: i64,
+    /// Process name, e.g. "chrome".
+    pub app: String,
+    pub title: String,
+}
+
+/// What the model's tools may act on.
+#[derive(Default)]
+pub struct ToolEnv<'a> {
+    pub allowed_apps: &'a [AllowedApp],
+    pub launchable: &'a [crate::launcher::LaunchItem],
+    pub windows: &'a [OpenWindow],
+}
+
+/// Find the catalogue item a spoken/typed app name refers to.
+pub fn find_launchable<'a>(
+    name: &str,
+    items: &'a [crate::launcher::LaunchItem],
+) -> Result<&'a crate::launcher::LaunchItem> {
+    let wanted = name.trim().to_lowercase();
+    if wanted.is_empty() {
+        return Err(WispError::invalid("Which app?"));
+    }
+    if let Some(i) = items.iter().find(|i| i.name.to_lowercase() == wanted) {
+        return Ok(i);
+    }
+    let matches: Vec<_> = items
+        .iter()
+        .filter(|i| {
+            let n = i.name.to_lowercase();
+            n.starts_with(&wanted) || n.split_whitespace().any(|w| w == wanted)
+        })
+        .collect();
+    match matches.as_slice() {
+        [one] => Ok(one),
+        [] => Err(WispError::invalid(format!(
+            "No installed app called \"{}\"",
+            summarize_text(name, 40)
+        ))),
+        many => Err(WispError::invalid(format!(
+            "\"{}\" could be {}. Which one?",
+            summarize_text(name, 40),
+            many.iter()
+                .take(3)
+                .map(|i| i.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))),
+    }
 }
 
 impl ValidatedAction {
@@ -51,6 +115,8 @@ impl ValidatedAction {
             Self::CopyText { .. } => "copy_text",
             Self::CreateReminder { .. } => "create_reminder",
             Self::Remember { .. } => "remember",
+            Self::Launch { .. } => "open_app",
+            Self::SwitchTo { .. } => "switch_to_app",
         }
     }
 
@@ -58,7 +124,10 @@ impl ValidatedAction {
     pub fn requires_confirmation(&self) -> bool {
         matches!(
             self,
-            Self::OpenApp { .. } | Self::OpenUrl { .. } | Self::Remember { .. }
+            Self::OpenApp { .. }
+                | Self::OpenUrl { .. }
+                | Self::Remember { .. }
+                | Self::Launch { .. }
         )
     }
 
@@ -82,6 +151,8 @@ impl ValidatedAction {
                 )
             }
             Self::Remember { content, .. } => format!("chars={}", content.chars().count()),
+            Self::Launch { item } => format!("app={}", summarize_text(&item.name, 40)),
+            Self::SwitchTo { app, .. } => format!("app={}", summarize_text(app, 40)),
         }
     }
 
@@ -101,6 +172,8 @@ impl ValidatedAction {
                 )
             }
             Self::Remember { content, .. } => format!("Remember: \"{content}\""),
+            Self::Launch { item } => format!("Open {}", item.name),
+            Self::SwitchTo { app, .. } => format!("Switch to {app}"),
         }
     }
 }
@@ -118,6 +191,12 @@ pub const MAX_MEMORY_CHARS: usize = 500;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OpenAppArgs {
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SwitchArgs {
     name: String,
 }
 
@@ -147,30 +226,78 @@ fn parse_args<T: for<'de> Deserialize<'de>>(tool: &str, args: &Value) -> Result<
         .map_err(|e| WispError::invalid(format!("Rejected {tool}: invalid arguments ({e})")))
 }
 
-/// Validate a model-proposed tool call.
+/// Validate a model-proposed tool call against the allowlist only.
 pub fn validate_call(
     name: &str,
     args: &Value,
     allowed_apps: &[AllowedApp],
     now: DateTime<Utc>,
 ) -> Result<ValidatedAction> {
+    validate_call_in(
+        name,
+        args,
+        &ToolEnv {
+            allowed_apps,
+            ..Default::default()
+        },
+        now,
+    )
+}
+
+/// Validate a model-proposed tool call. Apps can come from the allowlist or
+/// the launcher catalogue (installed apps and games, each target
+/// re-validated); windows only from the user's currently open windows.
+pub fn validate_call_in(
+    name: &str,
+    args: &Value,
+    env: &ToolEnv,
+    now: DateTime<Utc>,
+) -> Result<ValidatedAction> {
     match name {
         "open_app" => {
             let a: OpenAppArgs = parse_args(name, args)?;
             let wanted = a.name.trim().to_lowercase();
-            let app = allowed_apps
+            if let Some(app) = env.allowed_apps.iter().find(|app| app.name == wanted) {
+                validate_app_target(&app.target)?;
+                return Ok(ValidatedAction::OpenApp {
+                    name: app.name.clone(),
+                    target: app.target.clone(),
+                });
+            }
+            if env.launchable.is_empty() {
+                return Err(WispError::invalid(format!(
+                    "\"{}\" is not in your allowed apps. Add it in Settings → Actions.",
+                    summarize_text(&a.name, 40)
+                )));
+            }
+            let item = find_launchable(&a.name, env.launchable)?;
+            crate::launcher::validate_target(&item.target)?;
+            Ok(ValidatedAction::Launch { item: item.clone() })
+        }
+        "switch_to_app" => {
+            let a: SwitchArgs = parse_args(name, args)?;
+            let wanted = a.name.trim().to_lowercase();
+            if wanted.is_empty() {
+                return Err(WispError::invalid("Which window?"));
+            }
+            let w = env
+                .windows
                 .iter()
-                .find(|app| app.name == wanted)
+                .find(|w| w.app == wanted)
+                .or_else(|| {
+                    env.windows.iter().find(|w| {
+                        w.app.contains(&wanted) || w.title.to_lowercase().contains(&wanted)
+                    })
+                })
                 .ok_or_else(|| {
                     WispError::invalid(format!(
-                        "\"{}\" is not in your allowed apps. Add it in Settings → Actions.",
+                        "\"{}\" isn't open right now",
                         summarize_text(&a.name, 40)
                     ))
                 })?;
-            validate_app_target(&app.target)?;
-            Ok(ValidatedAction::OpenApp {
-                name: app.name.clone(),
-                target: app.target.clone(),
+            Ok(ValidatedAction::SwitchTo {
+                id: w.id,
+                app: w.app.clone(),
             })
         }
         "open_url" => {
@@ -335,10 +462,19 @@ pub fn function_declarations() -> Value {
     json!([
         {
             "name": "open_app",
-            "description": "Open an application from the user's allowlist by its short name.",
+            "description": "Open an installed app or game by name (use a name from the installed apps listed in your instructions).",
             "parameters": {
                 "type": "object",
-                "properties": { "name": { "type": "string", "description": "Allowlisted app name, e.g. notepad" } },
+                "properties": { "name": { "type": "string", "description": "App name, e.g. Spotify" } },
+                "required": ["name"]
+            }
+        },
+        {
+            "name": "switch_to_app",
+            "description": "Bring one of the user's open windows to the front, by app name or a word from its title.",
+            "parameters": {
+                "type": "object",
+                "properties": { "name": { "type": "string", "description": "e.g. chrome, spotify, or a document name" } },
                 "required": ["name"]
             }
         },
@@ -391,7 +527,57 @@ pub fn function_declarations() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::launcher::LaunchItem;
     use crate::settings::Settings;
+
+    fn item(id: &str, name: &str, target: &str) -> LaunchItem {
+        LaunchItem {
+            id: id.into(),
+            name: name.into(),
+            kind: "app".into(),
+            target: target.into(),
+        }
+    }
+
+    #[test]
+    fn opens_installed_apps_and_switches_windows() {
+        let items = vec![
+            item("lnk:a", "Spotify", r"C:\S\Spotify.lnk"),
+            item("lnk:b", "Visual Studio Code", r"C:\S\Code.lnk"),
+            item("lnk:c", "Visual Studio Installer", r"C:\S\VSI.lnk"),
+            item("steam:570", "Dota 2", "steam://rungameid/570"),
+        ];
+        let windows = vec![OpenWindow {
+            id: 42,
+            app: "chrome".into(),
+            title: "Quarterly report - Google Docs".into(),
+        }];
+        let env = ToolEnv {
+            allowed_apps: &[],
+            launchable: &items,
+            windows: &windows,
+        };
+        let a = validate_call_in("open_app", &json!({"name": "spotify"}), &env, now()).unwrap();
+        assert!(matches!(a, ValidatedAction::Launch { ref item } if item.id == "lnk:a"));
+        assert!(a.requires_confirmation());
+        let d = validate_call_in("open_app", &json!({"name": "dota"}), &env, now()).unwrap();
+        assert_eq!(d.describe(), "Open Dota 2");
+        let amb =
+            validate_call_in("open_app", &json!({"name": "visual"}), &env, now()).unwrap_err();
+        assert!(amb.message.contains("Which one"));
+        assert!(validate_call_in("open_app", &json!({"name": "cmd"}), &env, now()).is_err());
+        let sw =
+            validate_call_in("switch_to_app", &json!({"name": "report"}), &env, now()).unwrap();
+        assert_eq!(
+            sw,
+            ValidatedAction::SwitchTo {
+                id: 42,
+                app: "chrome".into()
+            }
+        );
+        assert!(!sw.requires_confirmation());
+        assert!(validate_call_in("switch_to_app", &json!({"name": "excel"}), &env, now()).is_err());
+    }
 
     fn now() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2026-10-21T12:00:00Z")
@@ -557,6 +743,7 @@ mod tests {
             names,
             [
                 "open_app",
+                "switch_to_app",
                 "open_url",
                 "copy_text",
                 "create_reminder",

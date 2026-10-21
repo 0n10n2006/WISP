@@ -10,6 +10,7 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder,
 };
+use wisp_core::settings::NotchPosition;
 
 pub const ISLAND: &str = "island";
 pub const SETTINGS: &str = "settings";
@@ -71,17 +72,24 @@ fn target_monitor(win: &WebviewWindow) -> Option<(i32, i32, i32, i32, f64)> {
     ))
 }
 
-/// Top-centre placement for a logical size on a monitor (x, y, w, h, scale).
-pub fn top_centre(
+/// Placement along the top edge (left, centre or right).
+pub fn place_top(
     monitor: (i32, i32, i32, i32, f64),
     logical: (f64, f64),
     user_scale: f64,
+    position: NotchPosition,
 ) -> (i32, i32, u32, u32) {
     let (mx, my, mw, mh, scale) = monitor;
     let s = scale * user_scale;
     let w = ((logical.0 * s).round() as i32).min(mw);
     let h = ((logical.1 * s).round() as i32).min(mh);
-    (mx + (mw - w) / 2, my, w as u32, h as u32)
+    let margin = (48.0 * s).round() as i32;
+    let x = match position {
+        NotchPosition::Left => mx + margin.min(mw - w),
+        NotchPosition::Center => mx + (mw - w) / 2,
+        NotchPosition::Right => mx + (mw - w - margin).max(0),
+    };
+    (x, my, w as u32, h as u32)
 }
 
 /// Physical rect of the island, cached so unchanged layouts cost nothing.
@@ -134,7 +142,12 @@ pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> Island
         // Never taller than 85% of the screen.
         let max_h = m.3 as f64 * 0.85 / (m.4 * settings.island_scale as f64);
         let logical = (logical.0, logical.1.min(max_h));
-        let rect = top_centre(m, logical, settings.island_scale as f64);
+        let rect = place_top(
+            m,
+            logical,
+            settings.island_scale as f64,
+            settings.notch_position,
+        );
         let mut last = LAST_RECT.lock().expect("rect");
         let (moved, resized) = rect_changes(*last, rect);
         // Resize before moving so the window never pokes past the screen edge.
@@ -274,11 +287,24 @@ mod tests {
     fn centres_on_the_monitor_top() {
         // 1920×1040 work area at 150% scaling.
         let m = (0, 0, 1920, 1040, 1.5);
-        assert_eq!(top_centre(m, SLIVER, 1.0), (825, 0, 270, 15));
+        assert_eq!(
+            place_top(m, SLIVER, 1.0, NotchPosition::Center),
+            (825, 0, 270, 15)
+        );
         // Second monitor to the right, larger UI scale; width is capped to the monitor.
         let m2 = (1920, 40, 800, 600, 1.0);
-        let (x, y, w, _) = top_centre(m2, (OPEN_WIDTH, 300.0), 1.3);
+        let (x, y, w, _) = place_top(m2, (OPEN_WIDTH, 300.0), 1.3, NotchPosition::Center);
         assert_eq!((x, y, w), (1920, 40, 800));
+    }
+
+    #[test]
+    fn left_and_right_placements_keep_a_margin() {
+        let m = (0, 0, 1920, 1040, 1.0);
+        assert_eq!(place_top(m, (400.0, 58.0), 1.0, NotchPosition::Left).0, 48);
+        assert_eq!(
+            place_top(m, (400.0, 58.0), 1.0, NotchPosition::Right).0,
+            1920 - 400 - 48
+        );
     }
 
     #[test]

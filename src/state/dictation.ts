@@ -4,6 +4,7 @@ import { host } from "../services/host";
 import type { AudioRecorder } from "../services/recorder";
 import { useActivity } from "./activity";
 import { useSettings } from "./settings";
+import { NOTHING_HEARD, recorderOptions } from "./voiceOptions";
 import { toast } from "./toast";
 
 export type DictationPhase =
@@ -21,7 +22,10 @@ interface DictationState {
   heard: boolean;
   error: WispError | null;
   target: { available: boolean; title: string | null };
-  start(): Promise<void>;
+  /** Listening stops by itself when the user pauses. */
+  handsFree: boolean;
+  /** `hold`: the user is holding a key, so they decide when it ends. */
+  start(hold?: boolean): Promise<void>;
   /** Stop and transcribe; with `autoInsert` the text goes straight into the app. */
   stop(autoInsert?: boolean): Promise<void>;
   /** Shortcut behaviour: start when idle, stop when listening. */
@@ -47,9 +51,10 @@ export const useDictation = create<DictationState>((set, get) => ({
   transcript: "",
   heard: false,
   error: null,
+  handsFree: false,
   target: { available: false, title: null },
 
-  async start() {
+  async start(hold = false) {
     if (get().phase === "starting" || get().phase === "listening") return;
     generation += 1;
     set({ phase: "starting", transcript: "", error: null, level: 0 });
@@ -59,7 +64,16 @@ export const useDictation = create<DictationState>((set, get) => ({
       .catch(() => set({ target: { available: false, title: null } }));
     recorder = host().createRecorder();
     try {
-      await recorder.start((level) => set({ level }));
+      const options = recorderOptions(
+        !hold,
+        () => void get().stop(),
+        () => {
+          get().cancel();
+          set({ phase: "error", error: NOTHING_HEARD });
+        },
+      );
+      set({ handsFree: !!options.vad });
+      await recorder.start((level) => set({ level }), options);
     } catch (e) {
       recorder = null;
       set({ phase: "error", error: toWispError(e) });

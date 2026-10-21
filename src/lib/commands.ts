@@ -1,7 +1,13 @@
 // Command bar brain: turns what the user typed into ranked results.
 // Pure functions only, so every rule here is unit-tested.
 
-import type { AppUsage, LaunchItem, MediaCommand, PowerAction } from "../services/types";
+import type {
+  AppUsage,
+  LaunchItem,
+  MediaCommand,
+  OpenWindow,
+  PowerAction,
+} from "../services/types";
 
 export type DashboardTab =
   "today" | "controls" | "stats" | "clipboard" | "apps" | "agents" | "wallpaper" | "power";
@@ -65,7 +71,17 @@ export interface AskResultItem {
   prompt: string;
 }
 
-export type BarResult = CommandResult | AppResult | AskResultItem;
+/** An already-open window to switch to. */
+export interface WindowResult {
+  kind: "window";
+  id: string;
+  title: string;
+  hint: string;
+  window: OpenWindow;
+  score: number;
+}
+
+export type BarResult = CommandResult | AppResult | WindowResult | AskResultItem;
 
 const UNIT_MINUTES: Record<string, number> = {
   s: 1 / 60,
@@ -326,17 +342,62 @@ export function looksLikeQuestion(q: string): boolean {
   );
 }
 
+const SWITCH_PREFIX = /^(?:switch to|go to|jump to|show)\s+(.+)$/i;
+
+/** Friendly app label: "chrome" → "Chrome". */
+function appLabel(app: string): string {
+  return app ? app[0]!.toUpperCase() + app.slice(1) : "Window";
+}
+
+/** Open windows matching `query`, by app name or window title. */
+export function rankWindows(query: string, windows: OpenWindow[], limit = 4): WindowResult[] {
+  const q = query.trim();
+  if (!q) return [];
+  return windows
+    .map((w, i) => {
+      const byApp = fuzzyScore(q, w.app);
+      const byTitle = Math.floor(fuzzyScore(q, w.title) * 0.8);
+      // Front-most windows win ties.
+      const s = Math.max(byApp, byTitle);
+      return { w, score: s ? s + Math.max(0, 10 - i) : 0 };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ w, score }) => ({
+      kind: "window" as const,
+      id: `window:${w.id}`,
+      title: w.title || appLabel(w.app),
+      hint: `Switch to ${appLabel(w.app)}`,
+      window: w,
+      score,
+    }));
+}
+
 /** Everything the bar shows for `query`, best first. */
 export function barResults(
   query: string,
   items: LaunchItem[],
   starred: string[],
   recent: AppUsage[],
+  windows: OpenWindow[] = [],
 ): BarResult[] {
   const q = query.trim();
   if (!q) return [];
+  const switchTo = q.match(SWITCH_PREFIX)?.[1];
+  if (switchTo) {
+    const found = rankWindows(switchTo, windows);
+    if (found.length) return found;
+  }
   const commands = parseCommand(q);
-  const apps = looksLikeQuestion(q) ? [] : rankApps(q, items, starred, recent);
+  const question = looksLikeQuestion(q);
+  const apps = question ? [] : rankApps(q, items, starred, recent);
+  // Switching to an open window beats starting the app again.
+  const open = question ? [] : rankWindows(q, windows).filter((w) => w.score >= 400);
+  if (open.length) {
+    const ask: AskResultItem = { kind: "ask", id: "ask", title: q, hint: "Ask Wisp", prompt: q };
+    return [...commands, ...open, ...apps, ask];
+  }
   const ask: AskResultItem = {
     kind: "ask",
     id: "ask",

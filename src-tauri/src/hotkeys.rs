@@ -35,8 +35,15 @@ pub fn payload(e: HoldEvent) -> HoldPayload {
     }
 }
 
+/// Hold-to-talk is switched off while a game is in front.
+pub static PAUSED: AtomicBool = AtomicBool::new(false);
+
 pub fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::SeqCst);
+}
+
+pub fn set_paused(paused: bool) {
+    PAUSED.store(paused, Ordering::SeqCst);
 }
 
 #[cfg(windows)]
@@ -77,7 +84,7 @@ mod imp {
     }
 
     unsafe extern "system" fn hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if code >= 0 && ENABLED.load(Ordering::Relaxed) {
+        if code >= 0 && ENABLED.load(Ordering::Relaxed) && !PAUSED.load(Ordering::Relaxed) {
             let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
             // Ignore synthetic input (including our own Start-menu suppressor).
             if !info.flags.contains(LLKHF_INJECTED) {

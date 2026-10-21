@@ -35,6 +35,24 @@ pub fn register_all(app: &AppHandle, shortcuts: &Shortcuts) -> Vec<ShortcutIssue
     issues
 }
 
+/// Release Wisp's key combinations while a game is in front (so the game
+/// gets them), and take them back afterwards.
+pub fn set_game_mode(app: &AppHandle, game: bool) {
+    let state = app.state::<AppState>();
+    let s = state.settings();
+    if s.shortcuts_in_games {
+        return;
+    }
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if game {
+            let _ = app2.global_shortcut().unregister_all();
+        } else {
+            register_all(&app2, &s.global_shortcuts);
+        }
+    });
+}
+
 fn dispatch(app: &AppHandle, action: &str) {
     match action {
         "toggleIsland" => windows::toggle_island(app),

@@ -115,3 +115,33 @@ describe("app-aware chips", () => {
     expect(chipsFor(null).length).toBeGreaterThan(0);
   });
 });
+
+describe("open windows in the bar", () => {
+  const windows = [
+    { id: 11, app: "chrome", title: "Quarterly report - Google Docs" },
+    { id: 12, app: "code", title: "notch.css - WISP - Visual Studio Code" },
+    { id: 13, app: "spotify", title: "Spotify Premium" },
+  ];
+
+  it("offers switching before launching again", () => {
+    const r = barResults("spotify", items, [], [], windows);
+    expect(r[0]).toMatchObject({ kind: "window", hint: "Switch to Spotify" });
+    expect(r.some((x) => x.kind === "app" && x.title === "Spotify")).toBe(true);
+  });
+
+  it("understands “switch to …” by app or title", () => {
+    expect(barResults("switch to chrome", items, [], [], windows)).toEqual([
+      expect.objectContaining({ kind: "window", window: windows[0] }),
+    ]);
+    expect(barResults("go to quarterly", items, [], [], windows)[0]).toMatchObject({
+      kind: "window",
+      window: { id: 11 },
+    });
+  });
+
+  it("doesn't hijack questions", () => {
+    expect(barResults("why is chrome slow?", items, [], [], windows)[0]).toMatchObject({
+      kind: "ask",
+    });
+  });
+});

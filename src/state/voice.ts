@@ -5,6 +5,7 @@ import type { AudioRecorder } from "../services/recorder";
 import { useActivity } from "./activity";
 import { useConversation } from "./conversation";
 import { useSettings } from "./settings";
+import { NOTHING_HEARD, recorderOptions } from "./voiceOptions";
 
 export type VoicePhase = "idle" | "listening" | "transcribing" | "error";
 
@@ -17,7 +18,10 @@ interface VoiceState {
   error: WispError | null;
   /** Start listening, or finish the turn if already listening. */
   toggle(): Promise<void>;
-  start(): Promise<void>;
+  /** Listening stops by itself when the user pauses. */
+  handsFree: boolean;
+  /** `hold`: the user is holding a key, so they decide when it ends. */
+  start(hold?: boolean): Promise<void>;
   finish(): Promise<void>;
   cancel(): void;
 }
@@ -30,13 +34,14 @@ export const useVoice = create<VoiceState>((set, get) => ({
   phase: "idle",
   level: 0,
   error: null,
+  handsFree: false,
 
   async toggle() {
     if (get().phase === "listening") return get().finish();
     if (get().phase === "idle" || get().phase === "error") return get().start();
   },
 
-  async start() {
+  async start(hold = false) {
     const settings = useSettings.getState().snapshot?.settings;
     if (settings && !settings.voiceEnabled) {
       set({
@@ -53,7 +58,16 @@ export const useVoice = create<VoiceState>((set, get) => ({
     set({ phase: "listening", error: null, level: 0 });
     recorder = host().createRecorder();
     try {
-      await recorder.start((level) => set({ level }));
+      const options = recorderOptions(
+        !hold,
+        () => void get().finish(),
+        () => {
+          get().cancel();
+          set({ phase: "error", error: NOTHING_HEARD });
+        },
+      );
+      set({ handsFree: !!options.vad });
+      await recorder.start((level) => set({ level }), options);
     } catch (e) {
       recorder = null;
       set({ phase: "error", error: toWispError(e) });

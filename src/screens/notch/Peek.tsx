@@ -41,6 +41,8 @@ export function Peek() {
   const dictation = useDictation((d) => d.phase);
   const level = useDictation((d) => d.level);
   const voice = useVoice((v) => v.phase);
+  const dictHandsFree = useDictation((d) => d.handsFree);
+  const voiceHandsFree = useVoice((v) => v.handsFree);
   const jobs = useRunningJobs();
   const [playing, setPlaying] = useState<NowPlaying | null>(null);
 
@@ -60,11 +62,16 @@ export function Peek() {
     main = (
       <span className="peek-live">
         <span className="peek-level" style={{ transform: `scaleX(${0.15 + level * 0.85})` }} />
-        Listening — release to type it in
+        {dictHandsFree ? "Listening — pause when you're done" : "Listening — release to type it in"}
       </span>
     );
   else if (dictation === "transcribing") main = <span>Writing it down…</span>;
-  else if (voice === "listening") main = <span>Listening — release to ask</span>;
+  else if (voice === "listening")
+    main = (
+      <span>
+        {voiceHandsFree ? "Listening — pause when you're done" : "Listening — release to ask"}
+      </span>
+    );
   else if (voice === "transcribing" || state === "thinking") main = <span>Thinking…</span>;
   else if (timer)
     main = (

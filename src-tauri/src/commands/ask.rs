@@ -9,14 +9,16 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
-use wisp_core::gemini::prompt::{build_request, with_function_results, PromptContext};
+use wisp_core::gemini::prompt::{
+    build_request, with_function_results, DesktopContext, PromptContext,
+};
 use wisp_core::gemini::types::{
     AskRequest, FunctionCall, FunctionResponse, GenerateOutcome, Source, UsageMetadata,
 };
 use wisp_core::redact::summarize_text;
 use wisp_core::settings::Settings;
 use wisp_core::storage::{ActionAudit, RequestLog};
-use wisp_core::tools::validate_call;
+use wisp_core::tools::{validate_call_in, ToolEnv};
 use wisp_core::{ErrorCode, WispError};
 
 #[derive(Clone, Serialize)]
@@ -109,6 +111,11 @@ pub async fn ask(
         .iter()
         .map(|a| a.name.clone())
         .collect();
+    let desktop = if settings.app_awareness {
+        Some(desktop_context(&app, &state, settings.share_window_titles).await)
+    } else {
+        None
+    };
     let ctx = PromptContext {
         now_local: &now_local,
         memories: &memories,
@@ -116,6 +123,7 @@ pub async fn ask(
         model: &settings.selected_model,
         fast: settings.fast_mode,
         persona: &settings.persona,
+        desktop: desktop.as_ref(),
     };
     let mut body = build_request(&request, &ctx);
 
@@ -192,6 +200,47 @@ pub async fn prewarm(state: State<'_, AppState>) -> CmdResult<()> {
 }
 
 /// Validate, confirm, execute and audit one model-proposed action.
+/// The app the user came from, their open windows and installed apps, as
+/// names (titles only when the user allows it).
+async fn desktop_context(app: &AppHandle, state: &AppState, titles: bool) -> DesktopContext {
+    let target = *state.insert_target.lock().expect("target");
+    let foreground = target.and_then(crate::foreground::process_name);
+    let foreground_title = if titles {
+        target.and_then(crate::foreground::title)
+    } else {
+        None
+    };
+    let windows = tauri::async_runtime::spawn_blocking(crate::desktop::open_windows)
+        .await
+        .unwrap_or_default();
+    let mut open: Vec<String> = Vec::new();
+    for w in windows {
+        let entry = if titles {
+            format!(
+                "{} — {}",
+                w.app,
+                w.title.chars().take(80).collect::<String>()
+            )
+        } else {
+            w.app
+        };
+        if !open.contains(&entry) {
+            open.push(entry);
+        }
+    }
+    let installed = super::dashboard::cached_catalogue(app, false)
+        .await
+        .iter()
+        .map(|i| i.name.clone())
+        .collect();
+    DesktopContext {
+        foreground,
+        foreground_title,
+        open,
+        installed,
+    }
+}
+
 async fn handle_call(
     app: &AppHandle,
     state: &AppState,
@@ -219,7 +268,24 @@ async fn handle_call(
         });
     };
 
-    let action = match validate_call(&call.name, &call.args, &settings.allowed_apps, Utc::now()) {
+    let launchable = if settings.app_awareness {
+        super::dashboard::cached_catalogue(app, false).await
+    } else {
+        Default::default()
+    };
+    let windows = if settings.app_awareness {
+        tauri::async_runtime::spawn_blocking(crate::desktop::open_windows)
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let env = ToolEnv {
+        allowed_apps: &settings.allowed_apps,
+        launchable: &launchable,
+        windows: &windows,
+    };
+    let action = match validate_call_in(&call.name, &call.args, &env, Utc::now()) {
         Ok(a) => a,
         Err(e) => {
             let kind = summarize_text(&call.name, 40);

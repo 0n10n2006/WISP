@@ -12,6 +12,7 @@ import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
 import { useVoice } from "../../state/voice";
+import type { OpenWindow } from "../../services/types";
 import { runResult } from "./actions";
 
 export interface CommandBarHandle {
@@ -23,6 +24,7 @@ export interface CommandBarHandle {
 const NO_STARS: string[] = [];
 function resultIcon(r: BarResult): IconName {
   if (r.kind === "ask") return "spark";
+  if (r.kind === "window") return "external";
   if (r.kind === "app")
     return r.item.kind === "game" ? "play" : r.item.kind === "system" ? "settings" : "grid";
   switch (r.command.type) {
@@ -97,10 +99,27 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   const [sel, setSel] = useState({ query: "", index: 0 });
   const selected = sel.query === query ? sel.index : 0;
 
+  const awareness = useSettings((s) => s.snapshot?.settings.appAwareness ?? true);
+  // Windows that are open right now, fetched once per bar open.
+  const [windows, setWindows] = useState<OpenWindow[]>([]);
+  useEffect(() => {
+    if (!awareness) return setWindows([]);
+    let live = true;
+    host()
+      .openWindows()
+      .then((w) => live && setWindows(w))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [awareness]);
+
   const results = useMemo(
     () =>
-      pending ? [] : barResults(query, catalogue?.items ?? [], starred, catalogue?.recent ?? []),
-    [query, catalogue, starred, pending],
+      pending
+        ? []
+        : barResults(query, catalogue?.items ?? [], starred, catalogue?.recent ?? [], windows),
+    [query, catalogue, starred, pending, windows],
   );
 
   const submit = (r: BarResult | undefined) => {

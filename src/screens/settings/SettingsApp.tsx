@@ -7,6 +7,7 @@ import { useSettings } from "../../state/settings";
 import { DataTab, HistoryTab } from "./DataTabs";
 import { ActionsTab, MemoryTab, RemindersTab } from "./LocalTabs";
 import { Onboarding } from "./Onboarding";
+import { FocusTab } from "./FocusTab";
 import { NotchTab } from "./NotchTab";
 import { VoiceTab } from "./VoiceTab";
 import { AboutTab, GeneralTab, ModelTab, PrivacyTab, ShortcutsTab } from "./tabs";
@@ -25,6 +26,7 @@ const BASE_TABS: TabDef[] = [
   { id: "notch", label: "Notch & personality", component: NotchTab },
   { id: "model", label: "Model", component: ModelTab },
   { id: "voice", label: "Voice & dictation", component: VoiceTab },
+  { id: "focus", label: "Games & focus", component: FocusTab },
   { id: "shortcuts", label: "Shortcuts", component: ShortcutsTab },
   { id: "actions", label: "Actions", component: ActionsTab },
   { id: "reminders", label: "Reminders", component: RemindersTab },

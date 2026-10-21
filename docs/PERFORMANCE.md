@@ -19,18 +19,18 @@ node scripts/perf/notch-shots.mjs ./shots dark
 
 ## Results (median of 5–7 runs, same machine)
 
-| Metric                                    | v0.2.0 | v0.2.1  |
-| ----------------------------------------- | ------ | ------- |
-| JS loaded at start (transferred)          | 104 KB | 36 KB   |
-| Island bundle (raw)                       | 274 KB | 29 KB   |
-| Idle cost, 5 s with only the sliver       | ~0 ms  | ~0 ms   |
-| Click → bar open and stable (cold)        | 429 ms | ~145 ms |
-| Window resizes per open (cold)            | 4      | 3       |
-| Re-open → bar shown (warm)                | —      | ~19 ms  |
-| Window resizes per re-open                | —      | 1       |
-| Long tasks while opening                  | 0–2    | 0       |
-| Keystroke → results                       | 54 ms  | 41 ms   |
-| Warm start → sliver on screen (self-test) | 680 ms | ~350 ms |
+| Metric                                    | v0.2.0 | v0.2.1  | v0.2.2  |
+| ----------------------------------------- | ------ | ------- | ------- |
+| JS loaded at start (transferred)          | 104 KB | 36 KB   | 37 KB   |
+| Island bundle (raw)                       | 274 KB | 29 KB   | 30 KB   |
+| Idle cost, 5 s with only the sliver       | ~0 ms  | ~0 ms   | ~0 ms   |
+| Click → bar open and stable (cold)        | 429 ms | ~145 ms | ~147 ms |
+| Window resizes per open (cold)            | 4      | 3       | 3       |
+| Re-open → bar shown (warm)                | —      | ~19 ms  | ~25 ms  |
+| Window resizes per re-open                | —      | 1       | 1       |
+| Long tasks while opening                  | 0–2    | 0       | 0       |
+| Keystroke → results                       | 54 ms  | 41 ms   | 46 ms   |
+| Warm start → sliver on screen (self-test) | 680 ms | ~350 ms | ~355 ms |
 
 Cold-open time includes the hover peek that the harness triggers on its way to the click. On a direct shortcut press, the bar renders in about 30 ms and settles in about 80 ms.
 

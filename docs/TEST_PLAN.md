@@ -43,6 +43,19 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Games, awareness & voice (v0.2.2)
+
+- [ ] Start a Steam/Epic game (windowed and fullscreen): the notch disappears immediately, `Ctrl+Alt+Space`, `Ctrl+Win` and `Win+Alt` do nothing in the game; alt-tab out and they work again.
+- [ ] Game on monitor 2, notch on monitor 1: the notch stays visible.
+- [ ] A YouTube video in fullscreen and a PowerPoint slideshow hide the notch; leaving them shows it again within a moment.
+- [ ] Add `notepad` under **Games & focus → Never show over these apps**: focusing Notepad hides the notch (not fullscreen).
+- [ ] With Chrome open, type `chrome` in the bar: "Switch to Chrome" is first and focuses the existing window, restoring it if minimised.
+- [ ] Ask "what apps do I have open?" and "open spotify": the answer lists open apps; opening asks for confirmation first.
+- [ ] Press the talk button, say a sentence, stop talking: Wisp asks by itself after about a second. Holding `Win+Alt` waits until release.
+- [ ] Say nothing after pressing the talk button: after 8 s Wisp says it didn't hear anything.
+- [ ] Pick a different microphone and language in Settings; dictate a word from the vocabulary list: it's spelled as listed.
+- [ ] Notch position Left/Right, resting style Subtle/Invisible, a custom accent colour, hiding two dashboard tabs and reordering another: all apply without restarting.
+
 ### Command bar & dashboard (v0.2)
 
 - [ ] `spo` → Spotify is first; Enter opens it and the bar folds away. A Steam game launches via Steam.

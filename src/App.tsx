@@ -30,9 +30,12 @@ export function App() {
     document.documentElement.dataset.window = kind;
   }, [kind]);
   const accent = settings.accent;
+  const accentColor = settings.accentColor;
   useEffect(() => {
-    document.documentElement.dataset.accent = accent;
-  }, [accent]);
+    const root = document.documentElement;
+    root.dataset.accent = accent;
+    root.style.setProperty("--accent-custom", accentColor);
+  }, [accent, accentColor]);
 
   // Pause decorative animation whenever Wisp isn't visible (PRD §22.1).
   useEffect(() => {

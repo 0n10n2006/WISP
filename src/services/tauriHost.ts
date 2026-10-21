@@ -171,5 +171,8 @@ export function createTauriHost(): Host {
     agentDelete: (id) => call("agent_delete", { id }),
     agentOpen: (id) => call("agent_open", { id }),
     foregroundApp: () => call("foreground_app"),
+    openWindows: () => call("open_windows"),
+    switchWindow: (id) => call("switch_window", { id }),
+    screenStatus: () => call("screen_status"),
   };
 }

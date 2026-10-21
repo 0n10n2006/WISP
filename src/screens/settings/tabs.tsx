@@ -360,7 +360,8 @@ export function PrivacyTab() {
             <strong>Sent to Google Gemini when you ask:</strong> your prompt, recent messages in the
             current conversation, and — only if you explicitly include them — a selected screen
             region, clipboard text, or dictated audio. Enabled memory notes are included unless you
-            turn memory off.
+            turn memory off. With app awareness on (below), the names of the app in front, your open
+            apps and installed apps are included too; window titles only if you allow them.
           </li>
           <li>
             <strong>Only when you use them:</strong> web answers and research briefs use Google
@@ -438,6 +439,21 @@ export function PrivacyTab() {
           description="Off by default. Keeps your last 100 copied texts and links on this PC; skips anything password managers mark as private."
           checked={s.clipboardHistory}
           onChange={(clipboardHistory) => void update({ clipboardHistory })}
+        />
+        <Toggle
+          id="app-awareness"
+          label="Let Wisp know which apps are open"
+          description="Sends the names of the app in front, your open apps and your installed apps (not their contents) with each question, so Wisp can answer about them, open them and switch to them."
+          checked={s.appAwareness}
+          onChange={(appAwareness) => void update({ appAwareness })}
+        />
+        <Toggle
+          id="share-titles"
+          label="Include window titles"
+          description="Off by default. Titles can contain document names, email subjects or page titles."
+          checked={s.shareWindowTitles}
+          disabled={!s.appAwareness}
+          onChange={(shareWindowTitles) => void update({ shareWindowTitles })}
         />
         <Toggle
           id="retain-audio"

@@ -46,6 +46,29 @@ export interface Settings {
   starredApps: string[];
   focusMinutes: number;
   recentWallpapers: string[];
+  /** `#rrggbb`, used when `accent` is "custom". */
+  accentColor: string;
+  notchPosition: NotchPosition;
+  sliverStyle: SliverStyle;
+  /** Dashboard tabs to show, in order. */
+  dashboardTabs: string[];
+  closeOnBlur: boolean;
+  /** Stop listening automatically when you finish speaking. */
+  autoStopVoice: boolean;
+  /** Pause that counts as "done talking", in ms. */
+  silenceMs: number;
+  /** Language hint such as "en-GB"; empty = detect. */
+  voiceLanguage: string;
+  /** Microphone device id; empty = default. */
+  micDevice: string;
+  /** Names and words dictation should get right. */
+  vocabulary: string[];
+  hideInGames: boolean;
+  shortcutsInGames: boolean;
+  /** Process names Wisp never appears over. */
+  neverOverApps: string[];
+  appAwareness: boolean;
+  shareWindowTitles: boolean;
   screenContextEnabled: boolean;
   dictationAutoInsert: boolean;
   retainAudio: boolean;
@@ -59,7 +82,9 @@ export interface Settings {
 
 export type DictationStyle = "verbatim" | "clean" | "formal";
 export type Tone = "concise" | "friendly" | "professional";
-export type Accent = "cyan" | "lavender" | "ember" | "mint";
+export type Accent = "cyan" | "lavender" | "ember" | "mint" | "custom";
+export type NotchPosition = "left" | "center" | "right";
+export type SliverStyle = "glow" | "subtle" | "hidden";
 
 export interface Persona {
   tone: Tone;
@@ -193,6 +218,30 @@ export const DEFAULT_SETTINGS: Settings = {
   starredApps: [],
   focusMinutes: 25,
   recentWallpapers: [],
+  accentColor: "#78e4f2",
+  notchPosition: "center",
+  sliverStyle: "glow",
+  dashboardTabs: [
+    "today",
+    "controls",
+    "stats",
+    "clipboard",
+    "apps",
+    "agents",
+    "wallpaper",
+    "power",
+  ],
+  closeOnBlur: true,
+  autoStopVoice: true,
+  silenceMs: 1200,
+  voiceLanguage: "",
+  micDevice: "",
+  vocabulary: [],
+  hideInGames: true,
+  shortcutsInGames: false,
+  neverOverApps: [],
+  appAwareness: true,
+  shareWindowTitles: false,
   screenContextEnabled: true,
   dictationAutoInsert: false,
   retainAudio: false,
@@ -459,3 +508,13 @@ export interface HoldEvent {
   chord: "dictate" | "ask";
   phase: "start" | "stop" | "cancel";
 }
+
+export interface OpenWindow {
+  id: number;
+  /** Process name, e.g. "chrome". */
+  app: string;
+  title: string;
+}
+
+/** Why the notch is hidden right now. */
+export type Cover = "show" | "fullscreen" | "game" | "presentation" | "excluded";

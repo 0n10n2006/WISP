@@ -129,6 +129,11 @@ export async function runResult(
     }, `Opening ${r.title}`);
     return;
   }
+  if (r.kind === "window") {
+    notch.setQuery("");
+    await guarded(() => host().switchWindow(r.window.id));
+    return;
+  }
   notch.setQuery("");
   if (r.confirm) {
     useConfirm.getState().ask(r.confirm, r.title, () => runCommand(r.command));

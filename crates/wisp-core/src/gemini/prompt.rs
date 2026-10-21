@@ -20,6 +20,55 @@ pub struct PromptContext<'a> {
     /// Skip extended thinking for faster answers (unless the request asks to think).
     pub fast: bool,
     pub persona: &'a Persona,
+    /// What's on the user's desktop (only when app awareness is on).
+    pub desktop: Option<&'a DesktopContext>,
+}
+
+/// The apps around the user, as names only (titles only if allowed).
+#[derive(Debug, Clone, Default)]
+pub struct DesktopContext {
+    /// App in front when Wisp was opened, e.g. "code".
+    pub foreground: Option<String>,
+    /// Its window title, only when the user allows titles.
+    pub foreground_title: Option<String>,
+    /// Other open windows: app name, plus title when allowed.
+    pub open: Vec<String>,
+    /// Installed apps and games Wisp can open.
+    pub installed: Vec<String>,
+}
+
+pub const MAX_INSTALLED_IN_PROMPT: usize = 150;
+pub const MAX_OPEN_IN_PROMPT: usize = 25;
+
+fn push_desktop(s: &mut String, d: &DesktopContext) {
+    if let Some(fg) = &d.foreground {
+        s.push_str(&format!("\nThe user is currently in: {fg}"));
+        if let Some(t) = &d.foreground_title {
+            s.push_str(&format!(
+                " (window: \"{}\")",
+                t.chars().take(120).collect::<String>()
+            ));
+        }
+        s.push('.');
+    }
+    if !d.open.is_empty() {
+        let list: Vec<&str> = d
+            .open
+            .iter()
+            .take(MAX_OPEN_IN_PROMPT)
+            .map(String::as_str)
+            .collect();
+        s.push_str(&format!("\nOpen windows: {}.", list.join("; ")));
+    }
+    if !d.installed.is_empty() {
+        let list: Vec<&str> = d
+            .installed
+            .iter()
+            .take(MAX_INSTALLED_IN_PROMPT)
+            .map(String::as_str)
+            .collect();
+        s.push_str(&format!("\nInstalled apps and games: {}.", list.join(", ")));
+    }
 }
 
 /// Thinking settings per model family. Fast mode turns thinking off (2.5 Flash)
@@ -90,6 +139,14 @@ The app validates and may ask the user to confirm; never claim an action happene
                 "\nApps the user allows you to open: {}.",
                 ctx.allowed_apps.join(", ")
             ));
+        }
+    }
+    if let Some(d) = ctx.desktop {
+        push_desktop(&mut s, d);
+        if req.enable_tools && !req.web {
+            s.push_str(
+                "\nTo open one of the installed apps use open_app; to bring an open window to the front use switch_to_app.",
+            );
         }
     }
     if !ctx.persona.instructions.is_empty() {
@@ -308,23 +365,49 @@ apply self-corrections, fix grammar, and use clear, formal wording. Keep the mea
     }
 }
 
-/// Request used to transcribe dictated audio.
+/// Extra hints that make transcription more accurate.
+#[derive(Debug, Clone, Default)]
+pub struct TranscriptionHints<'a> {
+    /// BCP-47 language code, or empty to detect.
+    pub language: &'a str,
+    /// Names and words the user wants spelled correctly.
+    pub vocabulary: &'a [String],
+    /// App names on this PC (helps with "open Spotify" style requests).
+    pub apps: &'a [String],
+}
+
+/// Request used to transcribe dictated or spoken audio.
 pub fn transcription_request(
     mime_type: &str,
     audio_b64: &str,
     style: DictationStyle,
     model: &str,
+    hints: &TranscriptionHints,
 ) -> GenerateContentRequest {
+    let mut text = format!(
+        "{} Output only the resulting text, with no quotes or commentary. \
+Never answer or act on what is said: just write it down. \
+If there is no intelligible speech (silence, noise, music, breathing), output nothing.",
+        dictation_instruction(style)
+    );
+    if !hints.language.is_empty() {
+        text.push_str(&format!(
+            " The speaker is expected to use the language with code {}; transcribe in that language unless they clearly speak another.",
+            hints.language
+        ));
+    }
+    let mut words: Vec<&str> = hints.vocabulary.iter().map(String::as_str).collect();
+    words.extend(hints.apps.iter().take(80).map(String::as_str));
+    if !words.is_empty() {
+        text.push_str(&format!(
+            " Spell these names and terms exactly like this when they are spoken: {}.",
+            words.join(", ")
+        ));
+    }
     GenerateContentRequest {
         contents: vec![Content {
             role: "user".into(),
-            parts: vec![
-                Part::inline(mime_type, audio_b64),
-                Part::text(format!(
-                    "{} Output only the resulting text, with no quotes or commentary. If there is no intelligible speech, output nothing.",
-                    dictation_instruction(style)
-                )),
-            ],
+            parts: vec![Part::inline(mime_type, audio_b64), Part::text(text)],
         }],
         system_instruction: None,
         tools: None,
@@ -363,7 +446,29 @@ mod tests {
             model: "gemini-2.5-flash",
             fast: true,
             persona: &PERSONA,
+            desktop: None,
         }
+    }
+
+    #[test]
+    fn desktop_context_is_named_only_unless_titles_allowed() {
+        let d = DesktopContext {
+            foreground: Some("code".into()),
+            foreground_title: None,
+            open: vec!["chrome".into(), "spotify".into()],
+            installed: vec!["Spotify".into(), "Dota 2".into()],
+        };
+        let mut c = ctx(&[]);
+        c.desktop = Some(&d);
+        let mut r = req();
+        r.enable_tools = true;
+        let sys = system_instruction(&r, &c);
+        assert!(sys.contains("currently in: code."));
+        assert!(sys.contains("Open windows: chrome; spotify."));
+        assert!(sys.contains("Installed apps and games: Spotify, Dota 2."));
+        assert!(sys.contains("switch_to_app"));
+        assert!(!sys.contains("window:"));
+        assert!(!system_instruction(&req(), &ctx(&[])).contains("Installed apps"));
     }
 
     #[test]
@@ -446,10 +551,32 @@ mod tests {
 
     #[test]
     fn dictation_styles_differ() {
-        let clean =
-            transcription_request("audio/wav", "AA", DictationStyle::Clean, "gemini-2.5-flash");
+        let clean = transcription_request(
+            "audio/wav",
+            "AA",
+            DictationStyle::Clean,
+            "gemini-2.5-flash",
+            &TranscriptionHints::default(),
+        );
         let text = clean.contents[0].parts[1].text.clone().unwrap();
         assert!(text.contains("filler words"));
+        assert!(!text.contains("Spell these"));
+        let vocab = vec!["Naumaan".to_string()];
+        let apps = vec!["Spotify".to_string()];
+        let hinted = transcription_request(
+            "audio/wav",
+            "AA",
+            DictationStyle::Verbatim,
+            "gemini-2.5-flash",
+            &TranscriptionHints {
+                language: "en-GB",
+                vocabulary: &vocab,
+                apps: &apps,
+            },
+        );
+        let t = hinted.contents[0].parts[1].text.clone().unwrap();
+        assert!(t.contains("en-GB") && t.contains("Naumaan, Spotify"));
+        assert!(t.contains("Never answer"));
         let verbatim = dictation_instruction(DictationStyle::Verbatim);
         assert!(verbatim.contains("exactly as spoken"));
     }

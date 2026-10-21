@@ -62,7 +62,45 @@ pub enum Accent {
     Lavender,
     Ember,
     Mint,
+    /// Uses `accent_color`.
+    Custom,
 }
+
+/// Where along the top edge the notch sits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum NotchPosition {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+/// How visible the idle notch is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SliverStyle {
+    /// A soft accent glow.
+    #[default]
+    Glow,
+    /// A faint grey line.
+    Subtle,
+    /// Invisible until you hover the top edge.
+    Hidden,
+}
+
+pub const DASHBOARD_TABS: [&str; 8] = [
+    "today",
+    "controls",
+    "stats",
+    "clipboard",
+    "apps",
+    "agents",
+    "wallpaper",
+    "power",
+];
+pub const MAX_VOCABULARY: usize = 100;
+pub const MAX_NEVER_OVER: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -123,6 +161,34 @@ pub struct Settings {
     pub focus_minutes: u32,
     /// Wallpapers set from the dashboard, most recent first.
     pub recent_wallpapers: Vec<String>,
+    /// Custom accent colour (`#rrggbb`) used when `accent` is `custom`.
+    pub accent_color: String,
+    pub notch_position: NotchPosition,
+    pub sliver_style: SliverStyle,
+    /// Dashboard tabs to show, in order.
+    pub dashboard_tabs: Vec<String>,
+    /// Fold the bar away when you click another app.
+    pub close_on_blur: bool,
+    /// Stop listening automatically when you finish speaking.
+    pub auto_stop_voice: bool,
+    /// Pause after speech that counts as "done talking" (ms).
+    pub silence_ms: u32,
+    /// Spoken language hint (BCP-47 such as "en-GB"); empty = detect.
+    pub voice_language: String,
+    /// Microphone device id; empty = Windows default.
+    pub mic_device: String,
+    /// Names and words dictation should get right.
+    pub vocabulary: Vec<String>,
+    /// Hide the notch and pause hold-to-talk while a game is in front.
+    pub hide_in_games: bool,
+    /// Let Wisp's shortcuts work while a game is in front.
+    pub shortcuts_in_games: bool,
+    /// Programs Wisp must never appear over (process names, no ".exe").
+    pub never_over_apps: Vec<String>,
+    /// Tell Gemini which app you're in and which apps are open/installed.
+    pub app_awareness: bool,
+    /// Include window titles in that context (they can contain document names).
+    pub share_window_titles: bool,
     pub screen_context_enabled: bool,
     pub dictation_auto_insert: bool,
     pub retain_audio: bool,
@@ -172,6 +238,21 @@ impl Default for Settings {
             starred_apps: Vec::new(),
             focus_minutes: 25,
             recent_wallpapers: Vec::new(),
+            accent_color: "#78e4f2".into(),
+            notch_position: NotchPosition::Center,
+            sliver_style: SliverStyle::Glow,
+            dashboard_tabs: DASHBOARD_TABS.iter().map(|t| t.to_string()).collect(),
+            close_on_blur: true,
+            auto_stop_voice: true,
+            silence_ms: 1200,
+            voice_language: String::new(),
+            mic_device: String::new(),
+            vocabulary: Vec::new(),
+            hide_in_games: true,
+            shortcuts_in_games: false,
+            never_over_apps: Vec::new(),
+            app_awareness: true,
+            share_window_titles: false,
             screen_context_enabled: true,
             dictation_auto_insert: false,
             retain_audio: false,
@@ -237,6 +318,60 @@ impl Settings {
         }
         if s.starred_apps.len() > 50 || s.starred_apps.iter().any(|a| a.len() > 500) {
             return Err(WispError::invalid("Too many starred apps"));
+        }
+        let hex = s.accent_color.trim().to_ascii_lowercase();
+        if hex.len() != 7
+            || !hex.starts_with('#')
+            || !hex[1..].chars().all(|c| c.is_ascii_hexdigit())
+        {
+            return Err(WispError::invalid("Accent colour must look like #78e4f2"));
+        }
+        s.accent_color = hex;
+        let mut seen = std::collections::HashSet::new();
+        s.dashboard_tabs
+            .retain(|t| DASHBOARD_TABS.contains(&t.as_str()) && seen.insert(t.clone()));
+        if s.dashboard_tabs.is_empty() {
+            return Err(WispError::invalid("Keep at least one dashboard tab"));
+        }
+        if !(500..=4000).contains(&s.silence_ms) {
+            return Err(WispError::invalid(
+                "The pause must be between 0.5 and 4 seconds",
+            ));
+        }
+        s.voice_language = s.voice_language.trim().to_string();
+        if s.voice_language.len() > 20
+            || !s
+                .voice_language
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            return Err(WispError::invalid("Language must be a code like en-GB"));
+        }
+        if s.mic_device.len() > 300 {
+            return Err(WispError::invalid("Invalid microphone"));
+        }
+        let mut seen = std::collections::HashSet::new();
+        s.vocabulary = s
+            .vocabulary
+            .iter()
+            .map(|w| w.trim().chars().take(60).collect::<String>())
+            .filter(|w| !w.is_empty() && seen.insert(w.to_lowercase()))
+            .collect();
+        if s.vocabulary.len() > MAX_VOCABULARY {
+            return Err(WispError::invalid(format!(
+                "Keep the word list under {MAX_VOCABULARY} entries"
+            )));
+        }
+        s.never_over_apps = s
+            .never_over_apps
+            .iter()
+            .map(|a| crate::screen::process_name(a.trim()))
+            .filter(|a| !a.is_empty() && a.len() <= 80)
+            .collect();
+        s.never_over_apps.sort();
+        s.never_over_apps.dedup();
+        if s.never_over_apps.len() > MAX_NEVER_OVER {
+            return Err(WispError::invalid("Too many apps in the list"));
         }
         if s.recent_wallpapers.len() > 12 || s.recent_wallpapers.iter().any(|p| p.len() > 1000) {
             return Err(WispError::invalid("Too many recent wallpapers"));
@@ -459,6 +594,38 @@ mod tests {
         let aside = loaded.recovered_from.unwrap();
         assert!(aside.exists());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn customisation_is_validated_and_normalised() {
+        let s = Settings::default()
+            .patched(&json!({
+                "accentColor": "#FFAA00",
+                "dashboardTabs": ["power", "bogus", "power", "today"],
+                "notchPosition": "right",
+                "sliverStyle": "hidden",
+                "vocabulary": [" Naumaan ", "naumaan", "", "Kubernetes"],
+                "neverOverApps": ["C:\\Tools\\OBS64.EXE", "obs64", "photoshop.exe"],
+                "voiceLanguage": "en-GB",
+            }))
+            .unwrap();
+        assert_eq!(s.accent_color, "#ffaa00");
+        assert_eq!(s.dashboard_tabs, vec!["power", "today"]);
+        assert_eq!(s.notch_position, NotchPosition::Right);
+        assert_eq!(s.sliver_style, SliverStyle::Hidden);
+        assert_eq!(s.vocabulary, vec!["Naumaan", "Kubernetes"]);
+        assert_eq!(s.never_over_apps, vec!["obs64", "photoshop"]);
+
+        for bad in [
+            json!({"accentColor": "red"}),
+            json!({"dashboardTabs": ["bogus"]}),
+            json!({"silenceMs": 100}),
+            json!({"silenceMs": 9000}),
+            json!({"voiceLanguage": "en GB; drop"}),
+            json!({"notchPosition": "bottom"}),
+        ] {
+            assert!(Settings::default().patched(&bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

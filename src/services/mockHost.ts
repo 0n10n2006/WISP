@@ -705,7 +705,8 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     onCaptureReady: (cb) => on(listeners.captureReady, cb),
     onCaptureError: (cb) => on(listeners.captureError, cb),
 
-    createRecorder: () => createFakeRecorder(),
+    // The preview pretends you speak for ~2 s; tests drive the recorder themselves.
+    createRecorder: () => createFakeRecorder(persist ? 2000 : undefined),
     transcribe: async (rec) => {
       if (!hasKey)
         throw err("missing_key", "Add your Gemini API key in Settings → Model to ask Wisp.");
@@ -1057,5 +1058,15 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     },
     agentOpen: async () => {},
     foregroundApp: async () => "code",
+    openWindows: async () => [
+      { id: 1, app: "chrome", title: "Quarterly report - Google Docs" },
+      { id: 2, app: "code", title: "notch.css - WISP - Visual Studio Code" },
+      { id: 3, app: "spotify", title: "Spotify Premium" },
+    ],
+    switchWindow: async (id) => {
+      if (![1, 2, 3].includes(id)) throw err("invalid", "That window isn't open any more");
+      setLayout("sliver");
+    },
+    screenStatus: async () => "show",
   };
 }

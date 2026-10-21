@@ -36,6 +36,8 @@ import type {
   LaunchItem,
   MediaCommand,
   NowPlaying,
+  OpenWindow,
+  Cover,
   NotchMode,
   Point,
   PowerAction,
@@ -202,6 +204,11 @@ export interface Host {
   agentOpen(id: string): Promise<void>;
   /** Process name of the app Wisp was summoned from (local only). */
   foregroundApp(): Promise<string | null>;
+  /** The user's open windows (local only). */
+  openWindows(): Promise<OpenWindow[]>;
+  switchWindow(id: number): Promise<void>;
+  /** Why the notch is hidden right now. */
+  screenStatus(): Promise<Cover>;
 }
 
 let current: Host | null = null;
