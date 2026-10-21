@@ -2,16 +2,18 @@ use crate::windows;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
-    let toggle = MenuItem::with_id(app, "toggle", "Show / hide Wisp", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(app, "toggle", "Open command bar", true, None::<&str>)?;
+    let tuck = MenuItem::with_id(app, "tuck", "Tuck away / bring back", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Wisp", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
             &toggle,
+            &tuck,
             &settings,
             &PredefinedMenuItem::separator(app)?,
             &quit,
@@ -24,6 +26,10 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "toggle" => windows::toggle_island(app),
+            "tuck" => {
+                let tucked = app.state::<crate::state::AppState>().settings().tucked;
+                windows::set_tucked(app, !tucked);
+            }
             "settings" => windows::open_settings(app, None),
             "quit" => app.exit(0),
             _ => {}
@@ -35,7 +41,12 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                windows::toggle_island(tray.app_handle());
+                // Clicking the tray icon also brings a tucked Wisp back.
+                let app = tray.app_handle();
+                if app.state::<crate::state::AppState>().settings().tucked {
+                    windows::set_tucked(app, false);
+                }
+                windows::toggle_island(app);
             }
         });
     builder = builder.icon(tray_icon(crate::system_theme::get().system_light));

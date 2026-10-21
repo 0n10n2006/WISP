@@ -188,20 +188,16 @@ pub fn summon_island(app: &AppHandle) {
     let _ = app.emit_to(ISLAND, "wisp://focus-prompt", ());
 }
 
-/// Tuck the notch away completely (or bring it back).
+/// Tuck the notch away completely (or bring it back). Saved like any other
+/// setting, so the Settings window and the UI stay in sync.
 pub fn set_tucked(app: &AppHandle, tucked: bool) {
     let state = app.state::<AppState>();
-    {
-        let mut s = state.settings.lock().expect("settings");
-        if s.tucked != tucked {
-            s.tucked = tucked;
-            let _ = state.settings_store.save(&s);
-        }
+    let mut s = state.settings();
+    if s.tucked == tucked {
+        return;
     }
-    if state.island.lock().expect("island").mode != NotchMode::Open {
-        set_island_visible(app, sliver_wanted(app));
-    }
-    let _ = app.emit("wisp://tucked", tucked);
+    s.tucked = tucked;
+    let _ = crate::commands::settings::commit(app, &state, s);
 }
 
 pub fn open_settings(app: &AppHandle, tab: Option<String>) {
