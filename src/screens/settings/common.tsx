@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Icon } from "../../components/Icon";
 import { host } from "../../services/host";
 import type { WispError } from "../../services/errors";
@@ -103,13 +103,16 @@ export function Choice<T extends string>({
 /** Inline result line for a settings action. */
 export function useStatus() {
   const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  return {
-    status,
-    ok: (text: string) => setStatus({ tone: "ok", text }),
-    fail: (e: WispError | string) =>
-      setStatus({ tone: "error", text: typeof e === "string" ? e : e.message }),
-    clear: () => setStatus(null),
-  };
+  const actions = useMemo(
+    () => ({
+      ok: (text: string) => setStatus({ tone: "ok", text }),
+      fail: (e: WispError | string) =>
+        setStatus({ tone: "error", text: typeof e === "string" ? e : e.message }),
+      clear: () => setStatus(null),
+    }),
+    [],
+  );
+  return { status, ...actions };
 }
 
 export function StatusLine({ status }: { status: { tone: "ok" | "error"; text: string } | null }) {

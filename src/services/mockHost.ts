@@ -6,6 +6,9 @@ import type { WispError } from "./errors";
 import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
 import {
   DEFAULT_SETTINGS,
+  type ActionAudit,
+  type RequestLog,
+  type StorageStats,
   DEFAULT_SHORTCUTS,
   type AskResult,
   type ConnectionReport,
@@ -168,13 +171,47 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     tab: new Set<(t: string) => void>(),
     focus: new Set<() => void>(),
     shortcut: new Set<(a: ShortcutAction) => void>(),
+    data: new Set<(scope: string) => void>(),
   };
+  let requests: RequestLog[] = [];
+  let actions: ActionAudit[] = [];
+  const counts = { tasks: 0, openTasks: 0, memories: 0 };
+  const logRequest = (
+    prompt: string,
+    contextKind: string,
+    latencyMs: number,
+    errorCode: string | null,
+    response: string | null,
+  ) => {
+    if (settings.historyRetentionDays === 0) return;
+    const entry: RequestLog = {
+      id: `log-${Date.now()}-${requests.length}`,
+      timestamp: new Date().toISOString(),
+      requestType: "ask",
+      model: settings.selectedModel,
+      status: errorCode === "cancelled" ? "cancelled" : errorCode ? "error" : "ok",
+      latencyMs,
+      errorCode: errorCode === "cancelled" ? "cancelled" : errorCode,
+      contextKind,
+      totalTokens: null,
+      prompt: settings.contentHistory ? prompt : null,
+      response: settings.contentHistory ? response : null,
+    };
+    requests = [entry, ...requests].slice(0, 500);
+  };
+  const stats = (): StorageStats => ({
+    requests: requests.length,
+    actions: actions.length,
+    ...counts,
+    schemaVersion: 1,
+  });
 
   const snapshot = (): SettingsSnapshot => ({
     settings,
     hasApiKey: hasKey,
     shortcutIssues: [],
     recoveredFrom: null,
+    warnings: [],
     version: "0.1.0-preview",
   });
   const emit = () => {
@@ -269,8 +306,8 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
 
     ask(req, onDelta): AskHandle {
       const ctl = new AbortController();
-      const result = (async (): Promise<AskResult> => {
-        const started = Date.now();
+      const started = Date.now();
+      const run = (async (): Promise<AskResult> => {
         if (!hasKey)
           throw err("missing_key", "Add your Gemini API key in Settings → Model to ask Wisp.");
         const p = req.prompt.toLowerCase();
@@ -315,6 +352,16 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
           finishReason: "STOP",
         };
       })();
+      const result = run.then(
+        (r) => {
+          logRequest(req.prompt, req.contextKind, Date.now() - started, null, r.text);
+          return r;
+        },
+        (e: WispError) => {
+          logRequest(req.prompt, req.contextKind, Date.now() - started, e.code, null);
+          throw e;
+        },
+      );
       return { result, cancel: () => ctl.abort() };
     },
 
@@ -341,6 +388,62 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     onFocusPrompt: (cb) => on(listeners.focus, cb),
     onShortcut: (cb) => on(listeners.shortcut, cb),
     quit: async () => {},
+
+    historyList: async (limit = 200) => requests.slice(0, limit),
+    actionsList: async (limit = 200) => actions.slice(0, limit),
+    dataStats: async () => stats(),
+    dataDelete: async (scope) => {
+      if (scope === "history" || scope === "everything") {
+        requests = [];
+        actions = [];
+      }
+      if (scope === "memory" || scope === "everything") counts.memories = 0;
+      if (scope === "tasks" || scope === "everything") {
+        counts.tasks = 0;
+        counts.openTasks = 0;
+      }
+      if (scope === "settings" || scope === "everything") {
+        settings = {
+          ...DEFAULT_SETTINGS,
+          onboardingComplete: scope === "settings" && settings.onboardingComplete,
+        };
+      }
+      if (scope === "everything") {
+        hasKey = false;
+        if (persist) safeSet(KEY_FLAG, null);
+      }
+      save();
+      listeners.data.forEach((cb) => cb(scope));
+      return stats();
+    },
+    onDataChanged: (cb) => on(listeners.data, cb),
+    diagnosticsReport: async () =>
+      JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          appVersion: "0.1.0-preview",
+          os: "browser-preview",
+          hasApiKey: hasKey,
+          settings: {
+            ...settings,
+            allowedApps: settings.allowedApps.length,
+            windowPosition: undefined,
+          },
+          storage: stats(),
+          recentRequests: requests.slice(0, 50).map((r) => ({
+            timestamp: r.timestamp,
+            type: r.requestType,
+            model: r.model,
+            status: r.status,
+            latencyMs: r.latencyMs,
+            errorCode: r.errorCode,
+            contextKind: r.contextKind,
+          })),
+        },
+        null,
+        2,
+      ),
+    diagnosticsSave: async () => "Downloads/wisp-diagnostics-preview.json",
 
     openExternal: async (url) => {
       window.open(url, "_blank", "noopener");

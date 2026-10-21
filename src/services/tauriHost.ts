@@ -71,6 +71,14 @@ export function createTauriHost(): Host {
     onShortcut: (cb) => subscribe<ShortcutAction>("wisp://shortcut", cb),
     quit: () => call("quit_app"),
 
+    historyList: (limit) => call("history_list", { limit: limit ?? null }),
+    actionsList: (limit) => call("actions_list", { limit: limit ?? null }),
+    dataStats: () => call("data_stats"),
+    dataDelete: (scope) => call("data_delete", { scope }),
+    onDataChanged: (cb) => subscribe<string>("wisp://data-changed", cb),
+    diagnosticsReport: () => call("diagnostics_report"),
+    diagnosticsSave: () => call("diagnostics_save"),
+
     openExternal: (url) => call("open_external", { url }),
     copyText: (text) => call("copy_text", { text }),
   };

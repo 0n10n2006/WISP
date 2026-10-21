@@ -14,6 +14,7 @@ use std::sync::Mutex;
 use tauri::{Manager, WindowEvent};
 use wisp_core::gemini::GeminiClient;
 use wisp_core::settings::SettingsStore;
+use wisp_core::storage::Db;
 
 pub fn run() {
     tauri::Builder::default()
@@ -34,13 +35,27 @@ pub fn run() {
             let store = SettingsStore::new(data_dir.join("settings.json"));
             let loaded = store.load();
             let settings = loaded.settings;
+            let mut warnings = Vec::new();
+            let db = match Db::open(&data_dir.join("wisp.db")) {
+                Ok(db) => db,
+                Err(e) => {
+                    warnings.push(format!(
+                        "Wisp couldn't open its local database ({}). History, reminders and memory won't be saved this session.",
+                        e.message
+                    ));
+                    Db::open_in_memory()?
+                }
+            };
+            let _ = db.prune_history(settings.history_retention_days.max(1), settings.content_history);
             app.manage(AppState {
                 settings: Mutex::new(settings.clone()),
                 settings_store: store,
+                startup_warnings: Mutex::new(warnings),
                 settings_recovered_from: Mutex::new(
                     loaded.recovered_from.map(|p| p.display().to_string()),
                 ),
                 gemini: GeminiClient::new(),
+                db,
                 secrets: secrets::SecretStore::default(),
                 requests: Mutex::new(HashMap::new()),
                 shortcut_issues: Mutex::new(Vec::new()),
@@ -94,6 +109,12 @@ pub fn run() {
             commands::settings::validate_shortcut,
             commands::ask::ask,
             commands::ask::ask_cancel,
+            commands::data::history_list,
+            commands::data::actions_list,
+            commands::data::data_stats,
+            commands::data::data_delete,
+            commands::data::diagnostics_report,
+            commands::data::diagnostics_save,
             commands::system::set_island_expanded,
             commands::system::hide_island,
             commands::system::open_settings,

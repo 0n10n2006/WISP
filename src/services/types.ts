@@ -53,6 +53,7 @@ export interface SettingsSnapshot {
   hasApiKey: boolean;
   shortcutIssues: ShortcutIssue[];
   recoveredFrom: string | null;
+  warnings: string[];
   version: string;
 }
 
@@ -152,3 +153,38 @@ export const DEFAULT_SETTINGS: Settings = {
     { name: "file explorer", target: "explorer.exe" },
   ],
 };
+
+export interface RequestLog {
+  id: string;
+  timestamp: string;
+  requestType: string;
+  model: string;
+  status: "ok" | "error" | "cancelled";
+  latencyMs: number;
+  errorCode: string | null;
+  contextKind: string;
+  totalTokens: number | null;
+  prompt: string | null;
+  response: string | null;
+}
+
+export interface ActionAudit {
+  id: string;
+  timestamp: string;
+  actionType: string;
+  summary: string;
+  outcome: "done" | "rejected" | "declined" | "failed";
+  userConfirmed: boolean;
+  detail: string | null;
+}
+
+export interface StorageStats {
+  requests: number;
+  actions: number;
+  tasks: number;
+  openTasks: number;
+  memories: number;
+  schemaVersion: number;
+}
+
+export type DeleteScope = "history" | "memory" | "tasks" | "settings" | "everything";

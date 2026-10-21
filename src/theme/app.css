@@ -1040,3 +1040,89 @@ select {
     background: HighlightText;
   }
 }
+
+/* ---------- Tables & data ---------- */
+.tab-wide {
+  max-width: 860px;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.data-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border-strong);
+}
+.data-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+.data-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.cell-sub {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  word-break: break-word;
+}
+.cell-mono {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-strong);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.pill-ok,
+.pill-done {
+  color: var(--color-success);
+  border-color: currentColor;
+}
+.pill-error,
+.pill-failed,
+.pill-rejected {
+  color: var(--color-error);
+  border-color: currentColor;
+}
+.pill-cancelled,
+.pill-declined {
+  color: var(--color-text-secondary);
+}
+.row-label {
+  font-weight: 500;
+}
+.select-inline {
+  width: auto;
+  min-width: 160px;
+  margin-top: 0;
+}
+.report {
+  margin-top: var(--space-3);
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}
+.offline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-warning);
+}

@@ -4,6 +4,7 @@ import { ToastHost } from "../../components/Toast";
 import { host } from "../../services/host";
 import type { SettingsSnapshot } from "../../services/types";
 import { useSettings } from "../../state/settings";
+import { DataTab, HistoryTab } from "./DataTabs";
 import { Onboarding } from "./Onboarding";
 import { AboutTab, GeneralTab, ModelTab, PrivacyTab, ShortcutsTab } from "./tabs";
 
@@ -21,6 +22,8 @@ const BASE_TABS: TabDef[] = [
   { id: "model", label: "Model", component: ModelTab },
   { id: "shortcuts", label: "Shortcuts", component: ShortcutsTab },
   { id: "privacy", label: "Privacy", component: PrivacyTab },
+  { id: "history", label: "History", component: HistoryTab },
+  { id: "data", label: "Data", component: DataTab },
 ];
 
 function needsSetup(s: SettingsSnapshot | null): boolean {

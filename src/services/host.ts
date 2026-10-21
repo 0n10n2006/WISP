@@ -2,7 +2,11 @@
 // `tauriHost` talks to Rust; `mockHost` lets the whole UI run in a browser.
 
 import type {
+  ActionAudit,
   AskRequest,
+  DeleteScope,
+  RequestLog,
+  StorageStats,
   AskResult,
   ConnectionReport,
   DeepPartial,
@@ -50,6 +54,15 @@ export interface Host {
   onFocusPrompt(cb: () => void): Unsubscribe;
   onShortcut(cb: (action: ShortcutAction) => void): Unsubscribe;
   quit(): Promise<void>;
+
+  historyList(limit?: number): Promise<RequestLog[]>;
+  actionsList(limit?: number): Promise<ActionAudit[]>;
+  dataStats(): Promise<StorageStats>;
+  dataDelete(scope: DeleteScope): Promise<StorageStats>;
+  onDataChanged(cb: (scope: string) => void): Unsubscribe;
+  diagnosticsReport(): Promise<string>;
+  /** Saves to Downloads; returns the file path. */
+  diagnosticsSave(): Promise<string>;
 
   openExternal(url: string): Promise<void>;
   copyText(text: string): Promise<void>;
