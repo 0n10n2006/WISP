@@ -45,7 +45,7 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             let _ = win.set_always_on_top(new.always_on_top);
         }
     }
-    if old.island_scale != new.island_scale {
+    if old.island_scale != new.island_scale || old.notch_position != new.notch_position {
         let expanded = app
             .state::<AppState>()
             .island

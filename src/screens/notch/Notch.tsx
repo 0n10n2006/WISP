@@ -43,6 +43,7 @@ function Idle() {
   const listening = useDictation((d) => d.phase === "listening" || d.phase === "transcribing");
   const voice = useVoice((v) => v.phase === "listening" || v.phase === "transcribing");
   const sticky = listening || voice;
+  const sliverStyle = useSettings((s) => s.snapshot?.settings.sliverStyle ?? "glow");
 
   const peek = useCallback(() => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
@@ -66,6 +67,7 @@ function Idle() {
     <button
       className={`notch-idle notch-${mode}`}
       data-state={state}
+      data-style={sliverStyle}
       onPointerEnter={peek}
       onPointerLeave={unpeek}
       onFocus={peek}
@@ -103,7 +105,7 @@ function onHold(e: HoldEvent) {
   const dictation = useDictation.getState();
   const voice = useVoice.getState();
   if (e.chord === "dictate") {
-    if (e.phase === "start") void dictation.start();
+    if (e.phase === "start") void dictation.start(true);
     if (e.phase === "cancel") {
       dictation.cancel();
       void host().hideIsland();
@@ -117,7 +119,7 @@ function onHold(e: HoldEvent) {
     }
     return;
   }
-  if (e.phase === "start") void voice.start();
+  if (e.phase === "start") void voice.start(true);
   if (e.phase === "cancel") {
     voice.cancel();
     void host().hideIsland();
@@ -155,7 +157,8 @@ export function Notch() {
         h.prewarm();
       }),
       h.onBlur(() => {
-        if (useNotch.getState().mode === "open" && !busy()) close();
+        const closeOnBlur = useSettings.getState().snapshot?.settings.closeOnBlur ?? true;
+        if (closeOnBlur && useNotch.getState().mode === "open" && !busy()) close();
       }),
       h.onReminderDue((t) => {
         useDueReminders.getState().push(t);

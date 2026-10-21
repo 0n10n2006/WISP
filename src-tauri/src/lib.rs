@@ -9,6 +9,7 @@ mod clipboard_history;
 mod com_worker;
 mod commands;
 mod crash;
+mod desktop;
 mod foreground;
 mod hotkeys;
 mod power;
@@ -90,6 +91,8 @@ pub fn run() {
                 shortcut_issues: Mutex::new(Vec::new()),
                 island: Mutex::new(Default::default()),
                 fullscreen_active: Mutex::new(false),
+                game_active: Default::default(),
+                cover: Mutex::new(wisp_core::screen::Cover::Show),
                 stats: Default::default(),
                 catalogue: Mutex::new(None),
                 highlights: Mutex::new(Vec::new()),
@@ -241,6 +244,9 @@ pub fn run() {
             commands::dashboard::agent_delete,
             commands::dashboard::agent_open,
             commands::dashboard::foreground_app,
+            commands::dashboard::open_windows,
+            commands::dashboard::switch_window,
+            commands::dashboard::screen_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Wisp");

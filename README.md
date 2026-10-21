@@ -29,6 +29,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2: hold-to-talk, circle to ask, dictation clean-up, Show me             | ✅    |
 | v0.2: web answers with sources, fast mode, personality, agents             | ✅    |
 | Text-to-speech removed                                                     | ✅    |
+| v0.2.2: game-safe, app-aware, hands-free voice, deeper customisation       | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -76,10 +77,23 @@ npm run tauri build    # produce installers in target/release/bundle/
 | Sliver | A 120 px glow at the top of the screen your cursor is on. A focus timer fills it.         |
 | Peek   | Hover: time and date, or what's live — listening, thinking, focus countdown, now playing. |
 | Bar    | Click or `Ctrl+Alt+Space`: the command bar, sized to its content, with the dashboard.     |
-| Hidden | While a fullscreen game/video is in front (optional), or when tucked (`Ctrl+Alt+H`).      |
+| Hidden | In games, over fullscreen apps and presentations, over apps you exclude, or when tucked.  |
 
-The bar folds back to the sliver when you press `Esc` or click elsewhere, unless an answer is streaming, you're
-recording, or something is waiting for your confirmation.
+The bar folds back to the sliver when you press `Esc` or click elsewhere (you can turn that off), unless an
+answer is streaming, you're recording, or something is waiting for your confirmation.
+
+### Never in the way
+
+Wisp knows which window is in front and reacts the moment it changes (a Windows event hook, not polling):
+
+- **Games:** detected from Windows' own state (fullscreen DirectX, game mode, "busy"), common engines (Unity,
+  Unreal, SDL, GLFW) and game folders (Steam, Epic, Xbox, Riot, GOG, Ubisoft, EA, Battle.net, Rockstar, itch).
+  While a game is in front Wisp hides, closes the bar if it was open, pauses hold-to-talk, and releases its
+  global shortcuts so no key press is ever stolen (unless you opt in under **Settings → Games & focus**).
+- **Fullscreen and presentations:** hidden while a video, slideshow or anything fullscreen covers its monitor.
+- **Your list:** add apps (e.g. `obs64`, `photoshop`) Wisp should never appear over, fullscreen or not; pick
+  them from what's open right now.
+- **Multi-monitor aware:** a game on another screen doesn't hide the notch on yours.
 
 ## Command bar
 
@@ -88,7 +102,8 @@ Type anything:
 - **A question** — Enter asks Gemini. `Tab` toggles **Web** (Google Search grounding, with numbered source
   chips). `Shift+Enter` asks with **Think** (slower, more careful). Fast mode is on by default.
 - **An app or game** — fuzzy search over Start-menu apps, Steam games and Windows settings pages
-  (`spo` → Spotify, `vsc` → Visual Studio Code). Starred and recent apps rank first.
+  (`spo` → Spotify, `vsc` → Visual Studio Code). Starred and recent apps rank first. If the app is already
+  open, **Switch to** it comes first; `switch to <app or window title>` jumps straight there.
 - **A command** — `timer 25`, `stop timer`, `remind me to stretch in 20 min`, `volume 30`, `mute`, `next`,
   `dark mode`, `wifi off`, `bluetooth on`, `lock`, `sleep`, `restart`, `shutdown`, `cancel shutdown`,
   `show me the save button`, `research <topic>`, `replica`, `select`, `dictate`, `tuck`, `stats`, `apps`, …
@@ -152,8 +167,21 @@ allow desktop apps.
 
 ## Voice questions
 
-Hold `Win+Alt`, ask, and let go (or press `Ctrl+Alt+V` twice). The transcript is asked as a normal question
+Hold `Win+Alt`, ask, and let go. Or press `Ctrl+Alt+V` / the talk button and just speak: Wisp notices when
+you've finished (a pause of 1.2 s by default) and asks by itself. The transcript is asked as a normal question
 and the answer appears as text. Wisp never listens in the background and never speaks.
+
+**Better recognition** (**Settings → Voice & dictation**): pick your microphone and the language you speak,
+add names and jargon it should spell exactly, and tune the pause that means "done". Wisp learns the room's
+background noise, trims silence, evens out quiet microphones, and tells Gemini your installed app names so
+"open Obsidian" comes out right.
+
+## Knows your PC
+
+With **app awareness** on (default; **Settings → Privacy**), each question includes the name of the app you're
+in, your open apps and your installed apps, so you can ask "what's using my screen?", "open Steam" or "switch
+to Spotify". Only names are sent, never window contents; window titles only if you allow them. Opening an app
+still asks first.
 
 ## Actions, reminders, memory, clipboard
 
@@ -171,7 +199,9 @@ and the answer appears as text. Wisp never listens in the background and never s
 ## Personality
 
 **Settings → Notch & personality**: tone (Concise, Friendly, Professional), custom instructions sent with each
-question (e.g. "Use British spelling"), and an accent colour (Cyan, Lavender, Ember, Mint).
+question (e.g. "Use British spelling"), an accent colour (Cyan, Lavender, Ember, Mint or any colour you
+pick), the notch's position (left, centre, right), how it looks at rest (glow, subtle, invisible), whether
+clicking elsewhere closes the bar, and which dashboard tabs show in what order.
 
 ## Gemini, quotas and your data
 

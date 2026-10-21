@@ -1,6 +1,7 @@
 // Microphone capture for dictation and voice. Push-to-talk only: the stream
 // is opened on start and every track is stopped on stop/cancel.
 
+import { normalize, trimToSpeech, VoiceActivity, type VadEvent, type VadOptions } from "../lib/vad";
 import type { WispError } from "./errors";
 
 export interface Recording {
@@ -9,9 +10,17 @@ export interface Recording {
   durationMs: number;
 }
 
+export interface RecorderOptions {
+  /** Microphone to use; empty for the Windows default. */
+  deviceId?: string;
+  /** Detect when the speaker starts and stops talking. */
+  vad?: VadOptions;
+  onVad?: (event: VadEvent) => void;
+}
+
 export interface AudioRecorder {
   /** Resolves once the microphone is live. `onLevel` gets 0..1 loudness. */
-  start(onLevel: (level: number) => void): Promise<void>;
+  start(onLevel: (level: number) => void, options?: RecorderOptions): Promise<void>;
   stop(): Promise<Recording>;
   cancel(): void;
 }
@@ -77,8 +86,16 @@ export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array
 
 const WAV_RATE = 16_000;
 
-/** Gemini documents WAV/MP3/OGG/FLAC input, not WebM, so recordings are re-encoded. */
-async function toWav(blob: Blob): Promise<Uint8Array | null> {
+/**
+ * Gemini documents WAV/MP3/OGG/FLAC input, not WebM, so recordings are
+ * re-encoded: 16 kHz mono, silence before/after the speech trimmed, and
+ * quiet recordings brought up to a healthy level.
+ */
+async function toWav(
+  blob: Blob,
+  speechStart: number | null = null,
+  speechEnd: number | null = null,
+): Promise<Uint8Array | null> {
   try {
     const raw = await blob.arrayBuffer();
     const decoder = new AudioContext();
@@ -91,7 +108,8 @@ async function toWav(blob: Blob): Promise<Uint8Array | null> {
     src.connect(offline.destination);
     src.start();
     const rendered = await offline.startRendering();
-    return encodeWav(rendered.getChannelData(0), WAV_RATE);
+    const speech = trimToSpeech(rendered.getChannelData(0), WAV_RATE, speechStart, speechEnd);
+    return encodeWav(normalize(speech), WAV_RATE);
   } catch {
     return null;
   }
@@ -110,12 +128,14 @@ export function createMediaRecorder(): AudioRecorder {
   let stream: MediaStream | null = null;
   let recorder: MediaRecorder | null = null;
   let ctx: AudioContext | null = null;
-  let raf = 0;
+  let meter: ReturnType<typeof setInterval> | null = null;
   let chunks: Blob[] = [];
   let started = 0;
+  let vad: VoiceActivity | null = null;
 
   const teardown = () => {
-    cancelAnimationFrame(raf);
+    if (meter) clearInterval(meter);
+    meter = null;
     stream?.getTracks().forEach((t) => t.stop());
     void ctx?.close().catch(() => {});
     stream = null;
@@ -123,17 +143,31 @@ export function createMediaRecorder(): AudioRecorder {
   };
 
   return {
-    async start(onLevel) {
+    async start(onLevel, options = {}) {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
         throw micError(null);
       }
+      const audio: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      };
+      if (options.deviceId) audio.deviceId = { exact: options.deviceId };
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ audio });
       } catch (e) {
-        throw micError(e);
+        // A chosen microphone that's been unplugged: fall back to the default.
+        if (options.deviceId && e instanceof DOMException && e.name === "OverconstrainedError") {
+          delete audio.deviceId;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio });
+          } catch (e2) {
+            throw micError(e2);
+          }
+        } else throw micError(e);
       }
+      vad = options.vad ? new VoiceActivity(options.vad) : null;
       const mime = pickMime();
       recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       chunks = [];
@@ -145,19 +179,22 @@ export function createMediaRecorder(): AudioRecorder {
       try {
         ctx = new AudioContext();
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 512;
+        analyser.fftSize = 1024;
         ctx.createMediaStreamSource(stream).connect(analyser);
-        const data = new Uint8Array(analyser.fftSize);
-        const tick = () => {
-          analyser.getByteTimeDomainData(data);
+        const data = new Float32Array(analyser.fftSize);
+        // A timer (not animation frames) so detection keeps running even
+        // when the window isn't being painted.
+        meter = setInterval(() => {
+          analyser.getFloatTimeDomainData(data);
           let sum = 0;
-          for (const v of data) sum += ((v - 128) / 128) ** 2;
-          onLevel(Math.min(1, Math.sqrt(sum / data.length) * 4));
-          raf = requestAnimationFrame(tick);
-        };
-        tick();
+          for (const v of data) sum += v * v;
+          const rms = Math.sqrt(sum / data.length);
+          onLevel(Math.min(1, rms * 4));
+          const event = vad?.feed(rms, performance.now() - started);
+          if (event) options.onVad?.(event);
+        }, 40);
       } catch {
-        /* level meter is optional */
+        /* level meter and detection are optional */
       }
     },
     stop() {
@@ -169,8 +206,9 @@ export function createMediaRecorder(): AudioRecorder {
           const mimeType = (r.mimeType || "audio/webm").split(";")[0]!;
           const blob = new Blob(chunks, { type: mimeType });
           chunks = [];
+          const span = vad ? [vad.speechStart, vad.speechEnd] : [null, null];
           teardown();
-          const wav = await toWav(blob);
+          const wav = await toWav(blob, span[0] ?? null, span[1] ?? null);
           resolve(
             wav
               ? { base64: bytesToBase64(wav), mimeType: "audio/wav", durationMs }
@@ -197,22 +235,37 @@ export function createMediaRecorder(): AudioRecorder {
   };
 }
 
-/** Deterministic recorder for the browser preview and tests. */
-export function createFakeRecorder(): AudioRecorder {
+/**
+ * Deterministic recorder for the browser preview and tests. With
+ * `speechMs`, it pretends the speaker talks for that long and then stops
+ * (so end-of-speech detection can be exercised).
+ */
+export function createFakeRecorder(speechMs?: number): AudioRecorder {
   let timer: ReturnType<typeof setInterval> | null = null;
+  let timeouts: ReturnType<typeof setTimeout>[] = [];
   let started = 0;
+  const clear = () => {
+    if (timer) clearInterval(timer);
+    timeouts.forEach(clearTimeout);
+    timeouts = [];
+  };
   return {
-    async start(onLevel) {
+    async start(onLevel, options = {}) {
       started = Date.now();
       let t = 0;
       timer = setInterval(() => onLevel(0.3 + 0.3 * Math.sin((t += 0.6))), 80);
+      if (speechMs !== undefined && options.onVad) {
+        const silence = options.vad?.silenceMs ?? 1200;
+        timeouts.push(setTimeout(() => options.onVad?.("speech"), 150));
+        timeouts.push(setTimeout(() => options.onVad?.("end"), speechMs + silence));
+      }
     },
     async stop() {
-      if (timer) clearInterval(timer);
+      clear();
       return { base64: "AAAA", mimeType: "audio/webm", durationMs: Date.now() - started };
     },
     cancel() {
-      if (timer) clearInterval(timer);
+      clear();
     },
   };
 }

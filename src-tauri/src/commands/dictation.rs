@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tokio_util::sync::CancellationToken;
-use wisp_core::gemini::prompt::transcription_request;
+use wisp_core::gemini::prompt::{transcription_request, TranscriptionHints};
 use wisp_core::storage::RequestLog;
 use wisp_core::{ErrorCode, WispError};
 
@@ -74,11 +74,25 @@ pub async fn transcribe(
         }
     }
     let started = Instant::now();
+    let apps: Vec<String> = if settings.app_awareness {
+        super::dashboard::cached_catalogue(&app, false)
+            .await
+            .iter()
+            .map(|i| i.name.clone())
+            .collect()
+    } else {
+        Vec::new()
+    };
     let req = transcription_request(
         &base_mime,
         &audio_base64,
         settings.dictation_style,
         &settings.selected_model,
+        &TranscriptionHints {
+            language: &settings.voice_language,
+            vocabulary: &settings.vocabulary,
+            apps: &apps,
+        },
     );
     drop(audio_base64);
     let result = state

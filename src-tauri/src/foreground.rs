@@ -110,37 +110,6 @@ mod imp {
         }
     }
 
-    /// The foreground window (not ours, not the desktop) covers its whole monitor.
-    pub fn is_fullscreen() -> bool {
-        use windows::Win32::Foundation::RECT;
-        use windows::Win32::Graphics::Gdi::{
-            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-        };
-        use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowRect};
-        let Some(t) = current() else { return false };
-        let h = hwnd(t);
-        let mut class = [0u16; 64];
-        let n = unsafe { GetClassNameW(h, &mut class) };
-        let class = String::from_utf16_lossy(&class[..n.max(0) as usize]);
-        if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") {
-            return false;
-        }
-        let mut r = RECT::default();
-        if unsafe { GetWindowRect(h, &mut r) }.is_err() {
-            return false;
-        }
-        let mon = unsafe { MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST) };
-        let mut info = MONITORINFO {
-            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-            ..Default::default()
-        };
-        if !unsafe { GetMonitorInfoW(mon, &mut info) }.as_bool() {
-            return false;
-        }
-        let m = info.rcMonitor;
-        r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom
-    }
-
     /// Simulate Ctrl+V in the focused window.
     pub fn paste() -> bool {
         let inputs = [
@@ -175,12 +144,9 @@ mod imp {
     pub fn paste() -> bool {
         false
     }
-    pub fn is_fullscreen() -> bool {
-        false
-    }
 }
 
-pub use imp::{current, focus, is_fullscreen, is_valid, paste, process_name, title};
+pub use imp::{current, focus, is_valid, paste, process_name, title};
 
 pub fn info(t: Option<Target>) -> TargetInfo {
     match t.filter(|t| is_valid(*t)) {

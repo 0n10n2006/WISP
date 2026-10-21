@@ -33,8 +33,13 @@ pub struct AppState {
     pub requests: Mutex<HashMap<String, CancellationToken>>,
     pub shortcut_issues: Mutex<Vec<ShortcutIssue>>,
     pub island: Mutex<IslandLayout>,
-    /// A fullscreen app is in front (the sliver hides).
+    /// Something Wisp must not cover is in front (fullscreen, game,
+    /// presentation or an excluded app): the notch stays hidden.
     pub fullscreen_active: Mutex<bool>,
+    /// A game is in front: hold-to-talk and shortcuts stay quiet.
+    pub game_active: std::sync::atomic::AtomicBool,
+    /// Why the notch is currently hidden (for the UI and diagnostics).
+    pub cover: Mutex<wisp_core::screen::Cover>,
     pub stats: crate::stats::Stats,
     /// Launcher catalogue, built once in the background.
     pub catalogue: Mutex<Option<std::sync::Arc<Vec<wisp_core::launcher::LaunchItem>>>>,

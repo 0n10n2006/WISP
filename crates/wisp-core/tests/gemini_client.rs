@@ -39,6 +39,7 @@ fn ctx() -> PromptContext<'static> {
         model: "gemini-2.5-flash",
         fast: true,
         persona: &PERSONA,
+        desktop: None,
     }
 }
 

@@ -45,7 +45,28 @@ code; if you change one of the boundaries below, update this file in the same ch
   set; thumbnails are only produced for wallpapers Wisp itself set.
 - Agents write only to `Documents\Wisp` with sanitised file names (letters, digits and dashes), and only open
   `.html`/`.md` files inside that folder. Their outputs are plain files the user opens; nothing is executed.
-- The foreground app's process name is read locally to suggest clipboard chips and is never sent.
+- The foreground app's process name is read locally to suggest clipboard chips.
+
+## Desktop awareness and game mode
+
+- `desktop.rs` observes the desktop with read-only Win32 calls: `GetForegroundWindow`, `EnumWindows`,
+  `GetWindowTextW`, `QueryFullProcessImageNameW` (with `PROCESS_QUERY_LIMITED_INFORMATION`),
+  `SHQueryUserNotificationState`, `MonitorFromWindow` and an out-of-context `SetWinEventHook` for foreground,
+  restore and foreground-window move/resize events. It never reads window contents, injects into other
+  processes or simulates input.
+- The only thing it changes is focus: `switch_to_app` / **Switch to** call `SetForegroundWindow` on a window id
+  that must still be in the current `EnumWindows` result (re-checked at the moment of switching).
+- App awareness (default on, Settings → Privacy) adds to Gemini requests: the foreground app's process name,
+  up to 25 open apps and up to 150 installed app names. Window titles are added only with _Include window
+  titles_ (default off). With awareness off, nothing about other apps is sent and the bar doesn't list windows.
+- The model may ask to `open_app` an installed app: the name is matched (exactly, or a unique prefix) against
+  the local catalogue, its target re-validated by `launcher::validate_target`, and the user confirms first.
+  Ambiguous names are rejected with a question back to the model.
+- Game mode (`wisp-core/screen.rs::decide`, unit-tested) hides the notch, closes the bar, pauses the
+  hold-to-talk hook and unregisters every global shortcut while a game is in front, so Wisp cannot capture
+  input meant for the game. Exclusions are normalised process names (max 50).
+- Dictation vocabulary (max 100 entries of 60 chars) and the language hint are validated in `settings.rs` and
+  are only sent with transcription requests.
 
 ## Capture & privacy
 

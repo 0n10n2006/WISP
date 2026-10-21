@@ -175,6 +175,12 @@
   --accent-on-dark: var(--palette-green);
   --accent2-on-dark: var(--palette-cyan);
 }
+:root[data-accent="custom"] {
+  --accent-on-dark: var(--accent-custom, #78e4f2);
+  --accent2-on-dark: color-mix(in srgb, var(--accent-custom, #78e4f2) 60%, #ffffff);
+  --color-accent: var(--accent-custom, #78e4f2);
+  --color-accent-2: color-mix(in srgb, var(--accent-custom, #78e4f2) 60%, #ffffff);
+}
 
 /* ---------- Windows high contrast / forced colours ---------- */
 @media (forced-colors: active) {

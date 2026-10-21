@@ -159,7 +159,8 @@ test("command bar and every dashboard tab", async ({ page }) => {
   }
   const box = page.getByRole("combobox", { name: /ask wisp/i });
   await box.fill("spo");
-  await expect(page.getByRole("option", { name: /spotify/i })).toBeVisible();
+  await expect(page.getByRole("option", { name: /switch to spotify/i })).toBeVisible();
+  await expect(page.getByRole("option", { name: /^spotify/i }).first()).toBeVisible();
   if (shots) await page.screenshot({ path: `${shots}/bar-apps.png` });
   await box.fill("timer 25");
   await expect(page.getByRole("option", { name: /focus timer/i })).toBeVisible();

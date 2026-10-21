@@ -47,6 +47,11 @@ describe("notch modes", () => {
 describe("command bar", () => {
   it("opens an app with Enter", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    // Without open windows, so launching isn't outranked by "switch to Spotify".
+    await h.updateSettings({ appAwareness: false });
+    await act(async () => {
+      await useSettings.getState().load();
+    });
     const launch = vi.spyOn(h, "launchItem");
     const user = await openBar();
     await user.type(screen.getByRole("combobox", { name: /ask wisp/i }), "spoti");
