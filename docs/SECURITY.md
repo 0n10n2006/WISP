@@ -5,11 +5,13 @@ code; if you change one of the boundaries below, update this file in the same ch
 
 ## Trust boundaries
 
-| Boundary          | Rule                                                                                                                                                                         | Where enforced                                             |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Webview → Rust    | The UI can only call typed Tauri commands listed in `src-tauri/src/lib.rs`. There is no shell, filesystem or generic HTTP plugin exposed to the webview.                     | `src-tauri/capabilities/default.json`, `generate_handler!` |
-| Model output → OS | Model output is untrusted. Proposed actions must name a known tool, match a strict schema (unknown fields rejected), and pass value checks. Only `ValidatedAction`s execute. | `crates/wisp-core/src/tools.rs`                            |
-| App → Google      | Only the Gemini REST API is called, with the key in the `x-goog-api-key` header (never in URLs). Request bodies are capped at 15 MB.                                         | `crates/wisp-core/src/gemini/mod.rs`                       |
+| Boundary          | Rule                                                                                                                                                                          | Where enforced                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Webview → Rust    | The UI can only call typed Tauri commands listed in `src-tauri/src/lib.rs`. There is no shell, filesystem or generic HTTP plugin exposed to the webview.                      | `src-tauri/capabilities/default.json`, `generate_handler!`  |
+| Model output → OS | Model output is untrusted. Proposed actions must name a known tool, match a strict schema (unknown fields rejected), and pass value checks. Only `ValidatedAction`s execute.  | `crates/wisp-core/src/tools.rs`                             |
+| App → Google      | Only the Gemini REST API is called, with the key in the `x-goog-api-key` header (never in URLs). Request bodies are capped at 15 MB.                                          | `crates/wisp-core/src/gemini/mod.rs`                        |
+| App → other hosts | Only on an explicit user action: Open-Meteo (weather for the chosen place), `speed.cloudflare.com` (speed test button), GitHub Releases API (update check button).            | `crates/wisp-core/src/net.rs`, `updates.rs`                 |
+| UI → launcher     | The UI can launch only catalogue items. Each target is re-validated in Rust and must match its id: a Start-menu shortcut/program path, a numeric Steam id, or a built-in URI. | `crates/wisp-core/src/launcher.rs`, `commands/dashboard.rs` |
 
 ## API key
 
@@ -31,14 +33,40 @@ code; if you change one of the boundaries below, update this file in the same ch
 - `open_app`, `open_url` and `remember` require user confirmation; every action is written to the audit log with a
   redacted summary (host only for URLs, character count for copied text).
 
+## Dashboard and system controls
+
+- Volume, mute, media keys, Wi-Fi/Bluetooth radios and light/dark mode use fixed Windows APIs (Core Audio,
+  the media transport session, `Windows.Devices.Radios`, one registry value under `HKCU\…\Personalize`).
+  Inputs are typed enums or clamped numbers.
+- Power actions are lock (`LockWorkStation`), sleep (`SetSuspendState`), and restart/shut down/cancel through
+  `%SystemRoot%\System32\shutdown.exe` with fixed arguments (`/r /t 10`, `/s /t 10`, `/a`). The UI asks for
+  confirmation, and restart/shut down wait 10 seconds so they can be cancelled. Every power action is audited.
+- Wallpaper: only absolute paths to existing `.jpg/.jpeg/.png/.bmp` files picked in the system file dialog are
+  set; thumbnails are only produced for wallpapers Wisp itself set.
+- Agents write only to `Documents\Wisp` with sanitised file names (letters, digits and dashes), and only open
+  `.html`/`.md` files inside that folder. Their outputs are plain files the user opens; nothing is executed.
+- The foreground app's process name is read locally to suggest clipboard chips and is never sent.
+
 ## Capture & privacy
 
-- Screen capture happens only after the Select-to-Ask shortcut, is held in memory, and is sent only after the
-  user confirms the preview. Cancelling discards it.
-- Microphone capture is push-to-talk with a visible "Listening…" state and a Stop control. Audio is discarded
-  after transcription unless the user enables retention.
-- The clipboard is read only on an explicit action; it is never polled.
-- Text-to-speech uses local Windows voices; spoken answers never leave the PC. Voice input is push-to-talk only.
+- Screen capture happens only after the circle-to-ask shortcut/button, is held in memory, and is sent only
+  after the user confirms the preview. Cancelling discards it. Lasso selections dim everything outside the
+  drawn shape before the image is encoded.
+- "Show me" and the screen-replica agent take one screenshot of the current screen, only when the user asks
+  and only while screen features are enabled; Wisp hides itself first. The Show-me overlay is click-through
+  and closes itself after a few seconds.
+- Microphone capture is push-to-talk (button, shortcut or hold-to-talk) with a visible "Listening…" state in
+  the notch. Audio is discarded after transcription unless the user enables retention.
+- Hold-to-talk uses a low-level keyboard hook that only tracks whether Ctrl/Alt/Shift/Win are down and whether
+  any other key was pressed. It never blocks keys, never records which other keys were pressed, ignores
+  injected input, and can be turned off. To stop a released Win key from opening Start, it sends one
+  unassigned virtual key (0xE8).
+- Clipboard help reads the clipboard once per explicit action. Clipboard history is **off by default**; when
+  on, it polls the clipboard sequence number, skips content flagged
+  `ExcludeClipboardContentFromMonitorProcessing`, `Clipboard Viewer Ignore` or `CanIncludeInClipboardHistory = 0`
+  (password managers), skips text that looks like a password, key or token, stores at most 100 unpinned text/link
+  entries locally, and never sends them anywhere unless the user taps "Ask".
+- Wisp has no text-to-speech; it never speaks.
 - Crash reports are written locally, redacted, and never uploaded.
 - No analytics or telemetry. `telemetryOptIn` is forced to `false`.
 - The update check is manual only. It makes one unauthenticated GET to the GitHub Releases API for this repository, and the release link is validated before it is opened.

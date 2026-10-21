@@ -92,7 +92,7 @@ mod imp {
             v.SetMasterVolumeLevelScalar(percent.min(100) as f32 / 100.0, std::ptr::null())
                 .map_err(com_err)?;
             if percent > 0 {
-                let _ = v.SetMute(0, std::ptr::null());
+                let _ = v.SetMute(false, std::ptr::null());
             }
         }
         Ok(())
@@ -102,10 +102,7 @@ mod imp {
         let v = endpoint().ok_or_else(|| {
             WispError::new(ErrorCode::Unsupported, "No audio output device found.")
         })?;
-        unsafe {
-            v.SetMute(u8::from(muted), std::ptr::null())
-                .map_err(com_err)
-        }
+        unsafe { v.SetMute(muted, std::ptr::null()).map_err(com_err) }
     }
 
     fn now_playing() -> Option<NowPlaying> {
@@ -190,7 +187,7 @@ mod imp {
         let (volume, muted) = endpoint()
             .and_then(|v| unsafe {
                 let level = v.GetMasterVolumeLevelScalar().ok()?;
-                let muted = v.GetMute().map(|m| m != 0).unwrap_or(false);
+                let muted = v.GetMute().map(|m| m.as_bool()).unwrap_or(false);
                 Some((Some((level * 100.0).round() as u8), muted))
             })
             .unwrap_or((None, false));

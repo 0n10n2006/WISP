@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 // Browser smoke test against the mock host (no Tauri, no network).
 const shots = process.env.WISP_SCREENSHOTS;
 
-test("island: expand, ask, see streamed answer", async ({ page }) => {
+test("notch: peek, open, ask, see streamed answer", async ({ page }) => {
   await page.goto("/?window=island");
   await page.evaluate(() => localStorage.setItem("wisp.mock.hasKey", "1"));
   await page.evaluate(() =>
@@ -13,21 +13,24 @@ test("island: expand, ask, see streamed answer", async ({ page }) => {
     ),
   );
   await page.reload();
-  if (shots) await page.screenshot({ path: `${shots}/island-collapsed.png` });
+  if (shots) await page.screenshot({ path: `${shots}/notch-sliver.png` });
+  await page.getByRole("button", { name: /open wisp/i }).hover();
+  await expect(page.getByTestId("island-window")).toHaveAttribute("data-mode", "peek");
+  if (shots) await page.screenshot({ path: `${shots}/notch-peek.png` });
   await page.getByRole("button", { name: /open wisp/i }).click();
-  const box = page.getByRole("textbox", { name: "Ask Wisp" });
+  const box = page.getByRole("combobox", { name: /ask wisp/i });
   await expect(box).toBeFocused();
-  if (shots) await page.screenshot({ path: `${shots}/island-empty.png` });
+  if (shots) await page.screenshot({ path: `${shots}/notch-open-today.png` });
   await box.fill("Explain what Wisp is in one line");
   await box.press("Enter");
   await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible({
     timeout: 10_000,
   });
-  if (shots) await page.screenshot({ path: `${shots}/island-answer-dark.png` });
+  if (shots) await page.screenshot({ path: `${shots}/notch-answer-dark.png` });
   await box.fill("again /quota");
   await box.press("Enter");
   await expect(page.getByRole("alert")).toContainText("Quota used up");
-  if (shots) await page.screenshot({ path: `${shots}/island-quota.png` });
+  if (shots) await page.screenshot({ path: `${shots}/notch-quota.png` });
 });
 
 test("light theme renders", async ({ page }) => {
@@ -41,13 +44,13 @@ test("light theme renders", async ({ page }) => {
   });
   await page.reload();
   await page.getByRole("button", { name: /open wisp/i }).click();
-  await page.getByRole("textbox", { name: "Ask Wisp" }).fill("Hello");
-  await page.getByRole("textbox", { name: "Ask Wisp" }).press("Enter");
+  await page.getByRole("combobox", { name: /ask wisp/i }).fill("Hello");
+  await page.getByRole("combobox", { name: /ask wisp/i }).press("Enter");
   await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible({
     timeout: 10_000,
   });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  if (shots) await page.screenshot({ path: `${shots}/island-answer-light.png` });
+  if (shots) await page.screenshot({ path: `${shots}/notch-answer-light.png` });
 });
 
 test("settings: onboarding is shown first", async ({ page }) => {
@@ -69,11 +72,18 @@ test("settings: onboarding is shown first", async ({ page }) => {
   if (shots) await page.screenshot({ path: `${shots}/settings-privacy.png`, fullPage: true });
 });
 
-test("select to ask: overlay and attachment", async ({ page }) => {
+test("circle to ask: overlay and attachment", async ({ page }) => {
   await page.goto("/?window=overlay&monitor=0");
   await page.mouse.move(300, 200);
   await page.mouse.down();
-  await page.mouse.move(700, 450);
+  const path: [number, number][] = [
+    [500, 160],
+    [700, 300],
+    [620, 460],
+    [360, 430],
+    [290, 260],
+  ];
+  for (const [x, y] of path) await page.mouse.move(x, y, { steps: 4 });
   if (shots) await page.screenshot({ path: `${shots}/overlay-selecting.png` });
   await page.mouse.up();
 
@@ -89,10 +99,10 @@ test("select to ask: overlay and attachment", async ({ page }) => {
   await page.getByRole("button", { name: /open wisp/i }).click();
   await page.getByRole("button", { name: /select an area/i }).click();
   await expect(page.getByText("Screen area attached")).toBeVisible();
-  if (shots) await page.screenshot({ path: `${shots}/island-attachment.png` });
+  if (shots) await page.screenshot({ path: `${shots}/notch-attachment.png` });
 });
 
-test("checkpoint 7: pin, memory toggle, model switch, larger size", async ({ page }) => {
+test("checkpoint 7: memory toggle, model switch, larger size", async ({ page }) => {
   await page.goto("/?window=island");
   await page.evaluate(() => {
     localStorage.setItem("wisp.mock.hasKey", "1");
@@ -103,14 +113,60 @@ test("checkpoint 7: pin, memory toggle, model switch, larger size", async ({ pag
   });
   await page.reload();
   await page.getByRole("button", { name: /open wisp/i }).click();
-  await expect(page.getByRole("button", { name: /keep wisp on top/i })).toBeVisible();
-  await page.getByRole("textbox", { name: "Ask Wisp" }).fill("again /quota");
-  await page.getByRole("textbox", { name: "Ask Wisp" }).press("Enter");
+  await expect(
+    page.getByRole("button", { name: /use memory in this conversation/i }),
+  ).toBeVisible();
+  await page.getByRole("combobox", { name: /ask wisp/i }).fill("again /quota");
+  await page.getByRole("combobox", { name: /ask wisp/i }).press("Enter");
   await expect(page.getByRole("button", { name: /switch to .* and retry/i })).toBeVisible();
-  if (shots) await page.screenshot({ path: `${shots}/island-model-switch.png` });
+  if (shots) await page.screenshot({ path: `${shots}/notch-model-switch.png` });
 
   await page.goto("/?window=settings&tab=actions");
   await page.getByRole("button", { name: /find installed apps/i }).click();
   await expect(page.getByRole("button", { name: "Allow spotify" })).toBeVisible();
   if (shots) await page.screenshot({ path: `${shots}/settings-app-picker.png`, fullPage: true });
+});
+
+test("command bar and every dashboard tab", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    localStorage.setItem("wisp.mock.hasKey", "1");
+    localStorage.setItem(
+      "wisp.mock.settings",
+      JSON.stringify({
+        onboardingComplete: true,
+        theme: "dark",
+        clipboardHistory: true,
+        weatherPlace: { name: "London, England", latitude: 51.5, longitude: -0.12 },
+      }),
+    );
+  });
+  await page.reload();
+  await page.getByRole("button", { name: /open wisp/i }).click();
+  for (const tab of [
+    "Today",
+    "Controls",
+    "Stats",
+    "Clipboard",
+    "Apps",
+    "Agents",
+    "Wallpaper",
+    "Power",
+  ]) {
+    await page.getByRole("tab", { name: tab }).click();
+    await page.waitForTimeout(400);
+    if (shots) await page.screenshot({ path: `${shots}/dash-${tab.toLowerCase()}.png` });
+  }
+  const box = page.getByRole("combobox", { name: /ask wisp/i });
+  await box.fill("spo");
+  await expect(page.getByRole("option", { name: /spotify/i })).toBeVisible();
+  if (shots) await page.screenshot({ path: `${shots}/bar-apps.png` });
+  await box.fill("timer 25");
+  await expect(page.getByRole("option", { name: /focus timer/i })).toBeVisible();
+  if (shots) await page.screenshot({ path: `${shots}/bar-command.png` });
+  await box.fill("latest wisp news?");
+  await box.press("Tab");
+  await box.press("Enter");
+  await expect(page.getByRole("button", { name: /wikipedia/i })).toBeVisible({ timeout: 10_000 });
+  if (shots) await page.screenshot({ path: `${shots}/bar-web-answer.png` });
 });
