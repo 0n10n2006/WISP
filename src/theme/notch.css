@@ -1315,3 +1315,9 @@ select.input {
   color: var(--color-text);
   border-color: var(--color-accent);
 }
+.overlay-bar > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
