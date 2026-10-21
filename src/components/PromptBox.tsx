@@ -14,12 +14,24 @@ interface Props {
   busy: boolean;
   disabled?: boolean;
   placeholder?: string;
+  /** Allow sending with no text (e.g. an attachment carries the request). */
+  allowEmpty?: boolean;
 }
 
 const MAX_ROWS_PX = 140;
 
 export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
-  { value, onChange, onSubmit, onCancel, onEscape, busy, disabled, placeholder = "Ask Wisp" },
+  {
+    value,
+    onChange,
+    onSubmit,
+    onCancel,
+    onEscape,
+    busy,
+    disabled,
+    placeholder = "Ask Wisp",
+    allowEmpty = false,
+  },
   ref,
 ) {
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -35,7 +47,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (!busy) onSubmit();
+      if (!busy && (allowEmpty || value.trim())) onSubmit();
     } else if (e.key === "Escape") {
       e.preventDefault();
       if (busy) onCancel();
@@ -72,7 +84,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(
         <button
           className="icon-btn icon-btn-solid"
           onClick={onSubmit}
-          disabled={disabled || !value.trim()}
+          disabled={disabled || (!allowEmpty && !value.trim())}
           aria-label="Send"
         >
           <Icon name="send" size={16} />

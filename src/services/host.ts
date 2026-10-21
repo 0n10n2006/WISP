@@ -1,8 +1,11 @@
 // The single boundary between the UI and the desktop host.
 // `tauriHost` talks to Rust; `mockHost` lets the whole UI run in a browser.
 
+import type { WispError } from "./errors";
 import type {
   ActionAudit,
+  CaptureReady,
+  SelectionRect,
   AskRequest,
   DeleteScope,
   RequestLog,
@@ -54,6 +57,15 @@ export interface Host {
   onFocusPrompt(cb: () => void): Unsubscribe;
   onShortcut(cb: (action: ShortcutAction) => void): Unsubscribe;
   quit(): Promise<void>;
+
+  /** Select to Ask. */
+  startCapture(): Promise<void>;
+  overlayMonitor(): number;
+  capturePreview(monitor: number): Promise<string>;
+  captureSelect(monitor: number, rect: SelectionRect): Promise<void>;
+  captureCancel(): Promise<void>;
+  onCaptureReady(cb: (c: CaptureReady) => void): Unsubscribe;
+  onCaptureError(cb: (e: WispError) => void): Unsubscribe;
 
   historyList(limit?: number): Promise<RequestLog[]>;
   actionsList(limit?: number): Promise<ActionAudit[]>;

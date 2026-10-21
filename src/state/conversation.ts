@@ -40,6 +40,7 @@ interface ConversationState {
   cancel(): void;
   retry(): Promise<void>;
   dismissError(): void;
+  setError(e: WispError): void;
   clear(): void;
 }
 
@@ -164,6 +165,7 @@ export const useConversation = create<ConversationState>((set, get) => ({
   },
 
   dismissError: () => set({ error: null }),
+  setError: (error) => set({ error }),
 
   clear() {
     active?.cancel();

@@ -1,5 +1,6 @@
 //! Wisp desktop host (Tauri 2). OS integration lives here; logic lives in `wisp-core`.
 
+mod capture;
 mod commands;
 mod secrets;
 mod shortcuts;
@@ -48,6 +49,7 @@ pub fn run() {
             };
             let _ = db.prune_history(settings.history_retention_days.max(1), settings.content_history);
             app.manage(AppState {
+                capture: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
                 settings_store: store,
                 startup_warnings: Mutex::new(warnings),
@@ -115,6 +117,10 @@ pub fn run() {
             commands::data::data_delete,
             commands::data::diagnostics_report,
             commands::data::diagnostics_save,
+            commands::capture::capture_start,
+            commands::capture::capture_preview,
+            commands::capture::capture_select,
+            commands::capture::capture_cancel,
             commands::system::set_island_expanded,
             commands::system::hide_island,
             commands::system::open_settings,

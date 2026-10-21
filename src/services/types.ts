@@ -188,3 +188,20 @@ export interface StorageStats {
 }
 
 export type DeleteScope = "history" | "memory" | "tasks" | "settings" | "everything";
+
+export interface CaptureReady {
+  dataUrl: string;
+  mimeType: string;
+  dataBase64: string;
+  width: number;
+  height: number;
+}
+
+export interface SelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  viewWidth: number;
+  viewHeight: number;
+}

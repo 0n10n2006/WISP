@@ -38,6 +38,7 @@ pub fn register_all(app: &AppHandle, shortcuts: &Shortcuts) -> Vec<ShortcutIssue
 fn dispatch(app: &AppHandle, action: &str) {
     match action {
         "toggleIsland" => windows::toggle_island(app),
+        "selectToAsk" => crate::capture::start(app),
         other => {
             windows::summon_island(app);
             let _ = app.emit_to(windows::ISLAND, "wisp://shortcut", other);

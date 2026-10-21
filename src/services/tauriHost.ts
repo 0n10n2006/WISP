@@ -3,7 +3,14 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toWispError } from "./errors";
 import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
-import type { AskResult, IslandLayout, SettingsSnapshot, ShortcutAction } from "./types";
+import type { WispError } from "./errors";
+import type {
+  AskResult,
+  CaptureReady,
+  IslandLayout,
+  SettingsSnapshot,
+  ShortcutAction,
+} from "./types";
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
@@ -70,6 +77,14 @@ export function createTauriHost(): Host {
     onFocusPrompt: (cb) => subscribe<null>("wisp://focus-prompt", () => cb()),
     onShortcut: (cb) => subscribe<ShortcutAction>("wisp://shortcut", cb),
     quit: () => call("quit_app"),
+
+    startCapture: () => call("capture_start"),
+    overlayMonitor: () => Number(new URLSearchParams(window.location.search).get("monitor") ?? 0),
+    capturePreview: (monitor) => call("capture_preview", { monitor }),
+    captureSelect: (monitor, rect) => call("capture_select", { monitor, rect }),
+    captureCancel: () => call("capture_cancel"),
+    onCaptureReady: (cb) => subscribe<CaptureReady>("wisp://capture-ready", cb),
+    onCaptureError: (cb) => subscribe<WispError>("wisp://capture-error", cb),
 
     historyList: (limit) => call("history_list", { limit: limit ?? null }),
     actionsList: (limit) => call("actions_list", { limit: limit ?? null }),
