@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useThemeEffect } from "./hooks/useTheme";
 import { host } from "./services/host";
 import { Island } from "./screens/Island";
+import { SelectOverlay } from "./screens/SelectOverlay";
 import { SettingsApp } from "./screens/settings/SettingsApp";
 import { subscribeSettings, useSettings } from "./state/settings";
 import { DEFAULT_SETTINGS } from "./services/types";
@@ -24,5 +25,6 @@ export function App() {
   }, [kind]);
 
   if (kind === "island") return <Island />;
+  if (kind === "overlay") return <SelectOverlay />;
   return <SettingsApp />;
 }

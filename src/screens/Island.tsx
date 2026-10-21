@@ -9,12 +9,18 @@ import { useOnline } from "../hooks/useOnline";
 import { useOrbState } from "../hooks/useOrbState";
 import { host } from "../services/host";
 import type { IslandLayout, ShortcutAction } from "../services/types";
+import { DEFAULT_SCREEN_PROMPT, useCapture } from "../state/capture";
 import { useConversation } from "../state/conversation";
 import { ORB_LABELS } from "../state/orb";
 import { useSettings } from "../state/settings";
 import { toast } from "../state/toast";
 
 const DRAG_THRESHOLD = 4;
+
+function settingsTabFor(code: string): string {
+  if (code === "permission_denied") return "privacy";
+  return "model";
+}
 
 /** Feature handlers registered by later milestones (screen ask, dictation, …). */
 export type ShortcutHandler = (action: ShortcutAction) => boolean;
@@ -141,6 +147,22 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
   }, []);
 
   const hasKey = snapshot?.hasApiKey ?? false;
+  const pending = useCapture((c) => c.pending);
+  const setPending = useCapture((c) => c.setPending);
+
+  const submit = () => {
+    if (pending) {
+      const prompt = draft.trim() || DEFAULT_SCREEN_PROMPT;
+      setPending(null);
+      void ask(prompt, {
+        contextKind: "screen",
+        attachments: [{ mimeType: pending.mimeType, dataBase64: pending.dataBase64 }],
+        imagePreview: pending.dataUrl,
+      });
+    } else {
+      void ask(draft);
+    }
+  };
 
   return (
     <section
@@ -177,6 +199,14 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
           )}
           <button
             className="icon-btn"
+            onClick={() => void host().startCapture()}
+            aria-label="Select an area to ask about"
+            title={`Select an area to ask about${snapshot?.settings.globalShortcuts.selectToAsk ? ` (${snapshot.settings.globalShortcuts.selectToAsk})` : ""}`}
+          >
+            <Icon name="screen" />
+          </button>
+          <button
+            className="icon-btn"
             onClick={() => void host().openSettings()}
             aria-label="Settings"
             title="Settings"
@@ -211,17 +241,36 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
         <ErrorBanner
           error={error}
           onRetry={() => void retry()}
-          onSettings={() => void host().openSettings("model")}
+          onSettings={() => void host().openSettings(settingsTabFor(error.code))}
           onDismiss={dismissError}
         />
       )}
 
       <footer className="panel-footer">
+        {pending && (
+          <div className="attachment">
+            <img src={pending.dataUrl} alt="Selected screen area" />
+            <div className="attachment-text">
+              <strong>Screen area attached</strong>
+              Sent to Google Gemini only when you press Send.
+            </div>
+            <button
+              className="icon-btn"
+              onClick={() => setPending(null)}
+              aria-label="Remove screen area"
+              title="Remove"
+            >
+              <Icon name="close" size={14} />
+            </button>
+          </div>
+        )}
         <PromptBox
           ref={prompt}
           value={draft}
           onChange={setDraft}
-          onSubmit={() => void ask(draft)}
+          allowEmpty={!!pending}
+          placeholder={pending ? "Ask about this area (optional)" : undefined}
+          onSubmit={submit}
           onCancel={cancel}
           onEscape={onCollapse}
           busy={requestActive}
@@ -257,7 +306,19 @@ export function Island() {
   useEffect(() => {
     const offLayout = host().onIslandLayout(setLayout);
     const offFocus = host().onFocusPrompt(() => setLayout((l) => ({ ...l, expanded: true })));
+    const offCapture = host().onCaptureReady((c) => {
+      useCapture.getState().setPending(c);
+      void host().setIslandExpanded(true).then(setLayout);
+    });
+    const offCaptureError = host().onCaptureError((e) => {
+      useConversation.getState().setError(e);
+      void host().setIslandExpanded(true).then(setLayout);
+    });
     const offShortcut = host().onShortcut((action) => {
+      if (action === "selectToAsk") {
+        void host().startCapture();
+        return;
+      }
       if (!shortcutHandlers.some((h) => h(action))) {
         toast("That feature arrives in a later build", "neutral", 2200);
       }
@@ -266,6 +327,8 @@ export function Island() {
       offLayout();
       offFocus();
       offShortcut();
+      offCapture();
+      offCaptureError();
     };
   }, []);
 

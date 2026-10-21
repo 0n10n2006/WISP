@@ -26,6 +26,7 @@ pub struct ShortcutIssue {
 }
 
 pub struct AppState {
+    pub capture: Mutex<Option<crate::capture::CaptureSession>>,
     pub settings: Mutex<Settings>,
     pub settings_store: SettingsStore,
     pub settings_recovered_from: Mutex<Option<String>>,

@@ -38,6 +38,16 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] Rapid-fire requests on the free tier eventually show "Slow down a moment" or "Quota used up" — no retry loop.
 - [ ] Choosing a model your key can't use → "Model unavailable" with a link to settings.
 
+### Select to Ask
+
+- [ ] `Ctrl+Shift+S` hides Wisp, freezes every monitor and dims it; Wisp is not in the capture.
+- [ ] Drag a region → Wisp reappears with the area attached and "Sent … only when you press Send".
+- [ ] Remove (×) discards it; nothing appears in History.
+- [ ] Esc on the overlay cancels; Wisp returns as it was.
+- [ ] Enter on the overlay selects the whole screen.
+- [ ] Selection on a second monitor with different scaling crops the right area.
+- [ ] With "Allow Select to ask" off, the shortcut shows "Permission needed" instead of capturing.
+
 ### Theme & accessibility
 
 - [ ] System/Dark/Light switch instantly and persist.

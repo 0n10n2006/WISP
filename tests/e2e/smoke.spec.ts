@@ -64,3 +64,26 @@ test("settings: onboarding is shown first", async ({ page }) => {
   await page.getByRole("tab", { name: "Privacy" }).click();
   if (shots) await page.screenshot({ path: `${shots}/settings-privacy.png`, fullPage: true });
 });
+
+test("select to ask: overlay and attachment", async ({ page }) => {
+  await page.goto("/?window=overlay&monitor=0");
+  await page.mouse.move(300, 200);
+  await page.mouse.down();
+  await page.mouse.move(700, 450);
+  if (shots) await page.screenshot({ path: `${shots}/overlay-selecting.png` });
+  await page.mouse.up();
+
+  await page.goto("/?window=island");
+  await page.evaluate(() => {
+    localStorage.setItem("wisp.mock.hasKey", "1");
+    localStorage.setItem(
+      "wisp.mock.settings",
+      JSON.stringify({ onboardingComplete: true, theme: "dark" }),
+    );
+  });
+  await page.reload();
+  await page.getByRole("button", { name: /open wisp/i }).click();
+  await page.getByRole("button", { name: /select an area/i }).click();
+  await expect(page.getByText("Screen area attached")).toBeVisible();
+  if (shots) await page.screenshot({ path: `${shots}/island-attachment.png` });
+});

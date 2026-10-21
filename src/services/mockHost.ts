@@ -7,6 +7,7 @@ import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
 import {
   DEFAULT_SETTINGS,
   type ActionAudit,
+  type CaptureReady,
   type RequestLog,
   type StorageStats,
   DEFAULT_SHORTCUTS,
@@ -141,6 +142,16 @@ function mockAnswer(prompt: string): string {
   ].join("\n");
 }
 
+/** A fake "screenshot" for the browser preview. */
+export function sampleCaptureSvg(w: number, h: number): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 160 90">
+<rect width="160" height="90" fill="#e9eef5"/><rect x="0" y="0" width="160" height="8" fill="#1a263b"/>
+<rect x="8" y="16" width="70" height="6" rx="2" fill="#44506a"/><rect x="8" y="28" width="140" height="3" rx="1.5" fill="#9aa6ba"/>
+<rect x="8" y="35" width="128" height="3" rx="1.5" fill="#9aa6ba"/><rect x="8" y="42" width="136" height="3" rx="1.5" fill="#9aa6ba"/>
+<rect x="8" y="54" width="60" height="28" rx="3" fill="#78e4f2"/><rect x="76" y="54" width="76" height="28" rx="3" fill="#b6a0ff"/>
+</svg>`;
+}
+
 export interface MockHostOptions {
   /** Delay between streamed words, ms. */
   tokenDelay?: number;
@@ -172,6 +183,8 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     focus: new Set<() => void>(),
     shortcut: new Set<(a: ShortcutAction) => void>(),
     data: new Set<(scope: string) => void>(),
+    captureReady: new Set<(c: CaptureReady) => void>(),
+    captureError: new Set<(e: WispError) => void>(),
   };
   let requests: RequestLog[] = [];
   let actions: ActionAudit[] = [];
@@ -388,6 +401,35 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     onFocusPrompt: (cb) => on(listeners.focus, cb),
     onShortcut: (cb) => on(listeners.shortcut, cb),
     quit: async () => {},
+
+    startCapture: async () => {
+      if (!settings.screenContextEnabled) {
+        const e = err(
+          "permission_denied",
+          "Select to ask is turned off. Turn it on in Settings → Privacy.",
+        );
+        listeners.captureError.forEach((cb) => cb(e));
+        return;
+      }
+      const svg = sampleCaptureSvg(480, 270);
+      const ready: CaptureReady = {
+        dataUrl: `data:image/svg+xml;base64,${btoa(svg)}`,
+        mimeType: "image/svg+xml",
+        dataBase64: btoa(svg),
+        width: 480,
+        height: 270,
+      };
+      setTimeout(() => listeners.captureReady.forEach((cb) => cb(ready)), 50);
+    },
+    overlayMonitor: () => Number(params.get("monitor") ?? 0),
+    capturePreview: async () => `data:image/svg+xml;base64,${btoa(sampleCaptureSvg(1600, 900))}`,
+    captureSelect: async (_monitor, rect) => {
+      if (Math.abs(rect.width) < 8 || Math.abs(rect.height) < 8)
+        throw err("invalid", "That selection is too small. Drag to select an area.");
+    },
+    captureCancel: async () => {},
+    onCaptureReady: (cb) => on(listeners.captureReady, cb),
+    onCaptureError: (cb) => on(listeners.captureError, cb),
 
     historyList: async (limit = 200) => requests.slice(0, limit),
     actionsList: async (limit = 200) => actions.slice(0, limit),
