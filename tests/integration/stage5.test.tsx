@@ -16,7 +16,7 @@ describe("model-proposed actions", () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const user = await island();
     await user.type(
-      await screen.findByRole("textbox", { name: "Ask Wisp" }),
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
       "open example /open{Enter}",
     );
     const group = await screen.findByRole("group", { name: /asking for permission/i });
@@ -35,7 +35,7 @@ describe("model-proposed actions", () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const user = await island();
     await user.type(
-      await screen.findByRole("textbox", { name: "Ask Wisp" }),
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
       "remember that /remember{Enter}",
     );
     await user.click(await screen.findByRole("button", { name: "Don't allow" }));
@@ -48,7 +48,7 @@ describe("model-proposed actions", () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const user = await island();
     await user.type(
-      await screen.findByRole("textbox", { name: "Ask Wisp" }),
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
       "remember /remember{Enter}",
     );
     await user.click(await screen.findByRole("button", { name: "Allow" }));
@@ -151,7 +151,7 @@ describe("reminders", () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const user = await island();
     await user.type(
-      await screen.findByRole("textbox", { name: "Ask Wisp" }),
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
       "remind me /remind{Enter}",
     );
     expect(await screen.findByText(/reminder created/i)).toBeInTheDocument();

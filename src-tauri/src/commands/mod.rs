@@ -3,6 +3,7 @@
 
 pub mod ask;
 pub mod capture;
+pub mod dashboard;
 pub mod data;
 pub mod dictation;
 pub mod local;

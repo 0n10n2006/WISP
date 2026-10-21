@@ -39,6 +39,10 @@ fn dispatch(app: &AppHandle, action: &str) {
     match action {
         "toggleIsland" => windows::toggle_island(app),
         "selectToAsk" => crate::capture::start(app),
+        "tuck" => {
+            let tucked = app.state::<crate::state::AppState>().settings().tucked;
+            windows::set_tucked(app, !tucked);
+        }
         other => {
             windows::summon_island(app);
             let _ = app.emit_to(windows::ISLAND, "wisp://shortcut", other);

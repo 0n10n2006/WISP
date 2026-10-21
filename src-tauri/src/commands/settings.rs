@@ -61,6 +61,7 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             .db
             .prune_history(new.history_retention_days.max(1), false);
     }
+    crate::hotkeys::set_enabled(new.hold_to_talk && new.voice_enabled);
     if old.global_shortcuts != new.global_shortcuts {
         shortcuts::register_all(app, &new.global_shortcuts);
     }
@@ -74,7 +75,11 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
     }
 }
 
-fn commit(app: &AppHandle, state: &AppState, new: Settings) -> CmdResult<SettingsSnapshot> {
+pub(crate) fn commit(
+    app: &AppHandle,
+    state: &AppState,
+    new: Settings,
+) -> CmdResult<SettingsSnapshot> {
     let old = state.settings();
     state.settings_store.save(&new)?;
     *state.settings.lock().expect("settings") = new.clone();

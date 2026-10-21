@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react";
-import { Orb } from "../../components/Orb";
+import { WispMark } from "../../components/WispMark";
 import { ToastHost } from "../../components/Toast";
 import { host } from "../../services/host";
 import type { SettingsSnapshot } from "../../services/types";
@@ -7,6 +7,7 @@ import { useSettings } from "../../state/settings";
 import { DataTab, HistoryTab } from "./DataTabs";
 import { ActionsTab, MemoryTab, RemindersTab } from "./LocalTabs";
 import { Onboarding } from "./Onboarding";
+import { NotchTab } from "./NotchTab";
 import { VoiceTab } from "./VoiceTab";
 import { AboutTab, GeneralTab, ModelTab, PrivacyTab, ShortcutsTab } from "./tabs";
 
@@ -21,8 +22,9 @@ export const EXTRA_TABS: TabDef[] = [];
 
 const BASE_TABS: TabDef[] = [
   { id: "general", label: "General", component: GeneralTab },
+  { id: "notch", label: "Notch & personality", component: NotchTab },
   { id: "model", label: "Model", component: ModelTab },
-  { id: "voice", label: "Voice", component: VoiceTab },
+  { id: "voice", label: "Voice & dictation", component: VoiceTab },
   { id: "shortcuts", label: "Shortcuts", component: ShortcutsTab },
   { id: "actions", label: "Actions", component: ActionsTab },
   { id: "reminders", label: "Reminders", component: RemindersTab },
@@ -78,7 +80,7 @@ export function SettingsApp() {
     <div className="settings">
       <nav className="sidebar" aria-label="Settings sections">
         <div className="brand">
-          <Orb state="idle" size={28} decorative />
+          <WispMark size={26} />
           <span>Wisp</span>
         </div>
         <ul

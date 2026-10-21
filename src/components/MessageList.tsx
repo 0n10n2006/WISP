@@ -1,8 +1,6 @@
 import { useEffect, useRef } from "react";
 import { host } from "../services/host";
 import type { Message } from "../state/conversation";
-import { speak, speechAvailable } from "../services/speech";
-import { useSettings } from "../state/settings";
 import { toast } from "../state/toast";
 import { ActionNotes } from "./ActionNotes";
 import { Icon } from "./Icon";
@@ -21,11 +19,6 @@ async function copy(text: string) {
   } catch {
     toast("Couldn't copy", "warning");
   }
-}
-
-function readAloud(text: string) {
-  const s = useSettings.getState().snapshot?.settings;
-  void speak(text, { voice: s?.ttsVoice || undefined, rate: s?.ttsRate ?? 1 });
 }
 
 export function MessageList({ messages }: { messages: Message[] }) {
@@ -65,14 +58,6 @@ export function MessageList({ messages }: { messages: Message[] }) {
                 <button className="btn btn-small btn-ghost" onClick={() => void copy(m.text)}>
                   <Icon name="copy" size={14} /> Copy
                 </button>
-                {speechAvailable() && (
-                  <button
-                    className="btn btn-small btn-ghost"
-                    onClick={() => void readAloud(m.text)}
-                  >
-                    <Icon name="speaker" size={14} /> Read aloud
-                  </button>
-                )}
                 {m.status === "stopped" && <span className="tag">Stopped</span>}
                 {m.status === "failed" && <span className="tag tag-warning">Incomplete</span>}
               </div>

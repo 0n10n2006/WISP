@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { host, type AskHandle } from "../services/host";
 import { toWispError, type WispError } from "../services/errors";
-import type { Attachment, ChatTurn, ContextKind } from "../services/types";
+import type { Attachment, ChatTurn, ContextKind, Source } from "../services/types";
 import { SUCCESS_FLASH_MS } from "./orb";
 
 export type MessageStatus = "streaming" | "done" | "stopped" | "failed";
@@ -27,6 +27,10 @@ export interface Message {
   sentText?: string;
   /** Desktop actions the model proposed during this answer. */
   actions?: ActionNote[];
+  /** Web pages a grounded answer drew on. */
+  sources?: Source[];
+  /** The question was answered with Google Search. */
+  web?: boolean;
 }
 
 export interface AskOptions {
@@ -36,6 +40,10 @@ export interface AskOptions {
   useMemory?: boolean;
   /** What to show in the user's bubble when the prompt itself is long. */
   displayText?: string;
+  /** Ground the answer with Google Search. */
+  web?: boolean;
+  /** Let the model think longer. */
+  think?: boolean;
 }
 
 interface Pending {
@@ -64,6 +72,16 @@ interface ConversationState {
 }
 
 let active: AskHandle | null = null;
+
+const scheduleFrame = (fn: () => void): number =>
+  typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame(fn)
+    : (setTimeout(fn, 16) as unknown as number);
+const cancelFrame = (id: number | null) => {
+  if (id === null) return;
+  if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(id);
+  else clearTimeout(id);
+};
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
 let seq = 0;
 
@@ -114,6 +132,7 @@ export const useConversation = create<ConversationState>((set, get) => ({
       text: "",
       status: "streaming",
       contextKind,
+      web: opts.web,
     };
     if (flashTimer) clearTimeout(flashTimer);
     set((s) => ({
@@ -128,6 +147,21 @@ export const useConversation = create<ConversationState>((set, get) => ({
     const patchModel = (fn: (m: Message) => Message) =>
       set((s) => ({ messages: s.messages.map((m) => (m.id === modelMsg.id ? fn(m) : m)) }));
 
+    // Streamed text is applied at most once per frame so long answers stay smooth.
+    let buffered = "";
+    let frame: number | null = null;
+    const flush = () => {
+      frame = null;
+      if (!buffered) return;
+      const chunk = buffered;
+      buffered = "";
+      patchModel((m) => ({ ...m, text: m.text + chunk }));
+    };
+    const onDelta = (delta: string) => {
+      buffered += delta;
+      if (frame === null) frame = scheduleFrame(flush);
+    };
+
     const handle = host().ask(
       {
         requestId: newId("req"),
@@ -137,8 +171,10 @@ export const useConversation = create<ConversationState>((set, get) => ({
         contextKind,
         useMemory: opts.useMemory ?? get().memoryForChat,
         enableTools: true,
+        think: opts.think ?? false,
+        web: opts.web ?? false,
       },
-      (delta) => patchModel((m) => ({ ...m, text: m.text + delta })),
+      onDelta,
       (ev) =>
         patchModel((m) => {
           const notes = [...(m.actions ?? [])];
@@ -166,10 +202,19 @@ export const useConversation = create<ConversationState>((set, get) => ({
     active = handle;
     try {
       const result = await handle.result;
-      patchModel((m) => ({ ...m, text: result.text || m.text, status: "done" }));
+      cancelFrame(frame);
+      flush();
+      patchModel((m) => ({
+        ...m,
+        text: result.text || m.text,
+        status: "done",
+        sources: result.sources?.length ? result.sources : undefined,
+      }));
       set({ requestActive: false, successFlash: true });
       flashTimer = setTimeout(() => set({ successFlash: false }), SUCCESS_FLASH_MS);
     } catch (e) {
+      cancelFrame(frame);
+      flush();
       const err = toWispError(e);
       const current = get().messages.find((m) => m.id === modelMsg.id);
       const hasText = !!current?.text.trim();

@@ -1,0 +1,371 @@
+//! Dashboard tabs: controls, stats, clipboard history, launcher, power,
+//! wallpaper, weather and speed test. Every input is typed and validated.
+
+use super::CmdResult;
+use crate::power::PowerAction;
+use crate::state::AppState;
+use crate::system_controls::{self, ControlsState, MediaCommand};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_clipboard_manager::ClipboardExt;
+use tauri_plugin_opener::OpenerExt;
+use wisp_core::launcher::{self, LaunchItem};
+use wisp_core::net::{self, SpeedResult, Weather};
+use wisp_core::settings::WeatherPlace;
+use wisp_core::storage::{ActionAudit, AgentJob, AppUsage, ClipEntry};
+use wisp_core::{ErrorCode, WispError};
+
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> CmdResult<T> + Send + 'static,
+) -> CmdResult<T> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| WispError::internal(e.to_string()))?
+}
+
+fn audit(state: &AppState, kind: &str, summary: &str, outcome: &str) {
+    let _ = state
+        .db
+        .log_action(&ActionAudit::new(kind, summary, outcome, true));
+}
+
+// ---- Controls ------------------------------------------------------------
+
+#[tauri::command]
+pub async fn controls_state() -> ControlsState {
+    tauri::async_runtime::spawn_blocking(system_controls::state)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn set_volume(percent: u8) -> CmdResult<()> {
+    blocking(move || system_controls::set_volume(percent.min(100))).await
+}
+
+#[tauri::command]
+pub async fn set_muted(muted: bool) -> CmdResult<()> {
+    blocking(move || system_controls::set_muted(muted)).await
+}
+
+#[tauri::command]
+pub async fn media_command(command: MediaCommand) -> CmdResult<()> {
+    blocking(move || system_controls::media(command)).await
+}
+
+#[tauri::command]
+pub async fn set_radio(kind: String, on: bool) -> CmdResult<()> {
+    if kind != "wifi" && kind != "bluetooth" {
+        return Err(WispError::invalid("Unknown radio"));
+    }
+    blocking(move || system_controls::set_radio(&kind, on)).await
+}
+
+#[tauri::command]
+pub async fn set_dark_mode(app: AppHandle, dark: bool) -> CmdResult<()> {
+    blocking(move || system_controls::set_dark_mode(dark)).await?;
+    crate::tray::refresh(&app);
+    Ok(())
+}
+
+// ---- Stats ---------------------------------------------------------------
+
+#[tauri::command]
+pub async fn stats_snapshot(app: AppHandle) -> CmdResult<crate::stats::StatsSnapshot> {
+    blocking(move || {
+        use tauri::Manager;
+        Ok(app.state::<AppState>().stats.snapshot())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn speed_test() -> CmdResult<SpeedResult> {
+    net::speed_test(net::SPEED_URL).await
+}
+
+// ---- Weather -------------------------------------------------------------
+
+#[tauri::command]
+pub async fn weather_search(query: String) -> CmdResult<Vec<WeatherPlace>> {
+    net::search_places(net::GEOCODE_BASE, &query).await
+}
+
+#[tauri::command]
+pub async fn weather_get(state: State<'_, AppState>) -> CmdResult<Option<Weather>> {
+    let Some(place) = state.settings().weather_place else {
+        return Ok(None);
+    };
+    net::forecast(net::FORECAST_BASE, &place).await.map(Some)
+}
+
+// ---- Clipboard history -----------------------------------------------------
+
+#[tauri::command]
+pub fn clips_list(state: State<'_, AppState>, kind: Option<String>) -> CmdResult<Vec<ClipEntry>> {
+    let kind = kind.filter(|k| k == "text" || k == "link");
+    state.db.list_clips(kind.as_deref())
+}
+
+#[tauri::command]
+pub fn clip_pin(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    pinned: bool,
+) -> CmdResult<bool> {
+    let ok = state.db.pin_clip(&id, pinned)?;
+    let _ = app.emit("wisp://data-changed", "clipboard");
+    Ok(ok)
+}
+
+#[tauri::command]
+pub fn clip_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<bool> {
+    let ok = state.db.delete_clip(&id)?;
+    let _ = app.emit("wisp://data-changed", "clipboard");
+    Ok(ok)
+}
+
+#[tauri::command]
+pub fn clips_clear(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    include_pinned: bool,
+) -> CmdResult<u64> {
+    let n = state.db.clear_clips(include_pinned)?;
+    let _ = app.emit("wisp://data-changed", "clipboard");
+    Ok(n)
+}
+
+/// Copy a stored entry back to the clipboard.
+#[tauri::command]
+pub fn clip_copy(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let clip = state
+        .db
+        .list_clips(None)?
+        .into_iter()
+        .find(|c| c.id == id)
+        .ok_or_else(|| WispError::invalid("That clipboard item is gone"))?;
+    app.clipboard()
+        .write_text(clip.text)
+        .map_err(|e| WispError::new(ErrorCode::Internal, format!("Couldn't copy: {e}")))
+}
+
+// ---- Launcher ------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Catalogue {
+    pub items: Vec<LaunchItem>,
+    pub recent: Vec<AppUsage>,
+}
+
+#[tauri::command]
+pub async fn launcher_list(app: AppHandle) -> CmdResult<Catalogue> {
+    let items = tauri::async_runtime::spawn_blocking(crate::apps::catalogue)
+        .await
+        .unwrap_or_default();
+    use tauri::Manager;
+    let recent = app.state::<AppState>().db.recent_apps(20)?;
+    Ok(Catalogue { items, recent })
+}
+
+/// Launch a catalogue item. The target is re-validated here, so the UI can
+/// only ever start Start-menu shortcuts/programs, Steam games by id or the
+/// built-in Windows app URIs.
+#[tauri::command]
+pub fn launch_item(app: AppHandle, state: State<'_, AppState>, item: LaunchItem) -> CmdResult<()> {
+    launcher::validate_target(&item.target)?;
+    let expected_id = if item.target.starts_with("steam://") {
+        format!(
+            "steam:{}",
+            item.target.trim_start_matches("steam://rungameid/")
+        )
+    } else if launcher::BUILTIN.iter().any(|(_, u)| *u == item.target) {
+        format!("uri:{}", item.target)
+    } else {
+        format!("lnk:{}", item.target)
+    };
+    if item.id != expected_id {
+        return Err(WispError::invalid(
+            "That launcher entry doesn't match its target",
+        ));
+    }
+    let result = if item.id.starts_with("lnk:") {
+        app.opener().open_path(&item.target, None::<&str>)
+    } else {
+        app.opener().open_url(&item.target, None::<&str>)
+    };
+    let name: String = item.name.chars().take(80).collect();
+    match result {
+        Ok(()) => {
+            let _ = state.db.record_launch(&item.id);
+            audit(&state, "launch_app", &format!("Opened {name}"), "success");
+            Ok(())
+        }
+        Err(e) => {
+            audit(&state, "launch_app", &format!("Opened {name}"), "failed");
+            Err(WispError::new(
+                ErrorCode::Internal,
+                format!("Couldn't open {name}: {e}"),
+            ))
+        }
+    }
+}
+
+// ---- Power ---------------------------------------------------------------
+
+/// The UI shows a confirmation before calling this.
+#[tauri::command]
+pub async fn power_action(app: AppHandle, action: PowerAction) -> CmdResult<()> {
+    let result = blocking(move || crate::power::run(action)).await;
+    use tauri::Manager;
+    audit(
+        &app.state::<AppState>(),
+        "power",
+        action.label(),
+        if result.is_ok() { "success" } else { "failed" },
+    );
+    result
+}
+
+// ---- Wallpaper -----------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WallpaperInfo {
+    pub current: Option<String>,
+    pub recent: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn wallpaper_info(state: State<'_, AppState>) -> CmdResult<WallpaperInfo> {
+    let current = tauri::async_runtime::spawn_blocking(crate::wallpaper::current)
+        .await
+        .unwrap_or(None);
+    Ok(WallpaperInfo {
+        current,
+        recent: state.settings().recent_wallpapers,
+    })
+}
+
+/// Preview of a recent wallpaper (only paths Wisp itself set are readable).
+#[tauri::command]
+pub async fn wallpaper_thumb(state: State<'_, AppState>, path: String) -> CmdResult<String> {
+    let s = state.settings();
+    let known = s.recent_wallpapers.iter().any(|p| p == &path)
+        || crate::wallpaper::current().as_deref() == Some(path.as_str());
+    if !known {
+        return Err(WispError::invalid("Unknown wallpaper"));
+    }
+    blocking(move || {
+        crate::wallpaper::validate(&path)?;
+        crate::wallpaper::thumbnail(&path)
+    })
+    .await
+}
+
+fn remember_wallpaper(app: &AppHandle, path: &str) -> CmdResult<()> {
+    use tauri::Manager;
+    let state = app.state::<AppState>();
+    let mut s = state.settings();
+    s.recent_wallpapers = crate::wallpaper::push_recent(&s.recent_wallpapers, path);
+    super::settings::commit(app, &state, s).map(|_| ())
+}
+
+/// Ask the user to choose an image, then set it as the wallpaper.
+#[tauri::command]
+pub async fn wallpaper_pick(app: AppHandle) -> CmdResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let a = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        a.dialog()
+            .file()
+            .set_title("Choose a wallpaper")
+            .add_filter("Images", &["jpg", "jpeg", "png", "bmp"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|e| WispError::internal(e.to_string()))?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    let path = path.to_string_lossy().into_owned();
+    let p = path.clone();
+    blocking(move || crate::wallpaper::set(&p)).await?;
+    remember_wallpaper(&app, &path)?;
+    Ok(Some(path))
+}
+
+/// Switch to one of the recent wallpapers.
+#[tauri::command]
+pub async fn wallpaper_set(app: AppHandle, path: String) -> CmdResult<()> {
+    use tauri::Manager;
+    if !app
+        .state::<AppState>()
+        .settings()
+        .recent_wallpapers
+        .contains(&path)
+    {
+        return Err(WispError::invalid("Choose the image again with Browse"));
+    }
+    let p = path.clone();
+    blocking(move || crate::wallpaper::set(&p)).await?;
+    remember_wallpaper(&app, &path)
+}
+
+// ---- Agents --------------------------------------------------------------
+
+#[tauri::command]
+pub async fn agent_start(app: AppHandle, kind: crate::agents::AgentKind) -> CmdResult<AgentJob> {
+    crate::agents::start(app, kind).await
+}
+
+#[tauri::command]
+pub fn agent_cancel(app: AppHandle, id: String) {
+    crate::agents::cancel(&app, &id);
+}
+
+#[tauri::command]
+pub fn agents_list(state: State<'_, AppState>) -> CmdResult<Vec<AgentJob>> {
+    state.db.list_jobs(30)
+}
+
+#[tauri::command]
+pub fn agent_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<bool> {
+    let ok = state.db.delete_job(&id)?;
+    let _ = app.emit("wisp://data-changed", "jobs");
+    Ok(ok)
+}
+
+/// Open a finished agent's output file (only files Wisp wrote to Documents\Wisp).
+#[tauri::command]
+pub fn agent_open(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let job = state
+        .db
+        .list_jobs(200)?
+        .into_iter()
+        .find(|j| j.id == id)
+        .ok_or_else(|| WispError::invalid("Unknown job"))?;
+    let path = job
+        .output_path
+        .ok_or_else(|| WispError::invalid("This job has no output yet"))?;
+    let dir = crate::agents::output_dir(&app)?;
+    let p = std::path::Path::new(&path);
+    let ext_ok = p
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("md"));
+    if !p.starts_with(&dir) || !ext_ok || !p.is_file() {
+        return Err(WispError::invalid("That file has moved or isn't Wisp's"));
+    }
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| WispError::new(ErrorCode::Internal, format!("Couldn't open it: {e}")))
+}
+
+/// The foreground app's process name (local only) for app-aware suggestions.
+#[tauri::command]
+pub fn foreground_app(state: State<'_, AppState>) -> Option<String> {
+    let t = (*state.insert_target.lock().expect("target"))?;
+    crate::foreground::process_name(t)
+}

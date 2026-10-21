@@ -3,15 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
 import { setupMockHost } from "../helpers";
 
-describe("island", () => {
-  it("expands from the orb, answers, copies, and collapses with Esc keeping the draft", async () => {
+describe("notch", () => {
+  it("opens from the sliver, answers, copies, and folds away with Esc keeping the draft", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const copy = vi.spyOn(h, "copyText").mockResolvedValue();
     const user = userEvent.setup();
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    const box = await screen.findByRole("textbox", { name: /ask wisp/i });
+    const box = await screen.findByRole("combobox", { name: /ask wisp/i });
     expect(box).toHaveFocus();
 
     await user.type(box, "What is a wisp?{Enter}");
@@ -23,11 +23,13 @@ describe("island", () => {
     expect(copy).toHaveBeenCalledWith(expect.stringContaining("What is a wisp?"));
     expect(await screen.findByText("Copied")).toBeInTheDocument();
 
-    await user.type(screen.getByRole("textbox", { name: /ask wisp/i }), "unsent thought");
+    await user.type(screen.getByRole("combobox", { name: /ask wisp/i }), "unsent thought");
     await user.keyboard("{Escape}");
     await screen.findByRole("button", { name: /open wisp/i });
     await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    expect(await screen.findByRole("textbox", { name: /ask wisp/i })).toHaveValue("unsent thought");
+    expect(await screen.findByRole("combobox", { name: /ask wisp/i })).toHaveValue(
+      "unsent thought",
+    );
   });
 
   it("shows an actionable quota banner and keeps the prompt", async () => {
@@ -36,14 +38,14 @@ describe("island", () => {
     render(<App />);
     await user.click(screen.getByRole("button", { name: /open wisp/i }));
     await user.type(
-      await screen.findByRole("textbox", { name: /ask wisp/i }),
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
       "test /quota{Enter}",
     );
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/quota used up/i);
     expect(alert).toHaveTextContent(/try again in about 3 h/i);
     expect(screen.getByRole("button", { name: /switch model/i })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: /ask wisp/i })).toHaveValue("test /quota");
+    expect(screen.getByRole("combobox", { name: /ask wisp/i })).toHaveValue("test /quota");
     expect(screen.getByText("Needs attention")).toBeInTheDocument();
   });
 
@@ -52,7 +54,7 @@ describe("island", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    expect(await screen.findByText(/connect gemini to start/i)).toBeInTheDocument();
+    expect(await screen.findByText(/connect gemini to ask questions/i)).toBeInTheDocument();
   });
 
   it("can stop a running answer", async () => {
@@ -60,11 +62,14 @@ describe("island", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    await user.type(await screen.findByRole("textbox", { name: /ask wisp/i }), "wait /slow{Enter}");
-    expect(screen.getByText("Thinking…", { selector: ".status" })).toBeInTheDocument();
+    await user.type(
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
+      "wait /slow{Enter}",
+    );
+    expect(screen.getAllByText("Thinking…").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: /stop answer/i }));
     await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: /ask wisp/i })).toHaveValue("wait /slow"),
+      expect(screen.getByRole("combobox", { name: /ask wisp/i })).toHaveValue("wait /slow"),
     );
   });
 });

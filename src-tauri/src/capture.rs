@@ -13,7 +13,10 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
     WebviewWindowBuilder,
 };
-use wisp_core::capture::{fit_within, to_pixels, SelectionRect, MAX_SEND_SIDE};
+use wisp_core::capture::{
+    fit_within, lasso_bounds, parse_highlights, point_in_polygon, polygon_in_crop, to_pixels,
+    Highlight, Point, SelectionRect, MAX_SEND_SIDE,
+};
 use wisp_core::{ErrorCode, Result, WispError};
 
 pub struct CapturedMonitor {
@@ -218,18 +221,71 @@ pub fn select(app: &AppHandle, index: usize, sel: SelectionRect) -> Result<()> {
         let r = to_pixels(&sel, mon.image.width(), mon.image.height())?;
         image::imageops::crop_imm(&mon.image, r.x, r.y, r.width, r.height).to_image()
     };
+    finish(app, crop)
+}
+
+/// Lasso: crop to the drawn shape's bounds and dim everything outside it,
+/// so the model focuses on what the user circled.
+pub fn select_lasso(
+    app: &AppHandle,
+    index: usize,
+    points: &[Point],
+    view_width: f64,
+    view_height: f64,
+) -> Result<()> {
+    let state = app.state::<AppState>();
+    let crop = {
+        let guard = state.capture.lock().expect("capture");
+        let session = guard
+            .as_ref()
+            .ok_or_else(|| WispError::invalid("No capture in progress"))?;
+        let mon = session
+            .monitors
+            .get(index)
+            .ok_or_else(|| WispError::invalid("Unknown screen"))?;
+        let sel = lasso_bounds(points, view_width, view_height)?;
+        let (iw, ih) = (mon.image.width(), mon.image.height());
+        let r = to_pixels(&sel, iw, ih)?;
+        let poly = polygon_in_crop(points, &sel, iw, ih, r);
+        let mut crop =
+            image::imageops::crop_imm(&mon.image, r.x, r.y, r.width, r.height).to_image();
+        mask_outside(&mut crop, &poly);
+        crop
+    };
+    finish(app, crop)
+}
+
+/// Darken pixels outside `poly` (crop pixel space).
+pub fn mask_outside(img: &mut RgbaImage, poly: &[(f64, f64)]) {
+    if poly.len() < 3 {
+        return;
+    }
+    for (x, y, p) in img.enumerate_pixels_mut() {
+        if !point_in_polygon(x as f64 + 0.5, y as f64 + 0.5, poly) {
+            for c in 0..3 {
+                p.0[c] = (p.0[c] as f32 * 0.22) as u8;
+            }
+        }
+    }
+}
+
+fn to_png_b64(img: DynamicImage) -> Result<(String, u32, u32)> {
+    let (w, h) = fit_within(img.width(), img.height(), MAX_SEND_SIDE);
+    let img = if (w, h) == (img.width(), img.height()) {
+        img
+    } else {
+        img.resize_exact(w, h, FilterType::Triangle)
+    };
+    let png = encode(&img, ImageFormat::Png)?;
+    Ok((base64::engine::general_purpose::STANDARD.encode(png), w, h))
+}
+
+fn finish(app: &AppHandle, crop: RgbaImage) -> Result<()> {
+    let state = app.state::<AppState>();
     // The full-screen captures are no longer needed.
     *state.capture.lock().expect("capture") = None;
     close_overlays(app);
-
-    let (w, h) = fit_within(crop.width(), crop.height(), MAX_SEND_SIDE);
-    let img = if (w, h) == (crop.width(), crop.height()) {
-        DynamicImage::ImageRgba8(crop)
-    } else {
-        DynamicImage::ImageRgba8(crop).resize_exact(w, h, FilterType::Triangle)
-    };
-    let png = encode(&img, ImageFormat::Png)?;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+    let (b64, w, h) = to_png_b64(DynamicImage::ImageRgba8(crop))?;
     let ready = CaptureReady {
         data_url: format!("data:image/png;base64,{b64}"),
         mime_type: "image/png".into(),
@@ -240,4 +296,128 @@ pub fn select(app: &AppHandle, index: usize, sel: SelectionRect) -> Result<()> {
     windows::summon_island(app);
     let _ = app.emit_to(windows::ISLAND, "wisp://capture-ready", ready);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// One-shot screenshot of the screen the notch is on (Show me, replica agent).
+
+pub struct Shot {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub png_b64: String,
+}
+
+/// Capture the monitor under the cursor with Wisp hidden for the moment.
+/// Only called from an explicit user request.
+pub async fn screenshot_here(app: &AppHandle) -> Result<Shot> {
+    if !app.state::<AppState>().settings().screen_context_enabled {
+        return Err(WispError::new(
+            ErrorCode::PermissionDenied,
+            "Screen features are turned off. Turn them on in Settings → Privacy.",
+        ));
+    }
+    let cursor = windows::island(app).and_then(|w| w.cursor_position().ok());
+    let was_visible = windows::island(app)
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    windows::set_island_visible(app, false);
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    let grabbed = tauri::async_runtime::spawn_blocking(grab_all).await;
+    if was_visible {
+        windows::set_island_visible(app, true);
+    }
+    let monitors = grabbed.map_err(|e| WispError::internal(e.to_string()))??;
+    let pick = cursor
+        .and_then(|c| {
+            monitors.iter().position(|m| {
+                c.x >= m.x as f64
+                    && c.y >= m.y as f64
+                    && c.x < (m.x + m.image.width() as i32) as f64
+                    && c.y < (m.y + m.image.height() as i32) as f64
+            })
+        })
+        .unwrap_or(0);
+    let mon = monitors
+        .into_iter()
+        .nth(pick)
+        .ok_or_else(|| WispError::new(ErrorCode::Unsupported, "No screens could be captured."))?;
+    let (width, height) = (mon.image.width(), mon.image.height());
+    let (png_b64, _, _) = tauri::async_runtime::spawn_blocking(move || {
+        to_png_b64(DynamicImage::ImageRgba8(mon.image))
+    })
+    .await
+    .map_err(|e| WispError::internal(e.to_string()))??;
+    Ok(Shot {
+        x: mon.x,
+        y: mon.y,
+        width,
+        height,
+        png_b64,
+    })
+}
+
+pub const HIGHLIGHT: &str = "highlight";
+
+/// Show me: point at the on-screen element that answers `question`.
+pub async fn show_me(app: &AppHandle, question: &str) -> Result<Vec<Highlight>> {
+    let state = app.state::<AppState>();
+    let key = state.secrets.require()?;
+    let model = state.settings().selected_model;
+    let shot = screenshot_here(app).await?;
+    let req = wisp_core::gemini::prompt::show_me_request(&shot.png_b64, question, &model);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let out = state.gemini.generate(&key, &model, &req, &cancel).await?;
+    let found = parse_highlights(&out.text);
+    if found.is_empty() {
+        return Ok(found);
+    }
+    *state.highlights.lock().expect("highlights") = found.clone();
+    if let Some(w) = app.get_webview_window(HIGHLIGHT) {
+        let _ = w.close();
+    }
+    let win = WebviewWindowBuilder::new(
+        app,
+        HIGHLIGHT,
+        WebviewUrl::App("index.html?window=highlight".into()),
+    )
+    .title("Wisp — show me")
+    .decorations(false)
+    .transparent(true)
+    .resizable(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .shadow(false)
+    .focused(false)
+    .visible(false)
+    .build()
+    .map_err(|e| WispError::internal(format!("Couldn't show the highlight: {e}")))?;
+    let _ = win.set_position(Position::Physical(PhysicalPosition::new(shot.x, shot.y)));
+    let _ = win.set_size(Size::Physical(PhysicalSize::new(shot.width, shot.height)));
+    let _ = win.set_ignore_cursor_events(true);
+    let _ = win.show();
+    let a = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(6)).await;
+        if let Some(w) = a.get_webview_window(HIGHLIGHT) {
+            let _ = w.close();
+        }
+    });
+    Ok(found)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lasso_mask_dims_only_outside() {
+        let mut img = RgbaImage::from_pixel(10, 10, image::Rgba([200, 200, 200, 255]));
+        let tri = [(0.0, 0.0), (10.0, 0.0), (0.0, 10.0)];
+        mask_outside(&mut img, &tri);
+        assert_eq!(img.get_pixel(1, 1).0[0], 200);
+        assert!(img.get_pixel(9, 9).0[0] < 50);
+        assert_eq!(img.get_pixel(9, 9).0[3], 255);
+    }
 }

@@ -74,7 +74,12 @@ pub async fn transcribe(
         }
     }
     let started = Instant::now();
-    let req = transcription_request(&base_mime, &audio_base64);
+    let req = transcription_request(
+        &base_mime,
+        &audio_base64,
+        settings.dictation_style,
+        &settings.selected_model,
+    );
     drop(audio_base64);
     let result = state
         .gemini
@@ -137,7 +142,7 @@ pub async fn insert_text(
     clipboard
         .write_text(text)
         .map_err(|e| WispError::internal(format!("Couldn't use the clipboard: {e}")))?;
-    windows::set_island_expanded(&app, false);
+    windows::close_bar(&app);
     if !foreground::focus(target) {
         return Err(WispError::new(
             ErrorCode::Unsupported,

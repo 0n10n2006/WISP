@@ -5,6 +5,7 @@ import { initHost } from "./services/host";
 import { PreviewFrame } from "./preview/PreviewFrame";
 import "./theme/tokens.css";
 import "./theme/app.css";
+import "./theme/notch.css";
 
 async function main() {
   const h = await initHost();

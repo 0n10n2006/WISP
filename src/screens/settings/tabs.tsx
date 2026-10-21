@@ -69,12 +69,6 @@ export function GeneralTab() {
       <section className="group">
         <h3>Window</h3>
         <Toggle
-          id="always-on-top"
-          label="Keep Wisp above other windows"
-          checked={s.alwaysOnTop}
-          onChange={(alwaysOnTop) => void set({ alwaysOnTop })}
-        />
-        <Toggle
           id="launch-at-login"
           label="Start Wisp when you sign in"
           checked={s.launchAtLogin}
@@ -254,11 +248,15 @@ export function ModelTab() {
 }
 
 const SHORTCUT_LABELS: Record<ShortcutAction, { label: string; desc: string }> = {
-  toggleIsland: { label: "Show or hide Wisp", desc: "Opens Wisp with the prompt ready." },
-  selectToAsk: { label: "Select to ask", desc: "Select an area of the screen and ask about it." },
-  dictation: { label: "Dictation", desc: "Start or stop dictating text." },
-  clipboardAssist: { label: "Clipboard help", desc: "Summarize, rewrite or explain copied text." },
-  voice: { label: "Voice conversation", desc: "Push to talk with Wisp." },
+  toggleIsland: { label: "Open the command bar", desc: "Opens Wisp with the bar ready to type." },
+  selectToAsk: {
+    label: "Circle to ask",
+    desc: "Circle or drag around anything on screen and ask about it.",
+  },
+  dictation: { label: "Dictation", desc: "Start or stop dictating (or hold Ctrl+Win)." },
+  clipboardAssist: { label: "Clipboard", desc: "Clipboard history, or help with copied text." },
+  voice: { label: "Ask by voice", desc: "Speak a question (or hold Win+Alt)." },
+  tuck: { label: "Tuck Wisp away", desc: "Hide the notch completely, or bring it back." },
 };
 
 export function ShortcutsTab() {
@@ -284,7 +282,7 @@ export function ShortcutsTab() {
           <div className="banner-body">
             <strong>Some shortcuts couldn't be registered</strong>
             {snapshot.shortcutIssues.map((i) => (
-              <p key={i.action}>{i.message} You can still use the orb or tray menu.</p>
+              <p key={i.action}>{i.message} You can still use the notch or tray menu.</p>
             ))}
           </div>
         </div>
@@ -365,9 +363,15 @@ export function PrivacyTab() {
             turn memory off.
           </li>
           <li>
-            <strong>Stays on this PC:</strong> settings, reminders, memory, and request history
-            (metadata only unless you opt in below). Your API key is stored in Windows Credential
-            Manager.
+            <strong>Only when you use them:</strong> web answers and research briefs use Google
+            Search through Gemini; “Show me” and screen replicas send one screenshot of the current
+            screen to Gemini; weather sends the place you picked to Open-Meteo; the speed test
+            downloads from speed.cloudflare.com; update checks contact GitHub.
+          </li>
+          <li>
+            <strong>Stays on this PC:</strong> settings, reminders, memory, clipboard history (off
+            by default), launcher and agent history, and request history (metadata only unless you
+            opt in below). Your API key is stored in Windows Credential Manager.
           </li>
           <li>
             <strong>Never collected:</strong> Wisp has no analytics or telemetry. Nothing is sent to
@@ -423,10 +427,17 @@ export function PrivacyTab() {
         </div>
         <Toggle
           id="screen-context"
-          label="Allow Select to ask"
-          description="Screen regions are captured only when you press the shortcut and sent only after you confirm."
+          label="Allow screen features"
+          description="Circle to ask, Show me and screen replicas. The screen is captured only when you ask, and selections are sent only after you confirm."
           checked={s.screenContextEnabled}
           onChange={(screenContextEnabled) => void update({ screenContextEnabled })}
+        />
+        <Toggle
+          id="clipboard-history"
+          label="Clipboard history"
+          description="Off by default. Keeps your last 100 copied texts and links on this PC; skips anything password managers mark as private."
+          checked={s.clipboardHistory}
+          onChange={(clipboardHistory) => void update({ clipboardHistory })}
         />
         <Toggle
           id="retain-audio"

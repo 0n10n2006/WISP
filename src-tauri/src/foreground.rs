@@ -49,6 +49,38 @@ mod imp {
         unsafe { IsWindow(Some(hwnd(t))).as_bool() }
     }
 
+    /// Executable name of the window's process, e.g. "code" (local only).
+    pub fn process_name(t: Target) -> Option<String> {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+            PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        let mut pid = 0u32;
+        unsafe { GetWindowThreadProcessId(hwnd(t), Some(&mut pid)) };
+        if pid == 0 {
+            return None;
+        }
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?;
+        let mut buf = [0u16; 512];
+        let mut len = buf.len() as u32;
+        let ok = unsafe {
+            QueryFullProcessImageNameW(
+                handle,
+                PROCESS_NAME_WIN32,
+                windows::core::PWSTR(buf.as_mut_ptr()),
+                &mut len,
+            )
+        };
+        unsafe {
+            let _ = CloseHandle(handle);
+        }
+        ok.ok()?;
+        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        let file = path.rsplit('\\').next()?.to_lowercase();
+        Some(file.trim_end_matches(".exe").to_string())
+    }
+
     pub fn title(t: Target) -> Option<String> {
         let mut buf = [0u16; 256];
         let n = unsafe { GetWindowTextW(hwnd(t), &mut buf) };
@@ -78,6 +110,37 @@ mod imp {
         }
     }
 
+    /// The foreground window (not ours, not the desktop) covers its whole monitor.
+    pub fn is_fullscreen() -> bool {
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::Graphics::Gdi::{
+            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowRect};
+        let Some(t) = current() else { return false };
+        let h = hwnd(t);
+        let mut class = [0u16; 64];
+        let n = unsafe { GetClassNameW(h, &mut class) };
+        let class = String::from_utf16_lossy(&class[..n.max(0) as usize]);
+        if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") {
+            return false;
+        }
+        let mut r = RECT::default();
+        if unsafe { GetWindowRect(h, &mut r) }.is_err() {
+            return false;
+        }
+        let mon = unsafe { MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST) };
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !unsafe { GetMonitorInfoW(mon, &mut info) }.as_bool() {
+            return false;
+        }
+        let m = info.rcMonitor;
+        r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom
+    }
+
     /// Simulate Ctrl+V in the focused window.
     pub fn paste() -> bool {
         let inputs = [
@@ -100,6 +163,9 @@ mod imp {
     pub fn is_valid(_t: Target) -> bool {
         false
     }
+    pub fn process_name(_t: Target) -> Option<String> {
+        None
+    }
     pub fn title(_t: Target) -> Option<String> {
         None
     }
@@ -109,9 +175,12 @@ mod imp {
     pub fn paste() -> bool {
         false
     }
+    pub fn is_fullscreen() -> bool {
+        false
+    }
 }
 
-pub use imp::{current, focus, is_valid, paste, title};
+pub use imp::{current, focus, is_fullscreen, is_valid, paste, process_name, title};
 
 pub fn info(t: Option<Target>) -> TargetInfo {
     match t.filter(|t| is_valid(*t)) {

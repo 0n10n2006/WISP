@@ -120,6 +120,56 @@ pub fn spawn(app: AppHandle, process_start: Instant, setup_ms: u128) {
             ok: true,
             detail: format!("{issues} could not be registered"),
         });
+        // v0.2 notch and dashboard.
+        let layout = *state.island.lock().expect("island");
+        checks.push(Check {
+            name: "notch-mode",
+            ok: layout.mode == windows::NotchMode::Sliver,
+            detail: format!("{:?}", layout.mode),
+        });
+        let snap = tauri::async_runtime::spawn_blocking({
+            let app = app.clone();
+            move || app.state::<AppState>().stats.snapshot()
+        })
+        .await;
+        checks.push(match snap {
+            Ok(s) => Check {
+                name: "system-stats",
+                ok: s.memory_total > 0 && !s.cores.is_empty(),
+                detail: format!(
+                    "{} cores, {} MB RAM",
+                    s.cores.len(),
+                    s.memory_total / 1_048_576
+                ),
+            },
+            Err(e) => Check {
+                name: "system-stats",
+                ok: false,
+                detail: e.to_string(),
+            },
+        });
+        let catalogue = tauri::async_runtime::spawn_blocking(crate::apps::catalogue)
+            .await
+            .unwrap_or_default();
+        checks.push(Check {
+            name: "launcher",
+            ok: catalogue.len() >= wisp_core::launcher::BUILTIN.len(),
+            detail: format!("{} items", catalogue.len()),
+        });
+        // Informational: whether the hold-to-talk hook installed (Windows only).
+        let hook = MARKS
+            .lock()
+            .map(|m| m.iter().any(|(p, _)| p == "hold-hook"))
+            .unwrap_or(false);
+        checks.push(Check {
+            name: "hold-to-talk-hook",
+            ok: true,
+            detail: if cfg!(windows) {
+                format!("installed: {hook}")
+            } else {
+                "not applicable".into()
+            },
+        });
         let warnings = state.startup_warnings.lock().expect("warnings").clone();
         checks.push(Check {
             name: "startup-warnings",

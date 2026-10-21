@@ -1,95 +1,68 @@
-import { useEffect, useState } from "react";
-import { listVoices, speak, speechAvailable, stopSpeaking } from "../../services/speech";
+import type { DictationStyle } from "../../services/types";
 import { useSettings } from "../../state/settings";
-import { Toggle } from "./common";
-
-function useVoices(): SpeechSynthesisVoice[] {
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() => listVoices());
-  useEffect(() => {
-    if (!speechAvailable()) return;
-    const update = () => setVoices(listVoices());
-    window.speechSynthesis.addEventListener("voiceschanged", update);
-    return () => window.speechSynthesis.removeEventListener("voiceschanged", update);
-  }, []);
-  return voices;
-}
+import { Choice, Toggle } from "./common";
 
 export function VoiceTab() {
   const s = useSettings((st) => st.snapshot?.settings);
   const update = useSettings((st) => st.update);
-  const voices = useVoices();
   if (!s) return null;
 
   return (
     <div className="tab">
-      <h2>Voice</h2>
+      <h2>Voice &amp; dictation</h2>
       <p className="setting-desc">
-        Talk to Wisp with push-to-talk: press the voice shortcut, speak, and press it again. Wisp
-        never listens in the background. Speech is transcribed by Gemini; answers are read aloud by
-        Windows voices on this PC.
+        Wisp listens only while you hold a key or press a button, never in the background. Speech is
+        transcribed by Gemini. Wisp answers in text and never talks back.
       </p>
       <section className="group">
         <Toggle
           id="voice-enabled"
-          label="Allow voice conversation"
+          label="Allow voice and dictation"
           checked={s.voiceEnabled}
           onChange={(voiceEnabled) => void update({ voiceEnabled })}
         />
         <Toggle
-          id="speak-responses"
-          label="Read typed answers aloud too"
-          description="Voice conversations are always read aloud. Press Stop or Esc to interrupt."
-          checked={s.speakResponses}
-          onChange={(speakResponses) => void update({ speakResponses })}
+          id="hold-to-talk"
+          label="Hold-to-talk keys"
+          description={
+            <>
+              Hold <kbd>Ctrl</kbd>+<kbd>Win</kbd> to dictate into any app and release to type it in.
+              Hold <kbd>Win</kbd>+<kbd>Alt</kbd> to ask by voice. Pressing any other key while
+              holding them keeps your normal Windows shortcuts working.
+            </>
+          }
+          checked={s.holdToTalk}
+          disabled={!s.voiceEnabled}
+          onChange={(holdToTalk) => void update({ holdToTalk })}
         />
       </section>
       <section className="group">
-        <h3>Reading voice</h3>
-        {!speechAvailable() ? (
-          <p className="muted">Text-to-speech isn't available here.</p>
-        ) : (
-          <>
-            <label htmlFor="tts-voice">Voice</label>
-            <select
-              id="tts-voice"
-              value={s.ttsVoice}
-              onChange={(e) => void update({ ttsVoice: e.target.value })}
-            >
-              <option value="">System default</option>
-              {voices.map((v) => (
-                <option key={v.voiceURI} value={v.name}>
-                  {v.name} ({v.lang})
-                </option>
-              ))}
-            </select>
-            <label htmlFor="tts-rate">Speed: {s.ttsRate.toFixed(1)}×</label>
-            <input
-              id="tts-rate"
-              type="range"
-              min={0.5}
-              max={2}
-              step={0.1}
-              value={s.ttsRate}
-              onChange={(e) => void update({ ttsRate: Number(e.target.value) })}
-            />
-            <div className="row-start">
-              <button
-                className="btn"
-                onClick={() =>
-                  void speak("Hi, I'm Wisp. This is how I sound.", {
-                    voice: s.ttsVoice || undefined,
-                    rate: s.ttsRate,
-                  })
-                }
-              >
-                Test voice
-              </button>
-              <button className="btn btn-ghost" onClick={stopSpeaking}>
-                Stop
-              </button>
-            </div>
-          </>
-        )}
+        <h3>Dictation</h3>
+        <Choice<DictationStyle>
+          name="dictation-style"
+          label="Clean-up"
+          value={s.dictationStyle}
+          options={[
+            { value: "verbatim", label: "Verbatim" },
+            { value: "clean", label: "Clean" },
+            { value: "formal", label: "Polished" },
+          ]}
+          onChange={(dictationStyle) => void update({ dictationStyle })}
+        />
+        <p className="setting-desc">
+          {s.dictationStyle === "verbatim"
+            ? "Exactly what you said, with punctuation."
+            : s.dictationStyle === "clean"
+              ? "Removes filler words (um, uh, like), false starts and repetitions, and fixes grammar — in your own words."
+              : "Turns what you said into clear, professional writing."}
+        </p>
+        <Toggle
+          id="auto-insert"
+          label="Type dictation straight into the app"
+          description="When on, the dictation button and shortcut insert text without a review step. Hold-to-talk always inserts on release."
+          checked={s.dictationAutoInsert}
+          onChange={(dictationAutoInsert) => void update({ dictationAutoInsert })}
+        />
       </section>
     </div>
   );

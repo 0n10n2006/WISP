@@ -86,6 +86,37 @@ pub struct GenerateContentRequest {
 pub struct Candidate {
     pub content: Option<Content>,
     pub finish_reason: Option<String>,
+    pub grounding_metadata: Option<GroundingMetadata>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GroundingMetadata {
+    #[serde(default)]
+    pub grounding_chunks: Vec<GroundingChunk>,
+    #[serde(default)]
+    pub web_search_queries: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GroundingChunk {
+    pub web: Option<WebSource>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct WebSource {
+    #[serde(default)]
+    pub uri: String,
+    #[serde(default)]
+    pub title: String,
+}
+
+/// A web source cited by a grounded answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Source {
+    pub title: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, Serialize, PartialEq)]
@@ -190,6 +221,12 @@ pub struct AskRequest {
     pub use_memory: bool,
     #[serde(default = "default_true")]
     pub enable_tools: bool,
+    /// Let the model think longer (slower, better for hard questions).
+    #[serde(default)]
+    pub think: bool,
+    /// Ground the answer with Google Search.
+    #[serde(default)]
+    pub web: bool,
 }
 
 fn default_true() -> bool {
@@ -204,6 +241,8 @@ pub struct GenerateOutcome {
     pub function_calls: Vec<FunctionCall>,
     pub finish_reason: Option<String>,
     pub usage: Option<UsageMetadata>,
+    /// Web sources when the answer was grounded with Google Search.
+    pub sources: Vec<Source>,
     /// Raw model content, needed to continue a function-calling turn.
     #[serde(skip)]
     pub model_parts: Vec<Part>,
@@ -219,6 +258,27 @@ impl GenerateOutcome {
         for cand in chunk.candidates.into_iter().take(1) {
             if let Some(r) = cand.finish_reason {
                 self.finish_reason = Some(r);
+            }
+            if let Some(g) = cand.grounding_metadata {
+                for chunk in g.grounding_chunks {
+                    let Some(web) = chunk.web else { continue };
+                    // Only http(s) links are ever shown or opened.
+                    let Ok(url) = crate::tools::validate_url(&web.uri) else {
+                        continue;
+                    };
+                    if self.sources.iter().any(|s| s.url == url) || self.sources.len() >= 8 {
+                        continue;
+                    }
+                    let title = if web.title.trim().is_empty() {
+                        url::Url::parse(&url)
+                            .ok()
+                            .and_then(|u| u.host_str().map(str::to_owned))
+                            .unwrap_or_default()
+                    } else {
+                        web.title.trim().chars().take(120).collect()
+                    };
+                    self.sources.push(Source { title, url });
+                }
             }
             for part in cand.content.map(|c| c.parts).unwrap_or_default() {
                 if part.thought {

@@ -48,7 +48,7 @@ describe("settings window", () => {
     await user.click(await screen.findByRole("tab", { name: "Shortcuts" }));
     const dictation = screen.getByRole("button", { name: /^dictation:/i });
     await user.click(dictation);
-    await user.keyboard("{Control>}{Shift>}[Space]{/Shift}{/Control}");
+    await user.keyboard("{Control>}{Alt>}[Space]{/Alt}{/Control}");
     await user.click(screen.getByRole("button", { name: /save shortcuts/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/assigned to both/i);
     await user.click(screen.getByRole("button", { name: /reset to defaults/i }));

@@ -26,11 +26,28 @@ import type {
   Settings,
   SettingsSnapshot,
   ShortcutAction,
+  AgentJob,
+  AgentKind,
+  Catalogue,
+  ClipEntry,
+  ControlsState,
+  Highlight,
+  HoldEvent,
+  LaunchItem,
+  MediaCommand,
+  NotchMode,
+  Point,
+  PowerAction,
+  SpeedResult,
+  StatsSnapshot,
+  WallpaperInfo,
+  Weather,
+  WeatherPlace,
 } from "./types";
 
 export type Unsubscribe = () => void;
 
-export type WindowKind = "island" | "settings" | "overlay";
+export type WindowKind = "island" | "settings" | "overlay" | "highlight";
 
 export interface AskHandle {
   result: Promise<AskResult>;
@@ -62,10 +79,19 @@ export interface Host {
   /** Answer a confirmation for a model-proposed action. */
   respondAction(id: string, approved: boolean): Promise<void>;
 
-  setIslandExpanded(expanded: boolean): Promise<IslandLayout>;
+  /** Notch mode; `height` sizes the open bar to its content. */
+  setIslandMode(mode: NotchMode, height?: number): Promise<IslandLayout>;
   onIslandLayout(cb: (l: IslandLayout) => void): Unsubscribe;
+  /** Close the bar back to the sliver (or hide it when tucked). */
   hideIsland(): Promise<void>;
-  startDragging(): Promise<void>;
+  setTucked(tucked: boolean): Promise<void>;
+  onTucked(cb: (tucked: boolean) => void): Unsubscribe;
+  /** The island lost focus (clicked elsewhere). */
+  onBlur(cb: () => void): Unsubscribe;
+  /** Warm up the connection to Gemini when the bar opens. */
+  prewarm(): void;
+  /** Hold-to-talk chords from the keyboard hook. */
+  onHold(cb: (e: HoldEvent) => void): Unsubscribe;
   openSettings(tab?: string): Promise<void>;
   onSettingsTab(cb: (tab: string) => void): Unsubscribe;
   onFocusPrompt(cb: () => void): Unsubscribe;
@@ -77,7 +103,16 @@ export interface Host {
   overlayMonitor(): number;
   capturePreview(monitor: number): Promise<string>;
   captureSelect(monitor: number, rect: SelectionRect): Promise<void>;
+  captureSelectLasso(
+    monitor: number,
+    points: Point[],
+    viewWidth: number,
+    viewHeight: number,
+  ): Promise<void>;
   captureCancel(): Promise<void>;
+  /** Point at the on-screen element that answers the question. */
+  showMe(question: string): Promise<Highlight[]>;
+  highlightsGet(): Promise<Highlight[]>;
   onCaptureReady(cb: (c: CaptureReady) => void): Unsubscribe;
   onCaptureError(cb: (e: WispError) => void): Unsubscribe;
 
@@ -126,6 +161,43 @@ export interface Host {
 
   openExternal(url: string): Promise<void>;
   copyText(text: string): Promise<void>;
+
+  /** Dashboard: controls. */
+  controlsState(): Promise<ControlsState>;
+  setVolume(percent: number): Promise<void>;
+  setMuted(muted: boolean): Promise<void>;
+  mediaCommand(command: MediaCommand): Promise<void>;
+  setRadio(kind: "wifi" | "bluetooth", on: boolean): Promise<void>;
+  setDarkMode(dark: boolean): Promise<void>;
+  /** Dashboard: stats, weather, network. */
+  statsSnapshot(): Promise<StatsSnapshot>;
+  speedTest(): Promise<SpeedResult>;
+  weatherSearch(query: string): Promise<WeatherPlace[]>;
+  weatherGet(): Promise<Weather | null>;
+  /** Dashboard: clipboard history. */
+  clipsList(kind?: "text" | "link"): Promise<ClipEntry[]>;
+  clipPin(id: string, pinned: boolean): Promise<boolean>;
+  clipDelete(id: string): Promise<boolean>;
+  clipsClear(includePinned: boolean): Promise<number>;
+  clipCopy(id: string): Promise<void>;
+  /** Dashboard: launcher. */
+  launcherList(): Promise<Catalogue>;
+  launchItem(item: LaunchItem): Promise<void>;
+  /** Dashboard: power (the UI confirms first). */
+  powerAction(action: PowerAction): Promise<void>;
+  /** Dashboard: wallpaper. */
+  wallpaperInfo(): Promise<WallpaperInfo>;
+  wallpaperThumb(path: string): Promise<string>;
+  wallpaperPick(): Promise<string | null>;
+  wallpaperSet(path: string): Promise<void>;
+  /** Agents. */
+  agentStart(kind: AgentKind): Promise<AgentJob>;
+  agentCancel(id: string): Promise<void>;
+  agentsList(): Promise<AgentJob[]>;
+  agentDelete(id: string): Promise<boolean>;
+  agentOpen(id: string): Promise<void>;
+  /** Process name of the app Wisp was summoned from (local only). */
+  foregroundApp(): Promise<string | null>;
 }
 
 let current: Host | null = null;

@@ -1,4 +1,5 @@
 use crate::windows;
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::AppHandle;
@@ -37,9 +38,24 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 windows::toggle_island(tray.app_handle());
             }
         });
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
-    }
+    builder = builder.icon(tray_icon(crate::system_theme::get().system_light));
     builder.build(app)?;
     Ok(())
+}
+
+/// Monochrome tray glyph that contrasts with the taskbar.
+pub fn tray_icon(light_taskbar: bool) -> Image<'static> {
+    let bytes: &'static [u8] = if light_taskbar {
+        include_bytes!("../icons/tray-dark-32.png")
+    } else {
+        include_bytes!("../icons/tray-light-32.png")
+    };
+    Image::from_bytes(bytes).expect("bundled tray icon is a valid PNG")
+}
+
+/// Re-pick the tray glyph after the Windows theme changes.
+pub fn refresh(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id("wisp-tray") {
+        let _ = tray.set_icon(Some(tray_icon(crate::system_theme::get().system_light)));
+    }
 }

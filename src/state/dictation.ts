@@ -3,6 +3,7 @@ import { toWispError, type WispError } from "../services/errors";
 import { host } from "../services/host";
 import type { AudioRecorder } from "../services/recorder";
 import { useActivity } from "./activity";
+import { useSettings } from "./settings";
 import { toast } from "./toast";
 
 export type DictationPhase =
@@ -21,7 +22,8 @@ interface DictationState {
   error: WispError | null;
   target: { available: boolean; title: string | null };
   start(): Promise<void>;
-  stop(): Promise<void>;
+  /** Stop and transcribe; with `autoInsert` the text goes straight into the app. */
+  stop(autoInsert?: boolean): Promise<void>;
   /** Shortcut behaviour: start when idle, stop when listening. */
   toggle(): Promise<void>;
   cancel(): void;
@@ -71,7 +73,7 @@ export const useDictation = create<DictationState>((set, get) => ({
     }, MAX_DICTATION_MS);
   },
 
-  async stop() {
+  async stop(autoInsert) {
     if (get().phase !== "listening" || !recorder) return;
     if (autoStop) clearTimeout(autoStop);
     const rec = recorder;
@@ -88,6 +90,9 @@ export const useDictation = create<DictationState>((set, get) => ({
       const text = await host().transcribe(recording);
       if (gen !== generation) return;
       set({ phase: "review", transcript: text, heard: !!text.trim() });
+      const auto =
+        autoInsert ?? useSettings.getState().snapshot?.settings.dictationAutoInsert ?? false;
+      if (auto && text.trim() && get().target.available) await get().insert();
     } catch (e) {
       if (gen !== generation) return;
       set({ phase: "error", error: toWispError(e) });

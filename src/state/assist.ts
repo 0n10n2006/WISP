@@ -31,6 +31,31 @@ export const useClipboardAssist = create<ClipboardState>((set) => ({
   close: () => set({ open: false, text: null, error: null, loading: false }),
 }));
 
+/**
+ * One-tap help with the clipboard (from an app-aware chip). The clipboard is
+ * read only now, on this click, and the request shows a short label.
+ */
+export async function askAboutClipboard(prompt: string, label: string): Promise<void> {
+  const { useConversation } = await import("./conversation");
+  let text: string | null;
+  try {
+    text = await host().clipboardRead();
+  } catch (e) {
+    useConversation.getState().setError(toWispError(e));
+    return;
+  }
+  if (!text?.trim()) {
+    const { toast } = await import("./toast");
+    toast("Copy some text first, then tap the chip again", "warning", 3000);
+    return;
+  }
+  const clipped = text.slice(0, MAX_CLIPBOARD_CHARS);
+  await useConversation.getState().ask(`${prompt}\n\n---\n${clipped}`, {
+    contextKind: "clipboard",
+    displayText: `${label} — clipboard text (${clipped.length.toLocaleString()} characters)`,
+  });
+}
+
 interface RemindersState {
   due: Task[];
   push(t: Task): void;

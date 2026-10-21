@@ -11,7 +11,7 @@ use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use wisp_core::gemini::prompt::{build_request, with_function_results, PromptContext};
 use wisp_core::gemini::types::{
-    AskRequest, FunctionCall, FunctionResponse, GenerateOutcome, UsageMetadata,
+    AskRequest, FunctionCall, FunctionResponse, GenerateOutcome, Source, UsageMetadata,
 };
 use wisp_core::redact::summarize_text;
 use wisp_core::settings::Settings;
@@ -50,6 +50,8 @@ pub struct AskResult {
     pub latency_ms: u64,
     pub usage: Option<UsageMetadata>,
     pub finish_reason: Option<String>,
+    /// Web sources for grounded answers.
+    pub sources: Vec<Source>,
 }
 
 /// Model ↔ tool round trips allowed per request.
@@ -111,6 +113,9 @@ pub async fn ask(
         now_local: &now_local,
         memories: &memories,
         allowed_apps: &apps,
+        model: &settings.selected_model,
+        fast: settings.fast_mode,
+        persona: &settings.persona,
     };
     let mut body = build_request(&request, &ctx);
 
@@ -118,6 +123,7 @@ pub async fn ask(
     let mut text = String::new();
     let mut usage = None;
     let mut finish_reason = None;
+    let mut sources: Vec<Source> = Vec::new();
     for round in 0..MAX_TOOL_ROUNDS {
         let mut first_delta = true;
         let separate = !text.is_empty();
@@ -143,6 +149,11 @@ pub async fn ask(
             text.push_str(&out.text);
         }
         usage = out.usage.clone().or(usage);
+        for src in &out.sources {
+            if !sources.contains(src) {
+                sources.push(src.clone());
+            }
+        }
         finish_reason = out.finish_reason.clone();
         if out.function_calls.is_empty() || !request.enable_tools {
             break;
@@ -166,7 +177,18 @@ pub async fn ask(
         latency_ms: started.elapsed().as_millis() as u64,
         usage,
         finish_reason,
+        sources,
     })
+}
+
+/// Open the TLS connection to Gemini ahead of the first question, so the
+/// answer starts sooner. Costs no generation quota.
+#[tauri::command]
+pub async fn prewarm(state: State<'_, AppState>) -> CmdResult<()> {
+    if let Ok(Some(key)) = state.secrets.get() {
+        state.gemini.prewarm(&key).await;
+    }
+    Ok(())
 }
 
 /// Validate, confirm, execute and audit one model-proposed action.
