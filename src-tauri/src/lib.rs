@@ -3,6 +3,7 @@
 mod actions;
 mod capture;
 mod commands;
+mod crash;
 mod foreground;
 mod reminders;
 mod secrets;
@@ -39,7 +40,9 @@ pub fn run() {
             let store = SettingsStore::new(data_dir.join("settings.json"));
             let loaded = store.load();
             let settings = loaded.settings;
-            let mut warnings = Vec::new();
+            let log_dir = data_dir.join("logs");
+            crash::install(log_dir.clone(), app.package_info().version.to_string());
+            let mut warnings: Vec<String> = crash::unseen_crashes(&log_dir).into_iter().collect();
             let db = match Db::open(&data_dir.join("wisp.db")) {
                 Ok(db) => db,
                 Err(e) => {

@@ -113,6 +113,17 @@ npm run test:e2e              # Playwright against the browser preview
 On Linux you can compile and test the Tauri shell after installing `libwebkit2gtk-4.1-dev`,
 `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `libpipewire-0.3-dev`, `libgbm-dev`, `libxcb1-dev`, `libxrandr-dev`, `libegl-dev`, `libdbus-1-dev` and `clang`. Windows is the only supported runtime target.
 
+## Releasing
+
+1. Bump the version in `package.json`, `Cargo.toml` (`[workspace.package]`) and `src-tauri/tauri.conf.json`.
+2. Push a tag `vX.Y.Z`. The **Release** workflow tests, builds the NSIS and MSI installers, and creates a draft
+   GitHub release.
+3. Run the manual smoke test in `docs/TEST_PLAN.md` on Windows 11, then publish the draft.
+
+Rollback: keep the previous release published. Users can reinstall it over the newer one. Settings and data are
+forward-compatible within a major version, and the database is copied to `wisp.v<N>.bak` before any schema
+migration.
+
 ## Troubleshooting
 
 | Problem               | Fix                                                                                          |
@@ -136,6 +147,14 @@ On Linux you can compile and test the Tauri shell after installing `libwebkit2gt
   while memory is on, and Wisp asks before saving anything from a conversation.
 - **Clipboard help:** Press `Ctrl+Shift+C` (or the clipboard button) to summarise, rewrite or explain the text
   you copied. Wisp reads the clipboard once, shows you exactly what will be sent, and never monitors it.
+
+## Voice conversation
+
+Press `Ctrl+Shift+V` (or the speech-bubble button), speak, then press it again or **Done**. Wisp transcribes your
+question with Gemini, answers, and reads the answer aloud with a local Windows voice. Press **Stop** or `Esc` to
+interrupt; pressing the shortcut while Wisp is speaking interrupts it and starts listening. There is no always-on
+listening. Choose the voice and speed in **Settings → Voice**, and optionally have typed answers read aloud too.
+Any answer can also be read aloud with its **Read aloud** button.
 
 ## Dictation
 

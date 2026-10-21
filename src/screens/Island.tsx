@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { ClipboardCard } from "../components/ClipboardCard";
 import { DictationCard } from "../components/DictationCard";
+import { VoiceCard } from "../components/VoiceCard";
 import { ReminderBanner } from "../components/ReminderBanner";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { Icon } from "../components/Icon";
@@ -16,6 +17,9 @@ import { useClipboardAssist, useDueReminders } from "../state/assist";
 import { DEFAULT_SCREEN_PROMPT, useCapture } from "../state/capture";
 import { useConversation } from "../state/conversation";
 import { useDictation } from "../state/dictation";
+import { speakLatestAnswer, useVoice } from "../state/voice";
+import { useActivity } from "../state/activity";
+import { stopSpeaking } from "../services/speech";
 import { ORB_LABELS } from "../state/orb";
 import { useSettings } from "../state/settings";
 import { toast } from "../state/toast";
@@ -155,6 +159,9 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
   const pending = useCapture((c) => c.pending);
   const dictating = useDictation((d) => d.phase !== "idle");
   const clipboardOpen = useClipboardAssist((c) => c.open);
+  const voiceActive = useVoice((v) => v.phase !== "idle");
+  const [dismissedWarnings, setDismissedWarnings] = useState<string[]>([]);
+  const speaking = useActivity((a) => a.speaking);
   const setPending = useCapture((c) => c.setPending);
 
   const submit = () => {
@@ -167,12 +174,27 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
         imagePreview: pending.dataUrl,
       });
     } else {
-      void ask(draft);
+      void ask(draft).then(() => {
+        const st = useConversation.getState();
+        if (!st.error && useSettings.getState().snapshot?.settings.speakResponses)
+          void speakLatestAnswer();
+      });
     }
   };
 
   return (
     <section
+      onKeyDown={(e) => {
+        // Esc anywhere in the panel collapses it (inputs handle their own Esc first).
+        if (
+          e.key === "Escape" &&
+          !e.defaultPrevented &&
+          !(e.target instanceof HTMLTextAreaElement)
+        ) {
+          e.preventDefault();
+          onCollapse();
+        }
+      }}
       className={`panel ${layout.alignBottom ? "panel-bottom" : ""} ${layout.alignRight ? "panel-right" : ""}`}
       aria-label="Wisp"
     >
@@ -233,12 +255,30 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
 
       {dictating ? (
         <DictationCard />
+      ) : voiceActive ? (
+        <VoiceCard />
       ) : clipboardOpen ? (
         <ClipboardCard />
       ) : (
         <>
           <div className="panel-body">
             <ReminderBanner />
+            {snapshot?.warnings
+              .filter((w) => !dismissedWarnings.includes(w))
+              .map((w) => (
+                <div key={w} className="banner banner-warning" role="status">
+                  <div className="banner-body">
+                    <p>{w}</p>
+                  </div>
+                  <button
+                    className="icon-btn banner-close"
+                    aria-label="Dismiss notice"
+                    onClick={() => setDismissedWarnings((d) => [...d, w])}
+                  >
+                    <Icon name="close" size={14} />
+                  </button>
+                </div>
+              ))}
             {!hasKey && snapshot && <SetupCard />}
             {messages.length === 0 && hasKey ? <EmptyState /> : <MessageList messages={messages} />}
           </div>
@@ -253,6 +293,14 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
           )}
 
           <footer className="panel-footer">
+            {speaking && (
+              <div className="speaking-bar" role="status">
+                <Icon name="speaker" size={14} /> Speaking…
+                <button className="btn btn-small" onClick={stopSpeaking}>
+                  <Icon name="stop" size={12} /> Stop
+                </button>
+              </div>
+            )}
             {pending && (
               <div className="attachment">
                 <img src={pending.dataUrl} alt="Selected screen area" />
@@ -301,6 +349,14 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
                 </button>
                 <button
                   className="icon-btn icon-btn-small"
+                  onClick={() => void useVoice.getState().start()}
+                  aria-label="Talk to Wisp"
+                  title={`Talk to Wisp${snapshot?.settings.globalShortcuts.voice ? ` (${snapshot.settings.globalShortcuts.voice})` : ""}`}
+                >
+                  <Icon name="talk" />
+                </button>
+                <button
+                  className="icon-btn icon-btn-small"
                   onClick={() => void useClipboardAssist.getState().openAssist()}
                   aria-label="Clipboard help"
                   title={`Clipboard help${snapshot?.settings.globalShortcuts.clipboardAssist ? ` (${snapshot.settings.globalShortcuts.clipboardAssist})` : ""}`}
@@ -310,10 +366,7 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
               </div>
               <p className="footnote">
                 {online ? (
-                  <>
-                    {snapshot?.settings.selectedModel ?? "Gemini"} · prompts are sent to Google
-                    Gemini
-                  </>
+                  <>{snapshot?.settings.selectedModel ?? "Gemini"} · sent to Google Gemini</>
                 ) : (
                   <span className="offline">
                     <Icon name="warning" size={12} /> Offline. Local features still work.
@@ -362,6 +415,11 @@ export function Island() {
       if (action === "clipboardAssist") {
         void host().setIslandExpanded(true).then(setLayout);
         void useClipboardAssist.getState().openAssist();
+        return;
+      }
+      if (action === "voice") {
+        void host().setIslandExpanded(true).then(setLayout);
+        void useVoice.getState().toggle();
         return;
       }
       if (action === "dictation") {

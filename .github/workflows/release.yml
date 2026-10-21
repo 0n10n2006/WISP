@@ -1,0 +1,36 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching the version in tauri.conf.json, Cargo.toml and
+# package.json) to build the Windows installers and create a draft GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - run: npm test
+      - run: cargo test --workspace
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Wisp ${{ github.ref_name }}
+          releaseBody: |
+            Unsigned build. Windows SmartScreen may warn on first run (More info → Run anyway).
+            See README for setup and docs/TEST_PLAN.md for the smoke test.
+          releaseDraft: true
+          prerelease: true

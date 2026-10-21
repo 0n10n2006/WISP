@@ -7,6 +7,7 @@ import { useSettings } from "../../state/settings";
 import { DataTab, HistoryTab } from "./DataTabs";
 import { ActionsTab, MemoryTab, RemindersTab } from "./LocalTabs";
 import { Onboarding } from "./Onboarding";
+import { VoiceTab } from "./VoiceTab";
 import { AboutTab, GeneralTab, ModelTab, PrivacyTab, ShortcutsTab } from "./tabs";
 
 export interface TabDef {
@@ -21,6 +22,7 @@ export const EXTRA_TABS: TabDef[] = [];
 const BASE_TABS: TabDef[] = [
   { id: "general", label: "General", component: GeneralTab },
   { id: "model", label: "Model", component: ModelTab },
+  { id: "voice", label: "Voice", component: VoiceTab },
   { id: "shortcuts", label: "Shortcuts", component: ShortcutsTab },
   { id: "actions", label: "Actions", component: ActionsTab },
   { id: "reminders", label: "Reminders", component: RemindersTab },
@@ -79,13 +81,33 @@ export function SettingsApp() {
           <Orb state="idle" size={28} decorative />
           <span>Wisp</span>
         </div>
-        <ul role="tablist" aria-orientation="vertical">
+        <ul
+          role="tablist"
+          aria-orientation="vertical"
+          onKeyDown={(e) => {
+            if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+            const btns = [
+              ...e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+            ];
+            const i = btns.indexOf(document.activeElement as HTMLButtonElement);
+            const next =
+              e.key === "Home"
+                ? 0
+                : e.key === "End"
+                  ? btns.length - 1
+                  : (i + (e.key === "ArrowDown" ? 1 : -1) + btns.length) % btns.length;
+            e.preventDefault();
+            btns[next]?.focus();
+            btns[next]?.click();
+          }}
+        >
           {tabs.map((t) => (
             <li key={t.id}>
               <button
                 role="tab"
                 id={`tab-${t.id}`}
                 aria-selected={!onboarding && t.id === active.id}
+                tabIndex={t.id === active.id ? 0 : -1}
                 aria-controls="settings-panel"
                 className={!onboarding && t.id === active.id ? "active" : ""}
                 onClick={() => {
