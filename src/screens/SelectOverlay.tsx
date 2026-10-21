@@ -200,8 +200,8 @@ export function SelectOverlay() {
           {error
             ? error.message
             : mode === "lasso"
-              ? "Circle what you want to ask about · nothing is sent until you confirm"
-              : "Drag a box · nothing is sent until you confirm"}
+              ? "Circle what to ask about · sent only after you confirm"
+              : "Drag a box · sent only after you confirm"}
         </span>
         <button className="btn btn-small" onClick={whole}>
           Whole screen
