@@ -111,7 +111,7 @@ npm run test:e2e              # Playwright against the browser preview
 ```
 
 On Linux you can compile and test the Tauri shell after installing `libwebkit2gtk-4.1-dev`,
-`libayatana-appindicator3-dev`, `librsvg2-dev` and `libxdo-dev`. Windows is the only supported runtime target.
+`libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `libpipewire-0.3-dev`, `libgbm-dev`, `libxcb1-dev`, `libxrandr-dev`, `libegl-dev`, `libdbus-1-dev` and `clang`. Windows is the only supported runtime target.
 
 ## Troubleshooting
 
