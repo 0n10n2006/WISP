@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use wisp_core::gemini::GeminiClient;
 use wisp_core::settings::{Settings, SettingsStore};
+use wisp_core::storage::Db;
 
 #[derive(Debug, Clone, Copy, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,7 +29,10 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     pub settings_store: SettingsStore,
     pub settings_recovered_from: Mutex<Option<String>>,
+    /// Problems found at startup that the user should know about.
+    pub startup_warnings: Mutex<Vec<String>>,
     pub gemini: GeminiClient,
+    pub db: Db,
     pub secrets: SecretStore,
     pub requests: Mutex<HashMap<String, CancellationToken>>,
     pub shortcut_issues: Mutex<Vec<ShortcutIssue>>,

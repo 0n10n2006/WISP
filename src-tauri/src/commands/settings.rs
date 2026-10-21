@@ -14,6 +14,7 @@ pub struct SettingsSnapshot {
     pub has_api_key: bool,
     pub shortcut_issues: Vec<ShortcutIssue>,
     pub recovered_from: Option<String>,
+    pub warnings: Vec<String>,
     pub version: String,
 }
 
@@ -27,6 +28,7 @@ fn snapshot(app: &AppHandle, state: &AppState) -> SettingsSnapshot {
             .lock()
             .expect("recovered")
             .clone(),
+        warnings: state.startup_warnings.lock().expect("warnings").clone(),
         version: app.package_info().version.to_string(),
     }
 }

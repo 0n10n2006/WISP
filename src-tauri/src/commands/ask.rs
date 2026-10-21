@@ -6,8 +6,10 @@ use tauri::ipc::Channel;
 use tauri::State;
 use tokio_util::sync::CancellationToken;
 use wisp_core::gemini::prompt::{build_request, PromptContext};
-use wisp_core::gemini::types::{AskRequest, UsageMetadata};
-use wisp_core::WispError;
+use wisp_core::gemini::types::{AskRequest, GenerateOutcome, UsageMetadata};
+use wisp_core::settings::Settings;
+use wisp_core::storage::RequestLog;
+use wisp_core::{ErrorCode, WispError};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
@@ -77,14 +79,16 @@ pub async fn ask(
     let body = build_request(&request, &ctx);
 
     let started = Instant::now();
-    let out = state
+    let result = state
         .gemini
         .stream(&key, &settings.selected_model, &body, &cancel, |delta| {
             let _ = on_event.send(AskEvent::Delta {
                 text: delta.to_string(),
             });
         })
-        .await?;
+        .await;
+    log_request(&state, &settings, &request, &result, started);
+    let out = result?;
     Ok(AskResult {
         text: out.text,
         model: settings.selected_model,
@@ -92,6 +96,49 @@ pub async fn ask(
         usage: out.usage,
         finish_reason: out.finish_reason,
     })
+}
+
+/// Record request metadata (and content only if the user opted in).
+fn log_request(
+    state: &AppState,
+    settings: &Settings,
+    request: &AskRequest,
+    result: &Result<GenerateOutcome, WispError>,
+    started: Instant,
+) {
+    if settings.history_retention_days == 0 {
+        return;
+    }
+    let kind = serde_json::to_value(&request.context_kind)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "text".into());
+    let mut entry = RequestLog::new("ask", &settings.selected_model, &kind);
+    entry.latency_ms = started.elapsed().as_millis() as u64;
+    match result {
+        Ok(out) => {
+            entry.total_tokens = out.usage.as_ref().map(|u| u.total_token_count);
+            if settings.content_history {
+                entry.prompt = Some(request.prompt.clone());
+                entry.response = Some(out.text.clone());
+            }
+        }
+        Err(e) => {
+            entry.status = if e.code == ErrorCode::Cancelled {
+                "cancelled"
+            } else {
+                "error"
+            }
+            .into();
+            entry.error_code = serde_json::to_value(e.code)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned));
+            if settings.content_history {
+                entry.prompt = Some(request.prompt.clone());
+            }
+        }
+    }
+    let _ = state.db.log_request(&entry);
 }
 
 #[tauri::command]

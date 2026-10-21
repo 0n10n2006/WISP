@@ -5,6 +5,7 @@ import { MessageList } from "../components/MessageList";
 import { Orb } from "../components/Orb";
 import { PromptBox, type PromptBoxHandle } from "../components/PromptBox";
 import { ToastHost } from "../components/Toast";
+import { useOnline } from "../hooks/useOnline";
 import { useOrbState } from "../hooks/useOrbState";
 import { host } from "../services/host";
 import type { IslandLayout, ShortcutAction } from "../services/types";
@@ -132,6 +133,7 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
     clear,
   } = useConversation();
   const prompt = useRef<PromptBoxHandle>(null);
+  const online = useOnline();
 
   useEffect(() => {
     prompt.current?.focus();
@@ -225,7 +227,13 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
           busy={requestActive}
         />
         <p className="footnote">
-          {snapshot?.settings.selectedModel ?? "Gemini"} · prompts are sent to Google Gemini
+          {online ? (
+            <>{snapshot?.settings.selectedModel ?? "Gemini"} · prompts are sent to Google Gemini</>
+          ) : (
+            <span className="offline">
+              <Icon name="warning" size={12} /> Offline. Local features still work.
+            </span>
+          )}
         </p>
       </footer>
     </section>

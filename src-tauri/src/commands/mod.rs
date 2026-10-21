@@ -2,6 +2,7 @@
 //! point; nothing here executes model-generated text as a command.
 
 pub mod ask;
+pub mod data;
 pub mod settings;
 pub mod system;
 

@@ -383,6 +383,27 @@ export function PrivacyTab() {
           checked={s.contentHistory}
           onChange={(contentHistory) => void update({ contentHistory })}
         />
+        <div className="setting-row">
+          <div className="setting-text">
+            <label htmlFor="retention">Keep history for</label>
+            <p className="setting-desc" id="retention-desc">
+              Older entries are deleted automatically when Wisp starts.
+            </p>
+          </div>
+          <select
+            id="retention"
+            className="select-inline"
+            aria-describedby="retention-desc"
+            value={s.historyRetentionDays}
+            onChange={(e) => void update({ historyRetentionDays: Number(e.target.value) })}
+          >
+            <option value={0}>Don't keep history</option>
+            <option value={7}>7 days</option>
+            <option value={30}>30 days</option>
+            <option value={90}>90 days</option>
+            <option value={365}>1 year</option>
+          </select>
+        </div>
         <Toggle
           id="screen-context"
           label="Allow Select to ask"
