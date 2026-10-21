@@ -35,6 +35,14 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] The installer shows the new Wisp header/sidebar art; the tray icon matches a light and a dark taskbar.
 - [ ] Changing a shortcut to one used by another app shows a warning, not a crash.
 
+### Look & speed (v0.2.1)
+
+- [ ] On Windows 11 the notch has no outline, halo or rectangular shadow edge, in a light and a dark wallpaper; its top edge is flush with the screen and its corners curve into the edge.
+- [ ] The Settings title bar is dark with the dark theme and light with the light theme, and follows Windows on System.
+- [ ] Hovering the notch repeatedly doesn't raise CPU in Task Manager; Wisp is about 0% while idle.
+- [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
+- [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
+
 ### Command bar & dashboard (v0.2)
 
 - [ ] `spo` → Spotify is first; Enter opens it and the bar folds away. A Steam game launches via Steam.

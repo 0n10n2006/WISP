@@ -157,12 +157,23 @@
 
 /* The notch is always dark, like a hardware notch, in both themes. */
 :root {
-  --notch-bg: rgb(9 12 22 / 0.97);
-  --notch-border: rgb(170 182 200 / 0.16);
+  --notch-bg: #0a0d16;
   --notch-text: #eef3fa;
-  --notch-muted: #94a1b6;
-  --notch-hover: rgb(255 255 255 / 0.07);
-  --notch-shadow: 0 14px 36px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.35);
+  --notch-muted: #8e9ab0;
+  --accent-on-dark: var(--palette-cyan);
+  --accent2-on-dark: var(--palette-lavender);
+}
+:root[data-accent="lavender"] {
+  --accent-on-dark: var(--palette-lavender);
+  --accent2-on-dark: var(--palette-cyan);
+}
+:root[data-accent="ember"] {
+  --accent-on-dark: #ffb27a;
+  --accent2-on-dark: #ff8d9a;
+}
+:root[data-accent="mint"] {
+  --accent-on-dark: var(--palette-green);
+  --accent2-on-dark: var(--palette-cyan);
 }
 
 /* ---------- Windows high contrast / forced colours ---------- */
@@ -182,9 +193,9 @@
     --color-focus: Highlight;
     --shadow-panel: none;
     --notch-bg: Canvas;
-    --notch-border: CanvasText;
     --notch-text: CanvasText;
     --notch-muted: GrayText;
-    --notch-shadow: none;
+    --accent-on-dark: Highlight;
+    --accent2-on-dark: Highlight;
   }
 }

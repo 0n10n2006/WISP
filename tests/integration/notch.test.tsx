@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
 import { setupMockHost } from "../helpers";
@@ -12,7 +12,7 @@ describe("notch", () => {
 
     await user.click(screen.getByRole("button", { name: /open wisp/i }));
     const box = await screen.findByRole("combobox", { name: /ask wisp/i });
-    expect(box).toHaveFocus();
+    await waitFor(() => expect(box).toHaveFocus());
 
     await user.type(box, "What is a wisp?{Enter}");
     await screen.findByText(/simulated answer/i);

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
 import { pickAlternative } from "../../src/components/ErrorBanner";

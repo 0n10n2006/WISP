@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
 import { useSettings } from "../../src/state/settings";

@@ -202,7 +202,10 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     hold: new Set<(e: HoldEvent) => void>(),
   };
   let layout: IslandLayout = { mode: "sliver", expanded: false, height: 0 };
+  const metrics = { modeCalls: 0, opens: 0 };
   const setLayout = (mode: NotchMode, height?: number) => {
+    metrics.modeCalls += 1;
+    if (mode === "open" && layout.mode !== "open") metrics.opens += 1;
     layout = {
       mode,
       expanded: mode === "open",
@@ -421,6 +424,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
         setLayout("open");
         listeners.focus.forEach((cb) => cb());
       },
+      metrics,
       hold: (e: HoldEvent) => {
         if (e.phase === "start" && layout.mode !== "open") setLayout("peek");
         listeners.hold.forEach((cb) => cb(e));
@@ -872,6 +876,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     },
 
     controlsState: async () => controls,
+    nowPlaying: async () => controls.nowPlaying,
     setVolume: async (percent) => {
       controls = { ...controls, volume: Math.round(percent), muted: percent === 0 };
     },

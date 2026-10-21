@@ -35,6 +35,7 @@ import type {
   HoldEvent,
   LaunchItem,
   MediaCommand,
+  NowPlaying,
   NotchMode,
   Point,
   PowerAction,
@@ -164,6 +165,8 @@ export interface Host {
 
   /** Dashboard: controls. */
   controlsState(): Promise<ControlsState>;
+  /** What's playing (cheap, cached by the host). */
+  nowPlaying(): Promise<NowPlaying | null>;
   setVolume(percent: number): Promise<void>;
   setMuted(muted: boolean): Promise<void>;
   mediaCommand(command: MediaCommand): Promise<void>;
@@ -181,7 +184,8 @@ export interface Host {
   clipsClear(includePinned: boolean): Promise<number>;
   clipCopy(id: string): Promise<void>;
   /** Dashboard: launcher. */
-  launcherList(): Promise<Catalogue>;
+  /** The launcher catalogue; `refresh` re-scans installed apps and games. */
+  launcherList(refresh?: boolean): Promise<Catalogue>;
   launchItem(item: LaunchItem): Promise<void>;
   /** Dashboard: power (the UI confirms first). */
   powerAction(action: PowerAction): Promise<void>;

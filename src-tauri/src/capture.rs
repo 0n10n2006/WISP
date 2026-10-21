@@ -395,6 +395,7 @@ pub async fn show_me(app: &AppHandle, question: &str) -> Result<Vec<Highlight>> 
     .map_err(|e| WispError::internal(format!("Couldn't show the highlight: {e}")))?;
     let _ = win.set_position(Position::Physical(PhysicalPosition::new(shot.x, shot.y)));
     let _ = win.set_size(Size::Physical(PhysicalSize::new(shot.width, shot.height)));
+    crate::chrome::borderless(&win);
     let _ = win.set_ignore_cursor_events(true);
     let _ = win.show();
     let a = app.clone();

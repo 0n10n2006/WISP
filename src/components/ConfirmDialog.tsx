@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 interface Props {
   title: string;
@@ -20,7 +20,8 @@ export function ConfirmDialog({
 }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  // Focus before paint so Enter can never hit the confirm button first.
+  useLayoutEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     cancelRef.current?.focus();
     return () => prev?.focus?.();

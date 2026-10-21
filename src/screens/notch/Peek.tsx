@@ -47,8 +47,8 @@ export function Peek() {
   useEffect(() => {
     let alive = true;
     void host()
-      .controlsState()
-      .then((c) => alive && setPlaying(c.nowPlaying?.playing ? c.nowPlaying : null))
+      .nowPlaying()
+      .then((p) => alive && setPlaying(p?.playing ? p : null))
       .catch(() => {});
     return () => {
       alive = false;

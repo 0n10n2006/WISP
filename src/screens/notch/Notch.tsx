@@ -1,51 +1,25 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { ClipboardCard } from "../../components/ClipboardCard";
-import { DictationCard } from "../../components/DictationCard";
-import { ErrorBanner } from "../../components/ErrorBanner";
-import { Icon } from "../../components/Icon";
-import { MessageList } from "../../components/MessageList";
-import { ReminderBanner } from "../../components/ReminderBanner";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ToastHost } from "../../components/Toast";
-import { VoiceCard } from "../../components/VoiceCard";
-import { useOnline } from "../../hooks/useOnline";
 import { useOrbState } from "../../hooks/useOrbState";
+import { prefetchCatalogue } from "../../lib/catalogue";
+import { lazyWithPreload, whenIdle } from "../../lib/preload";
 import { host } from "../../services/host";
 import type { HoldEvent, ShortcutAction } from "../../services/types";
-import { askAboutClipboard, useClipboardAssist, useDueReminders } from "../../state/assist";
-import { chipsFor } from "../../lib/chips";
+import { useClipboardAssist, useDueReminders } from "../../state/assist";
 import { useCapture } from "../../state/capture";
 import { useConversation } from "../../state/conversation";
 import { useDictation } from "../../state/dictation";
 import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
-import { toast } from "../../state/toast";
 import { useVoice } from "../../state/voice";
-import { useConfirm } from "./actions";
-import { CommandBar, type CommandBarHandle } from "./CommandBar";
+import { preloadDashboard } from "../dashboard/load";
+import { useConfirm } from "./confirm";
+import { closeBar as close, openBar as open } from "./control";
 import { Peek } from "./Peek";
-import { Sources } from "./Sources";
 
-const Dashboard = lazy(() => import("../dashboard/Dashboard"));
-
-/** Tallest the open bar may grow (CSS px); its body scrolls beyond this. */
-const MAX_BAR_HEIGHT = 620;
-
-function settingsTabFor(code: string): string {
-  if (code === "permission_denied") return "privacy";
-  return "model";
-}
-
-function open() {
-  useNotch.getState().setMode("open");
-  void host().setIslandMode("open");
-  host().prewarm();
-}
-
-function close() {
-  useConfirm.getState().clear();
-  void host().hideIsland();
-}
+/** The open bar is a separate chunk, fetched while idle so opening is instant. */
+const Bar = lazyWithPreload(() => import("./Bar"));
 
 /** Clicking elsewhere folds the bar away unless something needs the user. */
 function busy(): boolean {
@@ -59,279 +33,6 @@ function busy(): boolean {
     !!useConfirm.getState().pending ||
     !!useCapture.getState().pending ||
     useConversation.getState().messages.some((m) => m.actions?.some((a) => a.confirmId))
-  );
-}
-
-function SetupCard() {
-  return (
-    <div className="setup-card">
-      <Icon name="key" size={20} />
-      <div>
-        <strong>Connect Gemini to ask questions</strong>
-        <p>Apps, controls and the dashboard work without it. Asking uses your own Gemini key.</p>
-        <button
-          className="btn btn-primary btn-small"
-          onClick={() => void host().openSettings("welcome")}
-        >
-          Set up Wisp
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ConfirmStrip() {
-  const pending = useConfirm((c) => c.pending);
-  const clear = useConfirm((c) => c.clear);
-  const ok = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (pending) ok.current?.focus();
-  }, [pending]);
-  if (!pending) return null;
-  return (
-    <div className="confirm-strip" role="alertdialog" aria-label="Confirm">
-      <Icon name="warning" size={16} />
-      <span>{pending.text}</span>
-      <button className="btn btn-small" onClick={clear}>
-        Cancel
-      </button>
-      <button
-        ref={ok}
-        className="btn btn-small btn-danger"
-        onClick={() => {
-          const run = pending.run;
-          clear();
-          void run();
-        }}
-      >
-        {pending.label}
-      </button>
-    </div>
-  );
-}
-
-function ErrorRow() {
-  const error = useConversation((c) => c.error);
-  const retry = useConversation((c) => c.retry);
-  const dismissError = useConversation((c) => c.dismissError);
-  const model = useSettings((s) => s.snapshot?.settings.selectedModel);
-  if (!error) return null;
-  return (
-    <ErrorBanner
-      error={error}
-      onRetry={() => {
-        useNotch.getState().setQuery("");
-        void retry();
-      }}
-      onSettings={() => void host().openSettings(settingsTabFor(error.code))}
-      onDismiss={dismissError}
-      currentModel={model}
-      onSwitchModel={async (m) => {
-        const err = await useSettings.getState().update({ selectedModel: m });
-        if (!err) {
-          toast(`Switched to ${m}`, "success");
-          useNotch.getState().setQuery("");
-          void retry();
-        }
-      }}
-    />
-  );
-}
-
-function Conversation() {
-  const messages = useConversation((c) => c.messages);
-  const clear = useConversation((c) => c.clear);
-  const last = messages[messages.length - 1];
-  return (
-    <div className="bar-chat">
-      <div className="bar-chat-head">
-        <span className="muted">Conversation</span>
-        <button className="btn btn-small btn-ghost" onClick={clear}>
-          <Icon name="plus" size={14} /> New
-        </button>
-      </div>
-      <MessageList messages={messages} />
-      {last?.role === "model" && last.sources?.length ? <Sources sources={last.sources} /> : null}
-    </div>
-  );
-}
-
-/** Clipboard help plus suggestions for the app the user came from. */
-function Chips() {
-  const [app, setApp] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void host()
-      .foregroundApp()
-      .then((a) => alive && setApp(a))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const chips = chipsFor(app);
-  return (
-    <div className="chips" role="toolbar" aria-label="Quick help">
-      <button
-        className="chip"
-        onClick={() => void useClipboardAssist.getState().openAssist()}
-        title="Summarise, rewrite or explain what you copied"
-      >
-        <Icon name="clipboard" size={14} /> Clipboard help
-      </button>
-      {chips.map((c) => (
-        <button
-          key={c.id}
-          className="chip"
-          onClick={() => void askAboutClipboard(c.prompt, c.label)}
-          title="Uses the text you copied"
-        >
-          {c.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function PendingCapture({ sendCapture }: { sendCapture(): void }) {
-  const pending = useCapture((c) => c.pending);
-  const setPending = useCapture((c) => c.setPending);
-  if (!pending) return null;
-  return (
-    <div className="attachment">
-      <img src={pending.dataUrl} alt="Selected screen area" />
-      <div className="attachment-text">
-        <strong>Screen area attached</strong>
-        Type a question if you like. Sent to Google Gemini only when you press Send.
-      </div>
-      <button className="btn btn-small btn-primary" onClick={sendCapture}>
-        Send
-      </button>
-      <button
-        className="icon-btn"
-        onClick={() => setPending(null)}
-        aria-label="Remove screen area"
-        title="Remove"
-      >
-        <Icon name="close" size={14} />
-      </button>
-    </div>
-  );
-}
-
-function Bar() {
-  const root = useRef<HTMLElement>(null);
-  const input = useRef<CommandBarHandle>(null);
-  const query = useNotch((n) => n.query);
-  const messages = useConversation((c) => c.messages);
-  const dictating = useDictation((d) => d.phase !== "idle");
-  const voiceActive = useVoice((v) => v.phase !== "idle");
-  const clipboardOpen = useClipboardAssist((c) => c.open);
-  const snapshot = useSettings((s) => s.snapshot);
-  const online = useOnline();
-  const [dismissed, setDismissed] = useState<string[]>([]);
-
-  useEffect(() => {
-    input.current?.focus();
-    return host().onFocusPrompt(() => input.current?.focus());
-  }, []);
-
-  // Size the window to the content so the bar never covers more than it shows.
-  useEffect(() => {
-    const el = root.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    let last = 0;
-    let frame = 0;
-    const measure = () => {
-      frame = 0;
-      const h = Math.min(Math.ceil(el.getBoundingClientRect().height), MAX_BAR_HEIGHT) + 18;
-      if (Math.abs(h - last) > 1) {
-        last = h;
-        void host().setIslandMode("open", h);
-      }
-    };
-    const ro = new ResizeObserver(() => {
-      if (!frame) frame = requestAnimationFrame(measure);
-    });
-    ro.observe(el);
-    measure();
-    return () => {
-      ro.disconnect();
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, []);
-
-  const hasKey = snapshot?.hasApiKey ?? false;
-  const warnings = (snapshot?.warnings ?? []).filter((w) => !dismissed.includes(w));
-  const showChat = messages.length > 0;
-
-  let body;
-  if (dictating) body = <DictationCard />;
-  else if (voiceActive) body = <VoiceCard />;
-  else if (clipboardOpen) body = <ClipboardCard />;
-  else if (query.trim())
-    body = null; // results render inside the command bar
-  else if (showChat)
-    body = (
-      <>
-        <Chips />
-        <Conversation />
-      </>
-    );
-  else
-    body = (
-      <>
-        {hasKey && <Chips />}
-        <Suspense fallback={<div className="dash-loading" aria-busy="true" />}>
-          <Dashboard />
-        </Suspense>
-      </>
-    );
-
-  return (
-    <section
-      ref={root}
-      className="bar"
-      aria-label="Wisp"
-      onKeyDown={(e) => {
-        if (e.key === "Escape" && !e.defaultPrevented) {
-          e.preventDefault();
-          if (useConfirm.getState().pending) useConfirm.getState().clear();
-          else close();
-        }
-      }}
-    >
-      <CommandBar ref={input} onClose={close} />
-      <ConfirmStrip />
-      <ErrorRow />
-      <ReminderBanner />
-      {warnings.map((w) => (
-        <div key={w} className="banner banner-warning" role="status">
-          <div className="banner-body">
-            <p>{w}</p>
-          </div>
-          <button
-            className="icon-btn banner-close"
-            aria-label="Dismiss notice"
-            onClick={() => setDismissed((d) => [...d, w])}
-          >
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-      ))}
-      <PendingCapture sendCapture={() => input.current?.submit()} />
-      {body !== null && (
-        <div className="bar-body">
-          {!hasKey && snapshot && !query && !dictating && !voiceActive && <SetupCard />}
-          {body}
-        </div>
-      )}
-      {!online && (
-        <p className="bar-offline">
-          <Icon name="warning" size={12} /> Offline. Apps, controls and reminders still work.
-        </p>
-      )}
-    </section>
   );
 }
 
@@ -435,6 +136,15 @@ export function Notch() {
     document.documentElement.dataset.accent = accent;
   }, [accent]);
 
+  // Fetch the bar and the dashboard while the PC is idle.
+  useEffect(() => {
+    whenIdle(() => {
+      void Bar.preload();
+      preloadDashboard(useNotch.getState().tab);
+      prefetchCatalogue();
+    });
+  }, []);
+
   useEffect(() => {
     const h = host();
     const setMode = useNotch.getState().setMode;
@@ -499,7 +209,13 @@ export function Notch() {
 
   return (
     <div className={`notch notch-mode-${mode}`}>
-      {mode === "open" ? <Bar /> : <Idle />}
+      {mode === "open" ? (
+        <Suspense fallback={<div className="bar-wrap" aria-busy="true" />}>
+          <Bar />
+        </Suspense>
+      ) : (
+        <Idle />
+      )}
       <ToastHost />
     </div>
   );

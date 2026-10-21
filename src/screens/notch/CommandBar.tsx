@@ -3,8 +3,8 @@ import { Icon, type IconName } from "../../components/Icon";
 import { WispMark } from "../../components/WispMark";
 import { useOrbState } from "../../hooks/useOrbState";
 import { barResults, type BarResult } from "../../lib/commands";
+import { invalidateCatalogue, useCatalogue } from "../../lib/catalogue";
 import { host } from "../../services/host";
-import type { Catalogue } from "../../services/types";
 import { DEFAULT_SCREEN_PROMPT, useCapture } from "../../state/capture";
 import { useConversation } from "../../state/conversation";
 import { useDictation } from "../../state/dictation";
@@ -21,31 +21,6 @@ export interface CommandBarHandle {
 }
 
 const NO_STARS: string[] = [];
-let catalogueCache: Catalogue | null = null;
-let cachePromise: Promise<Catalogue> | null = null;
-
-/** The launcher catalogue, loaded once per session (and refreshed in the background). */
-export function useCatalogue(): Catalogue | null {
-  const [cat, setCat] = useState<Catalogue | null>(catalogueCache);
-  useEffect(() => {
-    let alive = true;
-    cachePromise ??= host()
-      .launcherList()
-      .then((c) => (catalogueCache = c))
-      .catch(() => ({ items: [], recent: [] }));
-    void cachePromise.then((c) => alive && setCat(c));
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return cat;
-}
-
-/** Drop the cache after a launch so "recent" stays fresh. */
-export function invalidateCatalogue(): void {
-  cachePromise = null;
-}
-
 function resultIcon(r: BarResult): IconName {
   if (r.kind === "ask") return "spark";
   if (r.kind === "app")
@@ -306,7 +281,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
               role="option"
               aria-selected={i === selected}
               className={`cmd-result ${i === selected ? "selected" : ""}`}
-              onMouseEnter={() => setSel({ query, index: i })}
+              onMouseMove={() => i !== selected && setSel({ query, index: i })}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => submit(r)}
             >

@@ -65,7 +65,43 @@ mod imp {
         CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
     };
 
+    use std::cell::RefCell;
+    use std::time::{Duration, Instant};
+
+    // These run on the COM worker thread only, so the objects are cached
+    // per thread and reused between calls.
+    thread_local! {
+        static MANAGER: RefCell<Option<Manager>> = const { RefCell::new(None) };
+        static ENDPOINT: RefCell<Option<(IAudioEndpointVolume, Instant)>> = const { RefCell::new(None) };
+        static RADIOS: RefCell<Option<(Vec<(Radio, String)>, Instant)>> = const { RefCell::new(None) };
+        static PLAYING: RefCell<Option<(Option<NowPlaying>, Instant)>> = const { RefCell::new(None) };
+    }
+
+    fn manager() -> Option<Manager> {
+        MANAGER.with(|m| {
+            if m.borrow().is_none() {
+                *m.borrow_mut() = Manager::RequestAsync().ok()?.join().ok();
+            }
+            m.borrow().clone()
+        })
+    }
+
+    /// The default output device, re-resolved every few seconds so a
+    /// switch to headphones is picked up.
     fn endpoint() -> Option<IAudioEndpointVolume> {
+        ENDPOINT.with(|c| {
+            if let Some((v, at)) = c.borrow().as_ref() {
+                if at.elapsed() < Duration::from_secs(5) {
+                    return Some(v.clone());
+                }
+            }
+            let fresh = open_endpoint();
+            *c.borrow_mut() = fresh.clone().map(|v| (v, Instant::now()));
+            fresh
+        })
+    }
+
+    fn open_endpoint() -> Option<IAudioEndpointVolume> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             let e: IMMDeviceEnumerator =
@@ -105,8 +141,22 @@ mod imp {
         unsafe { v.SetMute(muted, std::ptr::null()).map_err(com_err) }
     }
 
-    fn now_playing() -> Option<NowPlaying> {
-        let mgr = Manager::RequestAsync().ok()?.join().ok()?;
+    /// Now playing, cached for 2 s (the notch peek asks often).
+    pub fn now_playing() -> Option<NowPlaying> {
+        PLAYING.with(|c| {
+            if let Some((v, at)) = c.borrow().as_ref() {
+                if at.elapsed() < Duration::from_secs(2) {
+                    return v.clone();
+                }
+            }
+            let fresh = read_now_playing();
+            *c.borrow_mut() = Some((fresh.clone(), Instant::now()));
+            fresh
+        })
+    }
+
+    fn read_now_playing() -> Option<NowPlaying> {
+        let mgr = manager()?;
         let session = mgr.GetCurrentSession().ok()?;
         let props = session.TryGetMediaPropertiesAsync().ok()?.join().ok()?;
         let playing = session
@@ -132,10 +182,12 @@ mod imp {
     }
 
     pub fn media(cmd: MediaCommand) -> Result<()> {
-        let session = Manager::RequestAsync()
-            .and_then(|op| op.join())
-            .and_then(|m| m.GetCurrentSession())
-            .map_err(|_| WispError::new(ErrorCode::Unsupported, "Nothing is playing right now."))?;
+        PLAYING.with(|c| *c.borrow_mut() = None);
+        let session = manager()
+            .and_then(|m| m.GetCurrentSession().ok())
+            .ok_or_else(|| {
+                WispError::new(ErrorCode::Unsupported, "Nothing is playing right now.")
+            })?;
         let op = match cmd {
             MediaCommand::PlayPause => session.TryTogglePlayPauseAsync(),
             MediaCommand::Next => session.TrySkipNextAsync(),
@@ -144,7 +196,21 @@ mod imp {
         op.and_then(|o| o.join()).map(|_| ()).map_err(com_err)
     }
 
+    /// Radios change rarely; the list is cached for 30 s.
     fn radios() -> Vec<(Radio, String)> {
+        RADIOS.with(|c| {
+            if let Some((v, at)) = c.borrow().as_ref() {
+                if at.elapsed() < Duration::from_secs(30) {
+                    return v.clone();
+                }
+            }
+            let fresh = list_radios();
+            *c.borrow_mut() = Some((fresh.clone(), Instant::now()));
+            fresh
+        })
+    }
+
+    fn list_radios() -> Vec<(Radio, String)> {
         let Ok(list) = Radio::GetRadiosAsync().and_then(|op| op.join()) else {
             return Vec::new();
         };
@@ -227,12 +293,15 @@ mod imp {
     pub fn set_radio(_k: &str, _on: bool) -> Result<()> {
         Err(unsupported())
     }
+    pub fn now_playing() -> Option<NowPlaying> {
+        None
+    }
     pub fn state() -> ControlsState {
         ControlsState::default()
     }
 }
 
-pub use imp::{media, set_muted, set_radio, set_volume, state};
+pub use imp::{media, now_playing, set_muted, set_radio, set_volume, state};
 
 /// Switch Windows between light and dark mode.
 pub fn set_dark_mode(dark: bool) -> Result<()> {
