@@ -673,6 +673,29 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       return "Wisp is a small, spirit-like AI companion for Windows. It floats on the desktop as a glowing orb and helps with quick questions, screen regions, dictation and simple tasks, while keeping data local by default.";
     },
 
+    installedApps: async () => [
+      {
+        name: "spotify",
+        target: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Spotify.lnk",
+      },
+      {
+        name: "visual studio code",
+        target: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Visual Studio Code.lnk",
+      },
+      {
+        name: "word",
+        target: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Word.lnk",
+      },
+    ],
+    checkForUpdates: async () => ({
+      current: "0.1.0-preview",
+      latest: "0.1.0",
+      available: false,
+      url: null,
+    }),
+    uiReady: () => {},
+    onIslandVisibility: () => () => {},
+
     historyList: async (limit = 200) => requests.slice(0, limit),
     actionsList: async (limit = 200) => actions.slice(0, limit),
     dataStats: async () => stats(),

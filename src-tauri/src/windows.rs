@@ -21,8 +21,10 @@ pub fn island(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(ISLAND)
 }
 
+/// Logical island size → physical pixels, including the user's island scale.
 fn physical(win: &WebviewWindow, logical: (f64, f64)) -> (i32, i32) {
-    let s = win.scale_factor().unwrap_or(1.0);
+    let user = win.app_handle().state::<AppState>().settings().island_scale as f64;
+    let s = win.scale_factor().unwrap_or(1.0) * user;
     (
         (logical.0 * s).round() as i32,
         (logical.1 * s).round() as i32,

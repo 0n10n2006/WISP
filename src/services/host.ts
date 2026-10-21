@@ -4,6 +4,8 @@
 import type { WispError } from "./errors";
 import type { AudioRecorder, Recording } from "./recorder";
 import type {
+  InstalledApp,
+  UpdateInfo,
   ActionAudit,
   ActionEvent,
   MemoryCategory,
@@ -104,6 +106,14 @@ export interface Host {
   memoryDelete(id: string): Promise<boolean>;
   /** Reads clipboard text once. Only call on an explicit user action. */
   clipboardRead(): Promise<string | null>;
+
+  /** Start-menu apps that can be added to the allowlist. */
+  installedApps(): Promise<InstalledApp[]>;
+  /** Manual check against the project's GitHub releases. */
+  checkForUpdates(): Promise<UpdateInfo>;
+  /** Tell the host the UI booted (used by the packaged self-test). */
+  uiReady(): void;
+  onIslandVisibility(cb: (visible: boolean) => void): Unsubscribe;
 
   historyList(limit?: number): Promise<RequestLog[]>;
   actionsList(limit?: number): Promise<ActionAudit[]>;

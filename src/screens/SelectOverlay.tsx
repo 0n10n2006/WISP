@@ -101,7 +101,7 @@ export function SelectOverlay() {
       {sel && <div className="overlay-selection" style={sel} data-testid="selection" />}
       <div className="overlay-bar" onPointerDown={(e) => e.stopPropagation()}>
         <Icon name="screen" size={16} />
-        <span>{error ? error.message : "Select an area"}</span>
+        <span>{error ? error.message : "Select an area · nothing is sent until you confirm"}</span>
         <button
           className="btn btn-small"
           onClick={() =>

@@ -16,7 +16,12 @@ export function resolveMotion(pref: MotionPreference, systemReduced: boolean): "
 }
 
 /** Apply theme + motion preference to <html>, following Windows when set to System. */
-export function useThemeEffect(theme: ThemePreference, motion: MotionPreference): void {
+export function useThemeEffect(theme: ThemePreference, motion: MotionPreference, scale = 1): void {
+  useEffect(() => {
+    // Zoom scales text, spacing and controls together; the host scales the
+    // island window by the same factor so nothing is clipped.
+    document.documentElement.style.setProperty("zoom", String(scale));
+  }, [scale]);
   useEffect(() => {
     const dark = media("(prefers-color-scheme: dark)");
     const reduced = media("(prefers-reduced-motion: reduce)");

@@ -3,7 +3,14 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
 import { toWispError } from "../../services/errors";
 import { host } from "../../services/host";
-import type { AllowedApp, MemoryCategory, MemoryEntry, Task } from "../../services/types";
+import type {
+  AllowedApp,
+  InstalledApp,
+  MemoryCategory,
+  MemoryEntry,
+  NewTask,
+  Task,
+} from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { toast } from "../../state/toast";
 import { StatusLine, Toggle, useStatus } from "./common";
@@ -42,6 +49,81 @@ function useReload(scope: string, load: () => void) {
 
 // ---------------------------------------------------------------------------
 
+function ReminderEditor({
+  task,
+  onSave,
+  onCancel,
+}: {
+  task: Task;
+  onSave(next: NewTask): void;
+  onCancel(): void;
+}) {
+  const [title, setTitle] = useState(task.title);
+  const [due, setDue] = useState(task.dueAt ? toLocalInput(new Date(task.dueAt)) : "");
+  const [notes, setNotes] = useState(task.notes ?? "");
+  return (
+    <form
+      className="item-main reminder-edit"
+      aria-label={`Edit "${task.title}"`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave({
+          title,
+          notes: notes || null,
+          dueAt: fromLocalInput(due),
+          notificationEnabled: task.notificationEnabled,
+        });
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onCancel();
+        }
+      }}
+    >
+      <label className="sr-only" htmlFor={`edit-title-${task.id}`}>
+        Title
+      </label>
+      <input
+        id={`edit-title-${task.id}`}
+        type="text"
+        value={title}
+        maxLength={200}
+        onChange={(e) => setTitle(e.target.value)}
+        autoFocus
+      />
+      <label className="sr-only" htmlFor={`edit-due-${task.id}`}>
+        When
+      </label>
+      <input
+        id={`edit-due-${task.id}`}
+        type="datetime-local"
+        value={due}
+        onChange={(e) => setDue(e.target.value)}
+      />
+      <label className="sr-only" htmlFor={`edit-notes-${task.id}`}>
+        Notes
+      </label>
+      <input
+        id={`edit-notes-${task.id}`}
+        type="text"
+        value={notes}
+        placeholder="Notes"
+        maxLength={2000}
+        onChange={(e) => setNotes(e.target.value)}
+      />
+      <div className="row-start">
+        <button className="btn btn-small btn-primary" disabled={!title.trim()}>
+          Save
+        </button>
+        <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function RemindersTab() {
   const notifications = useSettings((s) => s.snapshot?.settings.notificationsEnabled ?? true);
   const update = useSettings((s) => s.update);
@@ -52,6 +134,7 @@ export function RemindersTab() {
   const [notes, setNotes] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<Task | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [editing, setEditing] = useState<string | null>(null);
   const { status, fail, clear } = useStatus();
 
   const load = useCallback(() => {
@@ -169,14 +252,36 @@ export function RemindersTab() {
                     checked={!!t.completedAt}
                     onChange={(e) => void act(() => host().taskComplete(t.id, e.target.checked))}
                   />
-                  <div className="item-main">
-                    <span className="item-title">{t.title}</span>
-                    <span className={`item-sub ${overdue ? "overdue" : ""}`}>
-                      {overdue && <Icon name="warning" size={12} />} {fmtDue(t.dueAt)}
-                      {t.notes && ` · ${t.notes}`}
-                    </span>
-                  </div>
-                  {!t.completedAt && (
+                  {editing === t.id ? (
+                    <ReminderEditor
+                      task={t}
+                      onCancel={() => setEditing(null)}
+                      onSave={async (next) => {
+                        clear();
+                        try {
+                          await host().taskUpdate(t.id, next);
+                          setEditing(null);
+                          toast("Reminder updated", "success");
+                        } catch (err) {
+                          fail(toWispError(err));
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="item-main">
+                      <span className="item-title">{t.title}</span>
+                      <span className={`item-sub ${overdue ? "overdue" : ""}`}>
+                        {overdue && <Icon name="warning" size={12} />} {fmtDue(t.dueAt)}
+                        {t.notes && ` · ${t.notes}`}
+                      </span>
+                    </div>
+                  )}
+                  {!t.completedAt && editing !== t.id && (
+                    <button className="btn btn-small btn-ghost" onClick={() => setEditing(t.id)}>
+                      Edit
+                    </button>
+                  )}
+                  {!t.completedAt && editing !== t.id && (
                     <div className="item-actions">
                       <button
                         className="btn btn-small btn-ghost"
@@ -470,12 +575,34 @@ export function MemoryTab() {
 
 // ---------------------------------------------------------------------------
 
+/** Stable fallback: a fresh `[]` per render would make the selector loop. */
+const NO_APPS: AllowedApp[] = [];
+
 export function ActionsTab() {
-  const apps = useSettings((s) => s.snapshot?.settings.allowedApps ?? []);
+  const apps = useSettings((s) => s.snapshot?.settings.allowedApps ?? NO_APPS);
   const update = useSettings((s) => s.update);
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
+  const [installed, setInstalled] = useState<InstalledApp[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
   const { status, ok, fail, clear } = useStatus();
+
+  const loadInstalled = async () => {
+    setLoading(true);
+    try {
+      setInstalled(await host().installedApps());
+    } catch (e) {
+      fail(toWispError(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const allowed = new Set(apps.map((a) => a.name));
+  const q = query.trim().toLowerCase();
+  const candidates = (installed ?? [])
+    .filter((a) => !allowed.has(a.name) && (!q || a.name.includes(q)))
+    .slice(0, 50);
 
   const save = async (next: AllowedApp[], msg: string): Promise<boolean> => {
     clear();
@@ -522,6 +649,49 @@ export function ActionsTab() {
           </ul>
         )}
       </section>
+      <section className="group">
+        <h3>Add from installed apps</h3>
+        {installed === null ? (
+          <div className="row-start">
+            <button className="btn" onClick={() => void loadInstalled()} disabled={loading}>
+              {loading ? "Looking…" : "Find installed apps"}
+            </button>
+          </div>
+        ) : (
+          <>
+            <label htmlFor="app-search" className="sr-only">
+              Search installed apps
+            </label>
+            <input
+              id="app-search"
+              type="search"
+              value={query}
+              placeholder="Search apps"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {candidates.length === 0 ? (
+              <p className="muted">No matching apps.</p>
+            ) : (
+              <ul className="item-list app-picker" aria-label="Installed apps">
+                {candidates.map((a) => (
+                  <li key={a.target} className="item">
+                    <div className="item-main">
+                      <span className="item-title">{a.name}</span>
+                    </div>
+                    <button
+                      className="btn btn-small"
+                      onClick={() => void save([...apps, a], `Added ${a.name}.`)}
+                      aria-label={`Allow ${a.name}`}
+                    >
+                      <Icon name="plus" size={14} /> Allow
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
       <form
         className="group"
         onSubmit={(e) => {
@@ -535,7 +705,7 @@ export function ActionsTab() {
           );
         }}
       >
-        <h3>Allow another app</h3>
+        <h3>Add an app manually</h3>
         <div className="form-grid">
           <div>
             <label htmlFor="app-name">Name Wisp should use</label>

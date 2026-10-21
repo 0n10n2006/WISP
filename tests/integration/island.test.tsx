@@ -16,10 +16,10 @@ describe("island", () => {
 
     await user.type(box, "What is a wisp?{Enter}");
     await screen.findByText(/simulated answer/i);
-    await waitFor(() => expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument(), {
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument(), {
       timeout: 5000,
     });
-    await user.click(screen.getByRole("button", { name: /copy/i }));
+    await user.click(screen.getByRole("button", { name: "Copy" }));
     expect(copy).toHaveBeenCalledWith(expect.stringContaining("What is a wisp?"));
     expect(await screen.findByText("Copied")).toBeInTheDocument();
 

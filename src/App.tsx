@@ -18,11 +18,29 @@ export function App() {
   }, [load]);
 
   const settings = snapshot?.settings ?? DEFAULT_SETTINGS;
-  useThemeEffect(settings.theme, settings.motion);
+  useThemeEffect(settings.theme, settings.motion, settings.islandScale);
 
   useEffect(() => {
     document.documentElement.dataset.window = kind;
   }, [kind]);
+
+  // Pause decorative animation whenever Wisp isn't visible (PRD §22.1).
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => {
+      if (document.hidden) root.dataset.hidden = "true";
+      else delete root.dataset.hidden;
+    };
+    document.addEventListener("visibilitychange", sync);
+    const off = host().onIslandVisibility((visible) => {
+      if (visible && !document.hidden) delete root.dataset.hidden;
+      else root.dataset.hidden = "true";
+    });
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      off();
+    };
+  }, []);
 
   if (kind === "island") return <Island />;
   if (kind === "overlay") return <SelectOverlay />;

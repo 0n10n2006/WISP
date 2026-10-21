@@ -45,6 +45,22 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             let _ = win.set_always_on_top(new.always_on_top);
         }
     }
+    if old.island_scale != new.island_scale {
+        let expanded = app
+            .state::<AppState>()
+            .island
+            .lock()
+            .expect("island")
+            .expanded;
+        windows::set_island_expanded(app, expanded);
+    }
+    if old.content_history && !new.content_history {
+        // Drop stored conversation text now, not at the next start.
+        let _ = app
+            .state::<AppState>()
+            .db
+            .prune_history(new.history_retention_days.max(1), false);
+    }
     if old.global_shortcuts != new.global_shortcuts {
         shortcuts::register_all(app, &new.global_shortcuts);
     }

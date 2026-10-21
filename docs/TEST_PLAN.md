@@ -2,12 +2,13 @@
 
 ## Automated (run on every push)
 
-| Suite                        | Command                                                          | Covers                                                                                                                                                                                                                                                                   |
-| ---------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Rust core unit + integration | `cargo test --workspace`                                         | Settings validation, corrupt-file recovery, shortcut parsing & conflicts, tool validation (unknown tool, bad schema, URL rules, shell blocklist), redaction, retry policy, SSE parsing, Gemini error mapping, mocked Gemini streaming/retry/quota/timeout/cancel/offline |
-| Frontend unit + integration  | `npm test`                                                       | Orb state priority, error presentation, Markdown safety, shortcut capture, theme resolution, conversation store (stream, cancel, retry, prompt preservation), island flow, onboarding, shortcut conflicts, key removal confirmation                                      |
-| Browser smoke                | `PW_CHROMIUM_PATH=… npm run test:e2e`                            | Island and settings rendering against the mock host (dark & light)                                                                                                                                                                                                       |
-| Lint/format/types            | `npm run check`, `cargo fmt --check`, `cargo clippy -D warnings` |                                                                                                                                                                                                                                                                          |
+| Suite                       | Command                                                                      | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rust core + host            | `cargo test --workspace`                                                     | Settings validation and corrupt-file recovery, shortcuts, tool validation (unknown tool, schema, URL rules, shell blocklist, `remember`), redaction, retry policy, SSE parsing, Gemini error mapping, mocked Gemini streaming/retry/quota/timeout/cancel/offline/function-calling round trip, SQLite storage (migrations, backup, reminders, memory, deletion), diagnostics redaction, capture geometry, update check, Start-menu scan, crash-report handling |
+| Frontend unit + integration | `npm test`                                                                   | Orb states, error presentation, Markdown safety and code copy, shortcut capture, theme/motion/size, conversation (stream, cancel, retry, prompt preservation, per-conversation memory), island, onboarding, settings, history/data/diagnostics, Select to Ask, dictation, voice/TTS, actions with confirmation, reminders, memory, clipboard, app picker, model switch, update check                                                                          |
+| Browser smoke               | `PW_CHROMIUM_PATH=… npm run test:e2e`                                        | Island, overlay and settings rendering against the mock host (dark and light)                                                                                                                                                                                                                                                                                                                                                                                 |
+| Packaged launch             | `wisp --self-test` (CI: Windows release build, Linux debug build under Xvfb) | App boots, UI loads, database, credential vault, shortcuts, warm setup under 3 s                                                                                                                                                                                                                                                                                                                                                                              |
+| Lint/format/types           | `npm run check`, `cargo fmt --check`, `cargo clippy -D warnings`             |                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 No automated test needs a real Gemini key: Rust tests use `wiremock`, UI tests use the mock host.
 
@@ -21,6 +22,17 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] First launch shows the orb and opens Settings on "Meet Wisp".
 - [ ] Bad key → "API key rejected"; good key → model step → Finish.
 - [ ] Key is not visible anywhere after saving (Settings, logs, diagnostics export).
+
+### Checkpoint 7 additions
+
+- [ ] The pin button in the panel header toggles "keep on top" immediately.
+- [ ] Settings → Actions → Find installed apps lists Start-menu apps; Allow adds one; "open <app>" then works.
+- [ ] Editing a reminder's time changes when the notification fires.
+- [ ] Turning off the memory button for a conversation: "what units do I prefer?" no longer uses memory.
+- [ ] Quota error → "Switch to … and retry" works.
+- [ ] Size of Wisp → Largest: the island and its text grow together, nothing is clipped.
+- [ ] About → Check for updates reports the latest version and makes no other network calls.
+- [ ] `wisp.exe --self-test` exits 0 on a second launch.
 
 ### Window & shortcuts
 

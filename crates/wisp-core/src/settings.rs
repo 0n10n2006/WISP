@@ -47,6 +47,8 @@ pub struct Settings {
     pub island_visible: bool,
     pub theme: Theme,
     pub motion: MotionPreference,
+    /// Size multiplier for the island and its text (accessibility): 1.0, 1.15 or 1.3.
+    pub island_scale: f32,
     pub window_position: Option<WindowPosition>,
     pub global_shortcuts: Shortcuts,
     pub selected_model: String,
@@ -88,6 +90,7 @@ impl Default for Settings {
             island_visible: true,
             theme: Theme::System,
             motion: MotionPreference::System,
+            island_scale: 1.0,
             window_position: None,
             global_shortcuts: Shortcuts::default(),
             selected_model: DEFAULT_MODEL.into(),
@@ -142,6 +145,11 @@ impl Settings {
         {
             return Err(WispError::invalid(
                 "Model name contains unsupported characters",
+            ));
+        }
+        if !(1.0..=1.3).contains(&s.island_scale) || !s.island_scale.is_finite() {
+            return Err(WispError::invalid(
+                "Island size must be between 100% and 130%",
             ));
         }
         if !(0.5..=2.0).contains(&s.tts_rate) || !s.tts_rate.is_finite() {

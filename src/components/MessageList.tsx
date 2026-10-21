@@ -55,7 +55,7 @@ export function MessageList({ messages }: { messages: Message[] }) {
           <div key={m.id} className="msg msg-model" aria-busy={m.status === "streaming"}>
             {m.actions?.length ? <ActionNotes notes={m.actions} /> : null}
             {m.text ? (
-              <Markdown text={m.text} onLink={openLink} />
+              <Markdown text={m.text} onLink={openLink} onCopy={(code) => void copy(code)} />
             ) : m.actions?.some((a) => a.confirmId) ? null : (
               <p className="msg-pending">Thinking…</p>
             )}

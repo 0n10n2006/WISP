@@ -26,6 +26,7 @@ export interface Settings {
   islandVisible: boolean;
   theme: ThemePreference;
   motion: MotionPreference;
+  islandScale: number;
   windowPosition: { x: number; y: number } | null;
   globalShortcuts: Shortcuts;
   selectedModel: string;
@@ -135,6 +136,7 @@ export const DEFAULT_SETTINGS: Settings = {
   islandVisible: true,
   theme: "system",
   motion: "system",
+  islandScale: 1,
   windowPosition: null,
   globalShortcuts: DEFAULT_SHORTCUTS,
   selectedModel: "gemini-2.5-flash",
@@ -249,3 +251,15 @@ export type ActionEvent =
       outcome: "done" | "declined" | "rejected" | "failed";
       message: string;
     };
+
+export interface InstalledApp {
+  name: string;
+  target: string;
+}
+
+export interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  available: boolean;
+  url: string | null;
+}
