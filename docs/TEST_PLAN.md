@@ -48,6 +48,16 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] Selection on a second monitor with different scaling crops the right area.
 - [ ] With "Allow Select to ask" off, the shortcut shows "Permission needed" instead of capturing.
 
+### Dictation
+
+- [ ] In Notepad, `Ctrl+Shift+D` shows "Listening…" with a level meter and the orb's listening glyph.
+- [ ] Press the shortcut again → "Transcribing…" → editable transcript.
+- [ ] **Insert into Notepad** pastes the edited text and restores the previous clipboard text.
+- [ ] With Windows microphone access off, Wisp explains how to enable it; nothing crashes.
+- [ ] Silence or a very short press → "No speech detected" with Try again.
+- [ ] Cancel while listening: microphone indicator in the Windows tray disappears immediately.
+- [ ] With "Keep dictation audio" off, no files appear in `%APPDATA%\app.wisp.desktop\recordings`.
+
 ### Theme & accessibility
 
 - [ ] System/Dark/Light switch instantly and persist.

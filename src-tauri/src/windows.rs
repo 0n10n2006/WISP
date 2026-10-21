@@ -194,6 +194,12 @@ pub fn toggle_island(app: &AppHandle) {
 /// Show the island expanded and focused, e.g. for a shortcut-triggered flow.
 pub fn summon_island(app: &AppHandle) {
     let Some(win) = island(app) else { return };
+    if let Some(t) = crate::foreground::current() {
+        *app.state::<AppState>()
+            .insert_target
+            .lock()
+            .expect("target") = Some(t);
+    }
     set_island_visible(app, true);
     set_island_expanded(app, true);
     let _ = win.set_focus();

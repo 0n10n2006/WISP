@@ -124,11 +124,23 @@ On Linux you can compile and test the Tauri shell after installing `libwebkit2gt
 | Shortcut doesn't work | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.      |
 | Orb is gone           | Press `Ctrl+Shift+Space`, or click the Wisp tray icon.                                       |
 
+## Dictation
+
+Press `Ctrl+Shift+D` in any app, speak, and press it again (or **Stop**). Wisp sends the audio to Gemini for
+transcription and shows the text so you can edit it. **Insert** switches back to the app you were in and pastes
+the text. It briefly uses the clipboard and restores your previous text clipboard afterwards. **Copy** is always
+available as a fallback. Recordings stop after 2 minutes. Audio is discarded after transcription unless you turn
+on _Keep dictation audio_ in **Settings → Privacy**.
+
+The first time you dictate, Windows/WebView2 may ask for microphone permission. If dictation says the microphone
+is blocked, open **Windows Settings → Privacy & security → Microphone** and allow desktop apps.
+
 ## Known limitations
 
 - Windows 11 x64 is the only supported platform.
 - Installers are not code-signed yet.
 - Wisp can't browse the web live. It can summarise text you give it.
+- Insert uses the clipboard. If your clipboard held an image, it isn't restored after inserting.
 
 ## License
 

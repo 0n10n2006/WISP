@@ -26,6 +26,8 @@ pub struct ShortcutIssue {
 }
 
 pub struct AppState {
+    /// The app that was in front before Wisp was summoned (for Insert).
+    pub insert_target: Mutex<Option<crate::foreground::Target>>,
     pub capture: Mutex<Option<crate::capture::CaptureSession>>,
     pub settings: Mutex<Settings>,
     pub settings_store: SettingsStore,
