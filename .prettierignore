@@ -1,0 +1,7 @@
+dist
+target
+src-tauri/gen
+node_modules
+package-lock.json
+docs/PRD.md
+*.tsbuildinfo
