@@ -1,33 +1,36 @@
 # Wisp
 
-A small, spirit-like AI companion for Windows 11. Wisp sits in the corner of your screen as a glowing
-orb. Click it (or press a shortcut) to ask Gemini a question. It stays out of the way the rest of the time.
+A small, quick AI companion for Windows 11 that stays out of your way. Wisp rests as a thin glow at the top
+of the screen. Hover it for a peek, click it (or press `Ctrl+Alt+Space`) for a command bar that answers
+questions, opens apps, runs quick commands and shows a dashboard. It folds away when you click elsewhere and
+hides while a fullscreen app is in front.
 
 > **Project WISP** is the repository codename. The product is called **Wisp**.
 
 - **Your key, your data.** Wisp calls the Google Gemini API with your own API key, stored in Windows
-  Credential Manager. Settings, history, reminders and memory stay on your PC.
+  Credential Manager. Settings, history, reminders, memory and clipboard history stay on your PC.
 - **Honest about limits.** Free-tier quota and rate limits are shown plainly. Wisp never promises unlimited use.
-- **No hidden capture.** Screen, microphone and clipboard are read only when you ask, and only sent after you confirm.
+- **No hidden capture.** Screen, microphone and clipboard are read only when you ask, and only sent after you
+  confirm. Clipboard history is off until you turn it on.
+- **Quiet.** Wisp answers in text. It never talks back.
 
-See [`docs/PRD.md`](docs/PRD.md) for the full product spec, [`docs/PRD_TRACEABILITY.md`](docs/PRD_TRACEABILITY.md) for how each requirement is met, [`docs/SECURITY.md`](docs/SECURITY.md) for the
-security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
+See [`docs/PRD.md`](docs/PRD.md) for the product spec, [`docs/PRD_TRACEABILITY.md`](docs/PRD_TRACEABILITY.md)
+for how each requirement (and each Hitodama-style feature) is met, [`docs/SECURITY.md`](docs/SECURITY.md) for
+the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 
 ## Status
 
-| Milestone                                                               | State                               |
-| ----------------------------------------------------------------------- | ----------------------------------- |
-| M0 Foundation: Tauri 2 + React + TS, lint, tests, CI                    | ✅                                  |
-| M1 Desktop island: orb ↔ panel, drag, show/hide shortcut, tray, themes  | ✅                                  |
-| M2 Gemini: key setup, connection test, streaming, cancel, error mapping | ✅                                  |
-| M2b History, diagnostics, data controls                                 | ✅                                  |
-| M3 Select to Ask                                                        | ✅                                  |
-| M4 Dictation                                                            | ✅                                  |
-| M5 Tools, reminders, memory, clipboard                                  | ✅                                  |
-| M6 Voice, accessibility, crash recovery, releases                       | ✅                                  |
-| Checkpoint 7: PRD gap closure, packaged self-test                       | ✅ (see `docs/PRD_TRACEABILITY.md`) |
+| Milestone                                                                  | State |
+| -------------------------------------------------------------------------- | ----- |
+| v0.1: PRD v1.1 complete (island, Gemini, Select to Ask, dictation, voice…) | ✅    |
+| v0.2 "Notch": new brand and installer art                                  | ✅    |
+| v0.2: notch (sliver/peek/bar), command bar, fullscreen auto-hide, tuck     | ✅    |
+| v0.2: dashboard (Today, Controls, Stats, Clipboard, Apps, Agents, …)       | ✅    |
+| v0.2: hold-to-talk, circle to ask, dictation clean-up, Show me             | ✅    |
+| v0.2: web answers with sources, fast mode, personality, agents             | ✅    |
+| Text-to-speech removed                                                     | ✅    |
 
-All PRD requirements are implemented. What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
+What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
 ## Try it
 
@@ -46,12 +49,13 @@ The installer is **unsigned** for now, so Windows SmartScreen may warn you. Choo
 ```bash
 npm install
 npm run dev
-# open http://localhost:1420/?window=island   (the companion)
-#      http://localhost:1420/?window=settings (settings & onboarding)
+# open http://localhost:1420/                  (the notch, with a simulated desktop)
+#      http://localhost:1420/?window=settings  (settings & onboarding)
 ```
 
-The preview uses a simulated host, so nothing leaves your machine. Type `/quota`, `/rate`, `/offline` or
-`/slow` into a prompt to see error states.
+The preview uses a simulated host, so nothing leaves your machine. Buttons under the notch simulate the
+shortcuts, hold-to-talk and clicking elsewhere. Type `/quota`, `/rate`, `/offline` or `/slow` into a question
+to see error states.
 
 ### Option C: run the desktop app from source (Windows)
 
@@ -65,56 +69,109 @@ npm run tauri dev      # run with hot reload
 npm run tauri build    # produce installers in target/release/bundle/
 ```
 
-## Default shortcuts
+## The notch
 
-| Action                      | Shortcut           |
-| --------------------------- | ------------------ |
-| Show / hide Wisp            | `Ctrl+Shift+Space` |
-| Select an area to ask about | `Ctrl+Shift+S`     |
-| Dictation                   | `Ctrl+Shift+D`     |
-| Clipboard help              | `Ctrl+Shift+C`     |
-| Voice conversation          | `Ctrl+Shift+V`     |
+| State  | What you see                                                                              |
+| ------ | ----------------------------------------------------------------------------------------- |
+| Sliver | A 120 px glow at the top of the screen your cursor is on. A focus timer fills it.         |
+| Peek   | Hover: time and date, or what's live — listening, thinking, focus countdown, now playing. |
+| Bar    | Click or `Ctrl+Alt+Space`: the command bar, sized to its content, with the dashboard.     |
+| Hidden | While a fullscreen game/video is in front (optional), or when tucked (`Ctrl+Alt+H`).      |
 
-You can change all of them in **Settings → Shortcuts**. If another app already owns a shortcut, Wisp tells you
-and the orb and tray menu keep working.
+The bar folds back to the sliver when you press `Esc` or click elsewhere, unless an answer is streaming, you're
+recording, or something is waiting for your confirmation.
 
-## Select to Ask
+## Command bar
 
-Press `Ctrl+Shift+S` (or the screen button). Wisp hides, freezes your screens and dims them. Drag to select an
-area, press Enter for the whole screen, or press Esc to cancel. The area is attached to your next question. Nothing
-is sent until you press **Send**, and you can remove the attachment with ×.
+Type anything:
+
+- **A question** — Enter asks Gemini. `Tab` toggles **Web** (Google Search grounding, with numbered source
+  chips). `Shift+Enter` asks with **Think** (slower, more careful). Fast mode is on by default.
+- **An app or game** — fuzzy search over Start-menu apps, Steam games and Windows settings pages
+  (`spo` → Spotify, `vsc` → Visual Studio Code). Starred and recent apps rank first.
+- **A command** — `timer 25`, `stop timer`, `remind me to stretch in 20 min`, `volume 30`, `mute`, `next`,
+  `dark mode`, `wifi off`, `bluetooth on`, `lock`, `sleep`, `restart`, `shutdown`, `cancel shutdown`,
+  `show me the save button`, `research <topic>`, `replica`, `select`, `dictate`, `tuck`, `stats`, `apps`, …
+
+Sleep, restart and shut down always ask first; restart and shut down wait 10 seconds and can be cancelled.
+
+## Dashboard
+
+| Tab       | What it does                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------ |
+| Today     | Clock, this week, reminders (once, daily, weekdays, weekly), focus timer ring, 5-day weather.    |
+| Controls  | Volume and mute, now playing with play/pause/next/previous, Wi-Fi, Bluetooth, Windows dark mode. |
+| Stats     | CPU and per-core load, memory, disks, network speed, heaviest apps, on-demand speed test.        |
+| Clipboard | Opt-in history of your last 100 copies (text and links): search, pin, copy again, ask about it.  |
+| Apps      | Starred, recent, Steam games, apps and Windows settings pages. Star with one click.              |
+| Agents    | Background jobs: a web-researched Markdown brief, or an HTML replica of the current screen.      |
+| Wallpaper | Pick an image to set as the desktop background; switch between recent ones.                      |
+| Power     | Lock, sleep, restart, shut down (confirmed), cancel a pending shut down, tuck or quit Wisp.      |
+
+Weather uses [Open-Meteo](https://open-meteo.com) (no account; only the place you choose is sent). The speed
+test downloads from `speed.cloudflare.com` only when you press the button. Agent results are saved to
+`Documents\Wisp`.
+
+## Shortcuts
+
+| Action                               | Default                        |
+| ------------------------------------ | ------------------------------ |
+| Open the command bar                 | `Ctrl+Alt+Space`               |
+| Circle (or box) an area to ask about | `Ctrl+Shift+S`                 |
+| Dictation (press to start/stop)      | `Ctrl+Shift+D`                 |
+| Clipboard history / help             | `Ctrl+Shift+C`                 |
+| Ask by voice (press to start/stop)   | `Ctrl+Alt+V`                   |
+| Tuck Wisp away / bring it back       | `Ctrl+Alt+H`                   |
+| **Hold** to dictate into any app     | `Ctrl+Win` (release to insert) |
+| **Hold** to ask by voice             | `Win+Alt` (release to ask)     |
+
+Change them in **Settings → Shortcuts**; turn hold-to-talk off in **Settings → Voice & dictation**. The hold
+keys are watched by a keyboard hook that only looks at modifier keys and never blocks or records typing. If you
+press any other key while holding them, they act as normal Windows shortcuts (e.g. `Ctrl+Win+D`).
+
+## Circle to ask and Show me
+
+Press `Ctrl+Shift+S` (or the lasso button). Wisp hides and freezes your screens. **Circle** what you want to ask
+about (or switch to **Box**, `R`/`L`), press Enter for the whole screen, or Esc to cancel. Everything outside the
+circle is dimmed in the image. The area is attached to your next question and is sent only when you press
+**Send**.
+
+**Show me**: type `where is …` or `show me …` and Wisp takes one screenshot of the current screen, asks Gemini
+where that is, and rings it with a label for a few seconds (the overlay is click-through).
 
 ## Dictation
 
-Press `Ctrl+Shift+D` in any app, speak, and press it again (or **Stop**). Wisp sends the audio to Gemini for
-transcription and shows the text so you can edit it. **Insert** switches back to the app you were in and pastes
-the text. It briefly uses the clipboard and restores your previous text clipboard afterwards. **Copy** is always
-available as a fallback. Recordings stop after 2 minutes. Audio is discarded after transcription unless you turn
-on _Keep dictation audio_ in **Settings → Privacy**.
+Hold `Ctrl+Win` in any app, speak, and let go: Wisp transcribes with Gemini and types the text where your
+cursor was. Or press `Ctrl+Shift+D` / the mic button to dictate with a review step (**Insert** or **Copy**).
+Choose the clean-up in **Settings → Voice & dictation**: **Verbatim**, **Clean** (removes "um", "like", false
+starts and fixes grammar in your own words; default) or **Polished**. Recordings stop after 2 minutes; audio
+is discarded after transcription unless you turn on _Keep dictation audio_.
 
-The first time you dictate, Windows/WebView2 may ask for microphone permission. If dictation says the microphone
-is blocked, open **Windows Settings → Privacy & security → Microphone** and allow desktop apps.
+If dictation says the microphone is blocked, open **Windows Settings → Privacy & security → Microphone** and
+allow desktop apps.
 
-## Voice conversation
+## Voice questions
 
-Press `Ctrl+Shift+V` (or the speech-bubble button), speak, then press it again or **Done**. Wisp transcribes your
-question with Gemini, answers, and reads the answer aloud with a local Windows voice. Press **Stop** or `Esc` to
-interrupt; pressing the shortcut while Wisp is speaking interrupts it and starts listening. There is no always-on
-listening. Choose the voice and speed in **Settings → Voice**, and optionally have typed answers read aloud too.
-Any answer can also be read aloud with its **Read aloud** button.
+Hold `Win+Alt`, ask, and let go (or press `Ctrl+Alt+V` twice). The transcript is asked as a normal question
+and the answer appears as text. Wisp never listens in the background and never speaks.
 
 ## Actions, reminders, memory, clipboard
 
-- **Actions:** Ask things like "open notepad", "open the Tauri docs" or "remind me to stretch at 3pm". Wisp can
-  open allowlisted apps (**Settings → Actions**), open http(s) links, copy text, create reminders, and suggest
-  memories. Opening apps or links and saving memories always ask first. Everything is logged in **History**.
-  Wisp has no shell or script access.
-- **Reminders:** Create them in **Settings → Reminders** or by asking. They work offline, show a Windows
-  notification when due (you can turn this off), and can be snoozed or marked done from the island.
-- **Memory:** Short notes in **Settings → Memory** that personalise answers. They're sent with requests only
-  while memory is on, and Wisp asks before saving anything from a conversation.
-- **Clipboard help:** Press `Ctrl+Shift+C` (or the clipboard button) to summarise, rewrite or explain the text
-  you copied. Wisp reads the clipboard once, shows you exactly what will be sent, and never monitors it.
+- **Actions:** Ask things like "open notepad" or "remind me to stretch at 3pm". Wisp can open allowlisted apps
+  (**Settings → Actions**), open http(s) links, copy text, create reminders, and suggest memories. Opening apps
+  or links and saving memories always ask first. Everything is logged in **History**. Wisp has no shell or
+  script access.
+- **Reminders:** In **Today**, **Settings → Reminders**, the bar (`remind me to … in 10 min`) or by asking.
+  They work offline, can repeat, show a Windows notification when due, and can be snoozed from the bar.
+- **Memory:** Short notes in **Settings → Memory** that personalise answers. The memory button in the bar
+  turns them off for one conversation.
+- **Clipboard help:** The chips under the bar summarise, rewrite or explain the text you copied, suggested by
+  the app you came from (code, browser, Office, chat). The clipboard is read only when you tap one.
+
+## Personality
+
+**Settings → Notch & personality**: tone (Concise, Friendly, Professional), custom instructions sent with each
+question (e.g. "Use British spelling"), and an accent colour (Cyan, Lavender, Ember, Mint).
 
 ## Gemini, quotas and your data
 
@@ -124,9 +181,10 @@ Any answer can also be read aloud with its **Read aloud** button.
   [billing & data use](https://ai.google.dev/gemini-api/docs/billing).
 - On the free tier, Google may use prompts and responses to improve its products. Don't send sensitive
   information, or use a paid key.
-- What's sent: your prompt, recent turns of the current conversation, and anything you explicitly attach
-  (screen region, clipboard text, dictated audio).
-- What's not sent: settings, reminders, history, your API key (except as the auth header to Google).
+- What's sent: your prompt, recent turns of the current conversation, your custom instructions, and anything
+  you explicitly attach (screen area, clipboard text, dictated audio, a Show-me or replica screenshot). Web
+  answers and research briefs use Google Search through Gemini.
+- What's not sent: settings, reminders, history, clipboard history, your API key (except as the auth header).
 - Deleting data in Wisp removes it from your PC only. It doesn't delete anything Google already received.
 
 ## Troubleshooting
@@ -138,17 +196,18 @@ Any answer can also be read aloud with its **Read aloud** button.
 | "Quota used up"            | Wait for the daily reset, switch to another model (quotas are per model), or enable billing. |
 | "Slow down a moment"       | Per-minute limit hit. Wait a few seconds and press **Try again**.                            |
 | Shortcut doesn't work      | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.      |
-| Orb is gone                | Press `Ctrl+Shift+Space`, or click the Wisp tray icon.                                       |
+| The notch is gone          | It's tucked or a fullscreen app is in front. Press `Ctrl+Alt+H` or use the tray icon.        |
+| Hold-to-talk does nothing  | Check **Settings → Voice & dictation**. Some security tools block keyboard hooks.            |
 | "Wisp closed unexpectedly" | A redacted crash report is in `%APPDATA%\app.wisp.desktop\logs`. Attach it to an issue.      |
-| No voices to choose        | Install voices in Windows Settings → Time & language → Speech.                               |
 | Microphone blocked         | Windows Settings → Privacy & security → Microphone → allow desktop apps.                     |
 
 ## Known limitations
 
 - Windows 11 x64 is the only supported platform.
 - Installers are not code-signed yet.
-- Wisp can't browse the web live. It can summarise text you give it.
+- Wi-Fi/Bluetooth toggles need Windows' radio access; some managed PCs block them.
 - Insert uses the clipboard. If your clipboard held an image, it isn't restored after inserting.
+- The clipboard history records text and links only.
 
 ## Development
 

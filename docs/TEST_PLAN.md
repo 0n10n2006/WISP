@@ -2,13 +2,13 @@
 
 ## Automated (run on every push)
 
-| Suite                       | Command                                                                      | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rust core + host            | `cargo test --workspace`                                                     | Settings validation and corrupt-file recovery, shortcuts, tool validation (unknown tool, schema, URL rules, shell blocklist, `remember`), redaction, retry policy, SSE parsing, Gemini error mapping, mocked Gemini streaming/retry/quota/timeout/cancel/offline/function-calling round trip, SQLite storage (migrations, backup, reminders, memory, deletion), diagnostics redaction, capture geometry, update check, Start-menu scan, crash-report handling |
-| Frontend unit + integration | `npm test`                                                                   | Orb states, error presentation, Markdown safety and code copy, shortcut capture, theme/motion/size, conversation (stream, cancel, retry, prompt preservation, per-conversation memory), island, onboarding, settings, history/data/diagnostics, Select to Ask, dictation, voice/TTS, actions with confirmation, reminders, memory, clipboard, app picker, model switch, update check                                                                          |
-| Browser smoke               | `PW_CHROMIUM_PATH=… npm run test:e2e`                                        | Island, overlay and settings rendering against the mock host (dark and light)                                                                                                                                                                                                                                                                                                                                                                                 |
-| Packaged launch             | `wisp --self-test` (CI: Windows release build, Linux debug build under Xvfb) | App boots, UI loads, database, credential vault, shortcuts, warm setup under 3 s                                                                                                                                                                                                                                                                                                                                                                              |
-| Lint/format/types           | `npm run check`, `cargo fmt --check`, `cargo clippy -D warnings`             |                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Suite                       | Command                                                                      | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rust core + host            | `cargo test --workspace`                                                     | v0.2: hold-to-talk state machine, launcher/Steam parsing and target validation, clipboard history (dedupe, pins, cap, secret skipping), recurrence maths, migration v2, agent jobs, lasso geometry and masking, Show-me box parsing, weather/speed/grounding against mocks, process grouping, power arguments, wallpaper validation, safe agent file names. Settings validation and corrupt-file recovery, shortcuts, tool validation (unknown tool, schema, URL rules, shell blocklist, `remember`), redaction, retry policy, SSE parsing, Gemini error mapping, mocked Gemini streaming/retry/quota/timeout/cancel/offline/function-calling round trip, SQLite storage (migrations, backup, reminders, memory, deletion), diagnostics redaction, capture geometry, update check, Start-menu scan, crash-report handling |
+| Frontend unit + integration | `npm test`                                                                   | v0.2: command parsing, fuzzy app ranking, app-aware chips, notch peek/blur, command bar (apps, timer, shut-down confirmation, Web/Think), all dashboard tabs, clipboard history, agents, hold-to-talk insert/cancel, lasso overlay. Status states, error presentation, Markdown safety and code copy, shortcut capture, theme/motion/size, conversation (stream, cancel, retry, prompt preservation, per-conversation memory), island, onboarding, settings, history/data/diagnostics, Select to Ask, dictation, voice (text answers only), actions with confirmation, reminders, memory, clipboard, app picker, model switch, update check                                                                                                                                                                               |
+| Browser smoke               | `PW_CHROMIUM_PATH=… npm run test:e2e`                                        | Notch, command bar, dashboard, overlay and settings rendering against the mock host (dark and light)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Packaged launch             | `wisp --self-test` (CI: Windows release build, Linux debug build under Xvfb) | App boots, UI loads, database, credential vault, shortcuts, notch mode, system stats, launcher, hold-to-talk hook, warm setup under 3 s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Lint/format/types           | `npm run check`, `cargo fmt --check`, `cargo clippy -D warnings`             |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 No automated test needs a real Gemini key: Rust tests use `wiremock`, UI tests use the mock host.
 
@@ -19,29 +19,61 @@ Run as a **standard (non-admin) user**. Tick each item.
 ### Install & first run
 
 - [ ] Installer runs without admin rights; Wisp appears in Start.
-- [ ] First launch shows the orb and opens Settings on "Meet Wisp".
+- [ ] First launch shows the notch glow and opens Settings on "Meet Wisp".
 - [ ] Bad key → "API key rejected"; good key → model step → Finish.
 - [ ] Key is not visible anywhere after saving (Settings, logs, diagnostics export).
 
-### Checkpoint 7 additions
+### Notch (v0.2)
 
-- [ ] The pin button in the panel header toggles "keep on top" immediately.
+- [ ] Idle: only a thin glow at the top-centre of the monitor the cursor is on; nothing else on screen.
+- [ ] Hover shows the peek (time, or timer / now playing / listening); moving away returns to the glow.
+- [ ] Click or `Ctrl+Alt+Space` opens the bar focused; Esc or clicking another app folds it away.
+- [ ] Clicking elsewhere while an answer streams or a confirmation is open does **not** fold it away.
+- [ ] Start a fullscreen video or game: the glow disappears; leaving fullscreen brings it back.
+- [ ] `Ctrl+Alt+H` tucks Wisp away completely; again (or the tray) brings it back; survives restart.
+- [ ] On a second monitor with different scaling, the notch appears centred at the top of that monitor.
+- [ ] The installer shows the new Wisp header/sidebar art; the tray icon matches a light and a dark taskbar.
+- [ ] Changing a shortcut to one used by another app shows a warning, not a crash.
+
+### Command bar & dashboard (v0.2)
+
+- [ ] `spo` → Spotify is first; Enter opens it and the bar folds away. A Steam game launches via Steam.
+- [ ] `timer 1` → the glow fills; the peek counts down; a notification arrives after a minute even with the bar closed.
+- [ ] `volume 20`, `mute`, `next`, `dark mode`, `wifi off`/`on`, `bluetooth on` all work.
+- [ ] `shutdown` asks first; confirming starts a 10 s countdown; `cancel shutdown` stops it.
+- [ ] Tab on a question turns on Web; the answer shows numbered sources that open in the browser.
+- [ ] Shift+Enter (Think) is noticeably slower and more thorough than the default fast answer.
+- [ ] Today: add a weekday reminder; after it fires it reschedules to the next weekday. Weather shows after picking a town.
+- [ ] Controls reflect real volume, now playing (Spotify/browser), Wi-Fi/Bluetooth state and dark mode.
+- [ ] Stats update about every 1.5 s and stop polling when you leave the tab (Task Manager shows Wisp idle).
+- [ ] Clipboard history is off until turned on. With it on, copies from a password manager are **not** recorded; normal text and links are; pins survive Clear.
+- [ ] Apps: star an app; it appears under Starred and ranks first in the bar.
+- [ ] Agents: research a topic → a Markdown file with sources in `Documents\Wisp`; Open works. Replica of a web page → an HTML file. Cancel stops a running job.
+- [ ] Wallpaper: Browse… sets the background; switching to a recent one works.
+- [ ] Power: Lock locks immediately; Sleep asks first.
+
+### Input superpowers (v0.2)
+
+- [ ] In Notepad, hold `Ctrl+Win`: the peek says "Listening — release to type it in"; release → the text appears in Notepad.
+- [ ] `Ctrl+Win+D` (new virtual desktop) and `Ctrl+Win+←/→` still work and don't start dictation.
+- [ ] Releasing `Win` after a hold does **not** open the Start menu.
+- [ ] Hold `Win+Alt`, ask a question, release: the bar opens with the answer as text. Nothing is spoken.
+- [ ] Turning off hold-to-talk in Settings stops both chords immediately.
+- [ ] `Ctrl+Shift+S`: circle something; only the circled part is bright in the attachment; Send asks about it.
+- [ ] `where is the search box` → a ring with a label appears over it for a few seconds and clicks pass through.
+- [ ] Dictation styles: Verbatim keeps "um"; Clean removes it; Polished rewrites formally.
+- [ ] Chips: copy code in VS Code, open the bar → "Explain copied code" is offered and works.
+- [ ] Settings → Notch & personality: tone, custom instructions and accent colours apply.
+
+### Earlier checkpoints
+
 - [ ] Settings → Actions → Find installed apps lists Start-menu apps; Allow adds one; "open <app>" then works.
 - [ ] Editing a reminder's time changes when the notification fires.
 - [ ] Turning off the memory button for a conversation: "what units do I prefer?" no longer uses memory.
 - [ ] Quota error → "Switch to … and retry" works.
-- [ ] Size of Wisp → Largest: the island and its text grow together, nothing is clipped.
+- [ ] Size of Wisp → Largest: the notch and its text grow together, nothing is clipped.
 - [ ] About → Check for updates reports the latest version and makes no other network calls.
 - [ ] `wisp.exe --self-test` exits 0 on a second launch.
-
-### Window & shortcuts
-
-- [ ] Orb can be dragged; position survives restart, including on a second monitor.
-- [ ] Clicking the orb opens the panel; Esc collapses it without losing typed text.
-- [ ] Near the right/bottom screen edge the panel opens inward and stays on-screen.
-- [ ] `Ctrl+Shift+Space` hides/shows Wisp from any app; tray icon toggles too.
-- [ ] Changing a shortcut to one used by another app shows a warning, not a crash.
-- [ ] Turning off "Keep above other windows" takes effect immediately.
 
 ### Gemini
 
@@ -50,7 +82,7 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] Rapid-fire requests on the free tier eventually show "Slow down a moment" or "Quota used up" — no retry loop.
 - [ ] Choosing a model your key can't use → "Model unavailable" with a link to settings.
 
-### Select to Ask
+### Select to Ask (box mode)
 
 - [ ] `Ctrl+Shift+S` hides Wisp, freezes every monitor and dims it; Wisp is not in the capture.
 - [ ] Drag a region → Wisp reappears with the area attached and "Sent … only when you press Send".
@@ -58,11 +90,11 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] Esc on the overlay cancels; Wisp returns as it was.
 - [ ] Enter on the overlay selects the whole screen.
 - [ ] Selection on a second monitor with different scaling crops the right area.
-- [ ] With "Allow Select to ask" off, the shortcut shows "Permission needed" instead of capturing.
+- [ ] With "Allow screen features" off, the shortcut shows "Permission needed" instead of capturing.
 
 ### Dictation
 
-- [ ] In Notepad, `Ctrl+Shift+D` shows "Listening…" with a level meter and the orb's listening glyph.
+- [ ] In Notepad, `Ctrl+Shift+D` shows "Listening…" with a level meter and the listening mark.
 - [ ] Press the shortcut again → "Transcribing…" → editable transcript.
 - [ ] **Insert into Notepad** pastes the edited text and restores the previous clipboard text.
 - [ ] With Windows microphone access off, Wisp explains how to enable it; nothing crashes.
@@ -83,11 +115,9 @@ Run as a **standard (non-admin) user**. Tick each item.
 
 ### Voice
 
-- [ ] `Ctrl+Shift+V` → "Listening…", the orb shows listening; press again → answer appears and is read aloud.
-- [ ] Orb and panel show "Speaking…"; Stop and Esc stop playback immediately.
-- [ ] Pressing the voice shortcut while Wisp is speaking interrupts it and starts listening.
-- [ ] Voice and speed from Settings → Voice are used; "Test voice" works.
-- [ ] With "Allow voice conversation" off, the shortcut explains how to turn it on.
+- [ ] `Ctrl+Alt+V` → "Listening…"; press again → the transcript is asked and the answer appears as text.
+- [ ] No sound is ever played; there is no "Read aloud" anywhere.
+- [ ] With "Allow voice and dictation" off, the shortcut explains how to turn it on.
 
 ### Crash recovery
 
@@ -97,8 +127,8 @@ Run as a **standard (non-admin) user**. Tick each item.
 ### Theme & accessibility
 
 - [ ] System/Dark/Light switch instantly and persist.
-- [ ] Windows "Animation effects" off (or Motion: Reduced) stops orb breathing.
+- [ ] Windows "Animation effects" off (or Motion: Reduced) stops the mark's flicker and the bar animation.
 - [ ] Windows contrast theme: text and focus rings remain visible.
 - [ ] Core flow (open, type, send, copy, collapse) works with keyboard only; arrow keys move between Settings sections.
-- [ ] Narrator reads the orb state, status changes and confirmation prompts.
+- [ ] Narrator reads the notch status, command-bar results and confirmation prompts.
 - [ ] 150% text scaling: nothing essential is clipped.
