@@ -41,6 +41,7 @@ code; if you change one of the boundaries below, update this file in the same ch
 - Text-to-speech uses local Windows voices; spoken answers never leave the PC. Voice input is push-to-talk only.
 - Crash reports are written locally, redacted, and never uploaded.
 - No analytics or telemetry. `telemetryOptIn` is forced to `false`.
+- The update check is manual only. It makes one unauthenticated GET to the GitHub Releases API for this repository, and the release link is validated before it is opened.
 
 ## Resilience
 

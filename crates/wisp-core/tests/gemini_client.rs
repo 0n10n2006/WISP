@@ -399,3 +399,38 @@ async fn function_call_round_trip_echoes_call_and_result() {
         .unwrap();
     assert_eq!(second.text, "Done — I opened it.");
 }
+
+#[tokio::test]
+async fn update_check_reads_latest_release() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/o/r/releases/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"tag_name":"v0.3.0","html_url":"https://github.com/o/r/releases/tag/v0.3.0","draft":false}"#,
+        ))
+        .mount(&server)
+        .await;
+    let info = wisp_core::updates::check(&server.uri(), "o/r", "0.2.0")
+        .await
+        .unwrap();
+    assert!(info.available);
+    assert_eq!(info.latest.as_deref(), Some("0.3.0"));
+    let same = wisp_core::updates::check(&server.uri(), "o/r", "0.3.0")
+        .await
+        .unwrap();
+    assert!(!same.available);
+}
+
+#[tokio::test]
+async fn update_check_without_releases() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    let info = wisp_core::updates::check(&server.uri(), "o/r", "0.2.0")
+        .await
+        .unwrap();
+    assert!(!info.available);
+    assert!(info.latest.is_none());
+}

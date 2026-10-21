@@ -13,5 +13,6 @@ pub mod settings;
 pub mod shortcuts;
 pub mod storage;
 pub mod tools;
+pub mod updates;
 
 pub use error::{ErrorCode, Result, WispError};

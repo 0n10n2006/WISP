@@ -50,6 +50,9 @@ interface ConversationState {
   draft: string;
   successFlash: boolean;
   lastFailed: Pending | null;
+  /** Per-conversation memory opt-out (FR-09). Resets with a new conversation. */
+  memoryForChat: boolean;
+  setMemoryForChat(v: boolean): void;
   setDraft(d: string): void;
   ask(prompt: string, opts?: AskOptions): Promise<void>;
   cancel(): void;
@@ -86,7 +89,9 @@ export const useConversation = create<ConversationState>((set, get) => ({
   draft: "",
   successFlash: false,
   lastFailed: null,
+  memoryForChat: true,
 
+  setMemoryForChat: (memoryForChat) => set({ memoryForChat }),
   setDraft: (draft) => set({ draft }),
 
   async ask(prompt, opts = {}) {
@@ -130,7 +135,7 @@ export const useConversation = create<ConversationState>((set, get) => ({
         history,
         attachments: opts.attachments ?? [],
         contextKind,
-        useMemory: opts.useMemory ?? true,
+        useMemory: opts.useMemory ?? get().memoryForChat,
         enableTools: true,
       },
       (delta) => patchModel((m) => ({ ...m, text: m.text + delta })),
@@ -223,6 +228,6 @@ export const useConversation = create<ConversationState>((set, get) => ({
 
   clear() {
     active?.cancel();
-    set({ messages: [], error: null, lastFailed: null, successFlash: false });
+    set({ messages: [], error: null, lastFailed: null, successFlash: false, memoryForChat: true });
   },
 }));

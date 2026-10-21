@@ -1,12 +1,14 @@
 //! Wisp desktop host (Tauri 2). OS integration lives here; logic lives in `wisp-core`.
 
 mod actions;
+mod apps;
 mod capture;
 mod commands;
 mod crash;
 mod foreground;
 mod reminders;
 mod secrets;
+mod selftest;
 mod shortcuts;
 mod state;
 mod tray;
@@ -22,6 +24,8 @@ use wisp_core::settings::SettingsStore;
 use wisp_core::storage::Db;
 
 pub fn run() {
+    let process_start = selftest::start();
+    let self_test = selftest::requested();
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             windows::summon_island(app);
@@ -34,12 +38,15 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart"]),
         ))
-        .setup(|app| {
+        .setup(move |app| {
+            selftest::mark("setup-start");
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            selftest::mark("data-dir");
             let store = SettingsStore::new(data_dir.join("settings.json"));
             let loaded = store.load();
             let settings = loaded.settings;
+            selftest::mark("settings");
             let log_dir = data_dir.join("logs");
             crash::install(log_dir.clone(), app.package_info().version.to_string());
             let mut warnings: Vec<String> = crash::unseen_crashes(&log_dir).into_iter().collect();
@@ -54,6 +61,7 @@ pub fn run() {
                 }
             };
             let _ = db.prune_history(settings.history_retention_days.max(1), settings.content_history);
+            selftest::mark("database");
             app.manage(AppState {
                 capture: Mutex::new(None),
                 confirmations: Mutex::new(HashMap::new()),
@@ -75,15 +83,18 @@ pub fn run() {
             });
 
             let handle = app.handle().clone();
+            selftest::mark("state");
             tray::create(&handle)?;
+            selftest::mark("tray");
             reminders::spawn(handle.clone());
             shortcuts::register_all(&handle, &settings.global_shortcuts);
+            selftest::mark("shortcuts");
             windows::place_island_initially(&handle);
             if let Some(win) = windows::island(&handle) {
                 let _ = win.set_always_on_top(settings.always_on_top);
                 let autostarted = std::env::args().any(|a| a == "--autostart");
                 let show = settings.island_visible && !(settings.start_hidden && autostarted);
-                if show || !settings.onboarding_complete {
+                if show || !settings.onboarding_complete || self_test {
                     let _ = win.show();
                 }
                 let h = handle.clone();
@@ -93,8 +104,12 @@ pub fn run() {
                     }
                 });
             }
-            if !settings.onboarding_complete {
+            if !settings.onboarding_complete && !self_test {
                 windows::open_settings(&handle, Some("welcome".into()));
+            }
+            selftest::mark("setup-end");
+            if self_test {
+                selftest::spawn(handle.clone(), process_start, process_start.elapsed().as_millis());
             }
             Ok(())
         })
@@ -145,6 +160,9 @@ pub fn run() {
             commands::local::memory_update,
             commands::local::memory_delete,
             commands::local::clipboard_read,
+            commands::system::installed_apps,
+            commands::system::check_for_updates,
+            commands::system::ui_ready,
             commands::system::set_island_expanded,
             commands::system::hide_island,
             commands::system::open_settings,

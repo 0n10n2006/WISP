@@ -160,6 +160,10 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
   const dictating = useDictation((d) => d.phase !== "idle");
   const clipboardOpen = useClipboardAssist((c) => c.open);
   const voiceActive = useVoice((v) => v.phase !== "idle");
+  const pinned = snapshot?.settings.alwaysOnTop ?? true;
+  const memoryOn = snapshot?.settings.useMemory ?? false;
+  const memoryForChat = useConversation((c) => c.memoryForChat);
+  const setMemoryForChat = useConversation((c) => c.setMemoryForChat);
   const [dismissedWarnings, setDismissedWarnings] = useState<string[]>([]);
   const speaking = useActivity((a) => a.speaking);
   const setPending = useCapture((c) => c.setPending);
@@ -227,6 +231,15 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
             </button>
           )}
           <button
+            className={`icon-btn ${pinned ? "icon-btn-on" : ""}`}
+            onClick={() => void useSettings.getState().update({ alwaysOnTop: !pinned })}
+            aria-label="Keep Wisp on top"
+            aria-pressed={pinned}
+            title={pinned ? "Pinned above other windows" : "Not pinned"}
+          >
+            <Icon name="pin" />
+          </button>
+          <button
             className="icon-btn"
             onClick={() => void host().openSettings()}
             aria-label="Settings"
@@ -289,6 +302,14 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
               onRetry={() => void retry()}
               onSettings={() => void host().openSettings(settingsTabFor(error.code))}
               onDismiss={dismissError}
+              currentModel={snapshot?.settings.selectedModel}
+              onSwitchModel={async (model) => {
+                const err = await useSettings.getState().update({ selectedModel: model });
+                if (!err) {
+                  toast(`Switched to ${model}`, "success");
+                  void retry();
+                }
+              }}
             />
           )}
 
@@ -363,6 +384,21 @@ function Panel({ layout, onCollapse }: { layout: IslandLayout; onCollapse(): voi
                 >
                   <Icon name="clipboard" />
                 </button>
+                {memoryOn && (
+                  <button
+                    className={`icon-btn icon-btn-small ${memoryForChat ? "icon-btn-on" : ""}`}
+                    onClick={() => setMemoryForChat(!memoryForChat)}
+                    aria-label="Use memory in this conversation"
+                    aria-pressed={memoryForChat}
+                    title={
+                      memoryForChat
+                        ? "Memory is used in this conversation. Click to turn off."
+                        : "Memory is off for this conversation."
+                    }
+                  >
+                    <Icon name="memory" />
+                  </button>
+                )}
               </div>
               <p className="footnote">
                 {online ? (

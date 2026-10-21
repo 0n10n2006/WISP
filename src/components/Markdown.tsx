@@ -3,6 +3,7 @@
 // URLs through the host, which validates them again.
 
 import { Fragment, type ReactNode } from "react";
+import { Icon } from "./Icon";
 
 export type Block =
   | { type: "p"; text: string }
@@ -119,7 +120,15 @@ function withBreaks(nodes: ReactNode[]): ReactNode[] {
   );
 }
 
-export function Markdown({ text, onLink }: { text: string; onLink: (url: string) => void }) {
+export function Markdown({
+  text,
+  onLink,
+  onCopy,
+}: {
+  text: string;
+  onLink: (url: string) => void;
+  onCopy?: (code: string) => void;
+}) {
   const blocks = parseBlocks(text);
   return (
     <div className="md">
@@ -133,9 +142,21 @@ export function Markdown({ text, onLink }: { text: string; onLink: (url: string)
           }
           case "code":
             return (
-              <pre key={i} data-lang={b.lang || undefined}>
-                <code>{b.text}</code>
-              </pre>
+              <div key={i} className="code-block">
+                <pre data-lang={b.lang || undefined}>
+                  <code>{b.text}</code>
+                </pre>
+                {onCopy && (
+                  <button
+                    className="icon-btn icon-btn-small code-copy"
+                    onClick={() => onCopy(b.text)}
+                    aria-label="Copy code"
+                    title="Copy code"
+                  >
+                    <Icon name="copy" size={14} />
+                  </button>
+                )}
+              </div>
             );
           case "ul":
             return (

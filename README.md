@@ -10,21 +10,24 @@ orb. Click it (or press a shortcut) to ask Gemini a question. It stays out of th
 - **Honest about limits.** Free-tier quota and rate limits are shown plainly. Wisp never promises unlimited use.
 - **No hidden capture.** Screen, microphone and clipboard are read only when you ask, and only sent after you confirm.
 
-See [`docs/PRD.md`](docs/PRD.md) for the full product spec, [`docs/SECURITY.md`](docs/SECURITY.md) for the
+See [`docs/PRD.md`](docs/PRD.md) for the full product spec, [`docs/PRD_TRACEABILITY.md`](docs/PRD_TRACEABILITY.md) for how each requirement is met, [`docs/SECURITY.md`](docs/SECURITY.md) for the
 security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 
 ## Status
 
-| Milestone                                                               | State   |
-| ----------------------------------------------------------------------- | ------- |
-| M0 Foundation: Tauri 2 + React + TS, lint, tests, CI                    | ✅      |
-| M1 Desktop island: orb ↔ panel, drag, show/hide shortcut, tray, themes  | ✅      |
-| M2 Gemini: key setup, connection test, streaming, cancel, error mapping | ✅      |
-| M2b History, diagnostics, data controls                                 | 🚧 next |
-| M3 Select to Ask                                                        | ⏳      |
-| M4 Dictation                                                            | ⏳      |
-| M5 Tools, reminders, memory, clipboard                                  | ⏳      |
-| M6 Voice, hardening, release                                            | ⏳      |
+| Milestone                                                               | State                               |
+| ----------------------------------------------------------------------- | ----------------------------------- |
+| M0 Foundation: Tauri 2 + React + TS, lint, tests, CI                    | ✅                                  |
+| M1 Desktop island: orb ↔ panel, drag, show/hide shortcut, tray, themes  | ✅                                  |
+| M2 Gemini: key setup, connection test, streaming, cancel, error mapping | ✅                                  |
+| M2b History, diagnostics, data controls                                 | ✅                                  |
+| M3 Select to Ask                                                        | ✅                                  |
+| M4 Dictation                                                            | ✅                                  |
+| M5 Tools, reminders, memory, clipboard                                  | ✅                                  |
+| M6 Voice, accessibility, crash recovery, releases                       | ✅                                  |
+| Checkpoint 7: PRD gap closure, packaged self-test                       | ✅ (see `docs/PRD_TRACEABILITY.md`) |
+
+All PRD requirements are implemented. What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
 ## Try it
 
@@ -75,6 +78,44 @@ npm run tauri build    # produce installers in target/release/bundle/
 You can change all of them in **Settings → Shortcuts**. If another app already owns a shortcut, Wisp tells you
 and the orb and tray menu keep working.
 
+## Select to Ask
+
+Press `Ctrl+Shift+S` (or the screen button). Wisp hides, freezes your screens and dims them. Drag to select an
+area, press Enter for the whole screen, or press Esc to cancel. The area is attached to your next question. Nothing
+is sent until you press **Send**, and you can remove the attachment with ×.
+
+## Dictation
+
+Press `Ctrl+Shift+D` in any app, speak, and press it again (or **Stop**). Wisp sends the audio to Gemini for
+transcription and shows the text so you can edit it. **Insert** switches back to the app you were in and pastes
+the text. It briefly uses the clipboard and restores your previous text clipboard afterwards. **Copy** is always
+available as a fallback. Recordings stop after 2 minutes. Audio is discarded after transcription unless you turn
+on _Keep dictation audio_ in **Settings → Privacy**.
+
+The first time you dictate, Windows/WebView2 may ask for microphone permission. If dictation says the microphone
+is blocked, open **Windows Settings → Privacy & security → Microphone** and allow desktop apps.
+
+## Voice conversation
+
+Press `Ctrl+Shift+V` (or the speech-bubble button), speak, then press it again or **Done**. Wisp transcribes your
+question with Gemini, answers, and reads the answer aloud with a local Windows voice. Press **Stop** or `Esc` to
+interrupt; pressing the shortcut while Wisp is speaking interrupts it and starts listening. There is no always-on
+listening. Choose the voice and speed in **Settings → Voice**, and optionally have typed answers read aloud too.
+Any answer can also be read aloud with its **Read aloud** button.
+
+## Actions, reminders, memory, clipboard
+
+- **Actions:** Ask things like "open notepad", "open the Tauri docs" or "remind me to stretch at 3pm". Wisp can
+  open allowlisted apps (**Settings → Actions**), open http(s) links, copy text, create reminders, and suggest
+  memories. Opening apps or links and saving memories always ask first. Everything is logged in **History**.
+  Wisp has no shell or script access.
+- **Reminders:** Create them in **Settings → Reminders** or by asking. They work offline, show a Windows
+  notification when due (you can turn this off), and can be snoozed or marked done from the island.
+- **Memory:** Short notes in **Settings → Memory** that personalise answers. They're sent with requests only
+  while memory is on, and Wisp asks before saving anything from a conversation.
+- **Clipboard help:** Press `Ctrl+Shift+C` (or the clipboard button) to summarise, rewrite or explain the text
+  you copied. Wisp reads the clipboard once, shows you exactly what will be sent, and never monitors it.
+
 ## Gemini, quotas and your data
 
 - You need your own Gemini API key. Free-tier models, quotas (requests per minute/day) and data-use terms are
@@ -87,6 +128,27 @@ and the orb and tray menu keep working.
   (screen region, clipboard text, dictated audio).
 - What's not sent: settings, reminders, history, your API key (except as the auth header to Google).
 - Deleting data in Wisp removes it from your PC only. It doesn't delete anything Google already received.
+
+## Troubleshooting
+
+| Problem                    | Fix                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| "API key rejected"         | Create a new key in AI Studio and paste it in **Settings → Model → Replace key**.            |
+| "Model unavailable"        | Your key can't use that model. Pick another in **Settings → Model**.                         |
+| "Quota used up"            | Wait for the daily reset, switch to another model (quotas are per model), or enable billing. |
+| "Slow down a moment"       | Per-minute limit hit. Wait a few seconds and press **Try again**.                            |
+| Shortcut doesn't work      | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.      |
+| Orb is gone                | Press `Ctrl+Shift+Space`, or click the Wisp tray icon.                                       |
+| "Wisp closed unexpectedly" | A redacted crash report is in `%APPDATA%\app.wisp.desktop\logs`. Attach it to an issue.      |
+| No voices to choose        | Install voices in Windows Settings → Time & language → Speech.                               |
+| Microphone blocked         | Windows Settings → Privacy & security → Microphone → allow desktop apps.                     |
+
+## Known limitations
+
+- Windows 11 x64 is the only supported platform.
+- Installers are not code-signed yet.
+- Wisp can't browse the web live. It can summarise text you give it.
+- Insert uses the clipboard. If your clipboard held an image, it isn't restored after inserting.
 
 ## Development
 
@@ -113,6 +175,17 @@ npm run test:e2e              # Playwright against the browser preview
 On Linux you can compile and test the Tauri shell after installing `libwebkit2gtk-4.1-dev`,
 `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `libpipewire-0.3-dev`, `libgbm-dev`, `libxcb1-dev`, `libxrandr-dev`, `libegl-dev`, `libdbus-1-dev` and `clang`. Windows is the only supported runtime target.
 
+## Self-test
+
+`wisp.exe --self-test` starts Wisp normally and checks setup time, the UI, the database, the credential vault and
+the shortcuts. It writes a JSON report (to the path in `WISP_SELFTEST_OUT`, plus stdout) and exits 0 on pass or 1
+on fail. CI runs it against the packaged Windows app and headless on Linux.
+
+## Updates
+
+**Settings → About → Check for updates** looks up the latest release on this repository's GitHub page and offers
+to open it. Wisp never checks in the background and never downloads or installs anything by itself.
+
 ## Releasing
 
 1. Bump the version in `package.json`, `Cargo.toml` (`[workspace.package]`) and `src-tauri/tauri.conf.json`.
@@ -123,56 +196,6 @@ On Linux you can compile and test the Tauri shell after installing `libwebkit2gt
 Rollback: keep the previous release published. Users can reinstall it over the newer one. Settings and data are
 forward-compatible within a major version, and the database is copied to `wisp.v<N>.bak` before any schema
 migration.
-
-## Troubleshooting
-
-| Problem               | Fix                                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------- |
-| "API key rejected"    | Create a new key in AI Studio and paste it in **Settings → Model → Replace key**.            |
-| "Model unavailable"   | Your key can't use that model. Pick another in **Settings → Model**.                         |
-| "Quota used up"       | Wait for the daily reset, switch to another model (quotas are per model), or enable billing. |
-| "Slow down a moment"  | Per-minute limit hit. Wait a few seconds and press **Try again**.                            |
-| Shortcut doesn't work | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.      |
-| Orb is gone           | Press `Ctrl+Shift+Space`, or click the Wisp tray icon.                                       |
-
-## Actions, reminders, memory, clipboard
-
-- **Actions:** Ask things like "open notepad", "open the Tauri docs" or "remind me to stretch at 3pm". Wisp can
-  open allowlisted apps (**Settings → Actions**), open http(s) links, copy text, create reminders, and suggest
-  memories. Opening apps or links and saving memories always ask first. Everything is logged in **History**.
-  Wisp has no shell or script access.
-- **Reminders:** Create them in **Settings → Reminders** or by asking. They work offline, show a Windows
-  notification when due (you can turn this off), and can be snoozed or marked done from the island.
-- **Memory:** Short notes in **Settings → Memory** that personalise answers. They're sent with requests only
-  while memory is on, and Wisp asks before saving anything from a conversation.
-- **Clipboard help:** Press `Ctrl+Shift+C` (or the clipboard button) to summarise, rewrite or explain the text
-  you copied. Wisp reads the clipboard once, shows you exactly what will be sent, and never monitors it.
-
-## Voice conversation
-
-Press `Ctrl+Shift+V` (or the speech-bubble button), speak, then press it again or **Done**. Wisp transcribes your
-question with Gemini, answers, and reads the answer aloud with a local Windows voice. Press **Stop** or `Esc` to
-interrupt; pressing the shortcut while Wisp is speaking interrupts it and starts listening. There is no always-on
-listening. Choose the voice and speed in **Settings → Voice**, and optionally have typed answers read aloud too.
-Any answer can also be read aloud with its **Read aloud** button.
-
-## Dictation
-
-Press `Ctrl+Shift+D` in any app, speak, and press it again (or **Stop**). Wisp sends the audio to Gemini for
-transcription and shows the text so you can edit it. **Insert** switches back to the app you were in and pastes
-the text. It briefly uses the clipboard and restores your previous text clipboard afterwards. **Copy** is always
-available as a fallback. Recordings stop after 2 minutes. Audio is discarded after transcription unless you turn
-on _Keep dictation audio_ in **Settings → Privacy**.
-
-The first time you dictate, Windows/WebView2 may ask for microphone permission. If dictation says the microphone
-is blocked, open **Windows Settings → Privacy & security → Microphone** and allow desktop apps.
-
-## Known limitations
-
-- Windows 11 x64 is the only supported platform.
-- Installers are not code-signed yet.
-- Wisp can't browse the web live. It can summarise text you give it.
-- Insert uses the clipboard. If your clipboard held an image, it isn't restored after inserting.
 
 ## License
 

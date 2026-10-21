@@ -110,6 +110,11 @@ export function createTauriHost(): Host {
     memoryDelete: (id) => call("memory_delete", { id }),
     clipboardRead: async () => (await call<{ text: string | null }>("clipboard_read")).text,
 
+    installedApps: () => call("installed_apps"),
+    checkForUpdates: () => call("check_for_updates"),
+    uiReady: () => void invoke("ui_ready").catch(() => {}),
+    onIslandVisibility: (cb) => subscribe<boolean>("wisp://visibility", cb),
+
     historyList: (limit) => call("history_list", { limit: limit ?? null }),
     actionsList: (limit) => call("actions_list", { limit: limit ?? null }),
     dataStats: () => call("data_stats"),

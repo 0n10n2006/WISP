@@ -20,6 +20,7 @@ async function main() {
       )}
     </StrictMode>,
   );
+  requestAnimationFrame(() => h.uiReady());
 }
 
 void main();

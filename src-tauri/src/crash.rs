@@ -25,9 +25,12 @@ pub fn unseen_crashes(log_dir: &Path) -> Option<String> {
     let mut newest: Option<PathBuf> = None;
     for e in entries.flatten() {
         let p = e.path();
-        let is_new = p.extension().is_some_and(|x| x == "log")
-            && p.file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with("crash-"));
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let is_new =
+            name.starts_with("crash-") && name.ends_with(".log") && !name.ends_with(".seen.log");
         if is_new {
             let seen = p.with_extension("seen.log");
             let _ = fs::rename(&p, &seen);
@@ -42,4 +45,22 @@ pub fn unseen_crashes(log_dir: &Path) -> Option<String> {
             p.display()
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_each_crash_once() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(unseen_crashes(dir.path()).is_none());
+        fs::write(dir.path().join("crash-20261021-120000.log"), "boom").unwrap();
+        let msg = unseen_crashes(dir.path()).unwrap();
+        assert!(msg.contains("closed unexpectedly"));
+        assert!(msg.contains("crash-20261021-120000.seen.log"));
+        // Already seen: not reported again.
+        assert!(unseen_crashes(dir.path()).is_none());
+        assert!(unseen_crashes(&dir.path().join("missing")).is_none());
+    }
 }

@@ -3,7 +3,13 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ShortcutInput } from "../../components/ShortcutInput";
 import { presentError, toWispError } from "../../services/errors";
 import { host } from "../../services/host";
-import type { ModelInfo, Settings, ShortcutAction, Shortcuts } from "../../services/types";
+import type {
+  ModelInfo,
+  Settings,
+  ShortcutAction,
+  Shortcuts,
+  UpdateInfo,
+} from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { Choice, ExternalLink, LINKS, StatusLine, Toggle, useStatus } from "./common";
 
@@ -47,6 +53,17 @@ export function GeneralTab() {
             { value: "full", label: "Full" },
           ]}
           onChange={(motion) => void set({ motion })}
+        />
+        <Choice
+          name="scale"
+          label="Size of Wisp"
+          value={String(s.islandScale)}
+          options={[
+            { value: "1", label: "Default" },
+            { value: "1.15", label: "Larger" },
+            { value: "1.3", label: "Largest" },
+          ]}
+          onChange={(v) => void set({ islandScale: Number(v) })}
         />
       </section>
       <section className="group">
@@ -425,6 +442,23 @@ export function PrivacyTab() {
 
 export function AboutTab() {
   const snapshot = useSettings((s) => s.snapshot);
+  const [checking, setChecking] = useState(false);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const { status, ok, fail, clear } = useStatus();
+  const check = async () => {
+    setChecking(true);
+    clear();
+    try {
+      const u = await host().checkForUpdates();
+      setUpdate(u);
+      if (u.available) ok(`Wisp ${u.latest} is available.`);
+      else ok("You're on the latest version.");
+    } catch (e) {
+      fail(toWispError(e));
+    } finally {
+      setChecking(false);
+    }
+  };
   return (
     <div className="tab">
       <h2>About Wisp</h2>
@@ -444,6 +478,27 @@ export function AboutTab() {
           </div>
         </div>
       )}
+      <section className="group">
+        <h3>Updates</h3>
+        <p className="setting-desc">
+          Wisp only checks for updates when you ask. It looks up the latest release on the project's
+          GitHub page and never downloads or installs anything by itself.
+        </p>
+        <div className="row-start">
+          <button className="btn" disabled={checking} onClick={() => void check()}>
+            {checking ? "Checking…" : "Check for updates"}
+          </button>
+          {update?.available && update.url && (
+            <button
+              className="btn btn-primary"
+              onClick={() => void host().openExternal(update.url!)}
+            >
+              Open release {update.latest}
+            </button>
+          )}
+        </div>
+        <StatusLine status={status} />
+      </section>
       <div className="row-start">
         <button className="btn btn-danger-ghost" onClick={() => void host().quit()}>
           Quit Wisp

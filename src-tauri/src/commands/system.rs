@@ -46,3 +46,27 @@ pub fn copy_text(app: AppHandle, text: String) -> CmdResult<()> {
         .write_text(text)
         .map_err(|e| WispError::new(ErrorCode::Internal, format!("Couldn't copy: {e}")))
 }
+
+/// Start-menu apps the user can add to the allowlist.
+#[tauri::command]
+pub async fn installed_apps() -> Vec<crate::apps::InstalledApp> {
+    tauri::async_runtime::spawn_blocking(crate::apps::list)
+        .await
+        .unwrap_or_default()
+}
+
+const RELEASES_API: &str = "https://api.github.com";
+const RELEASES_REPO: &str = "0n10n2006/WISP";
+
+/// Manual update check against GitHub releases. Never runs in the background.
+#[tauri::command]
+pub async fn check_for_updates(app: AppHandle) -> CmdResult<wisp_core::updates::UpdateInfo> {
+    let version = app.package_info().version.to_string();
+    wisp_core::updates::check(RELEASES_API, RELEASES_REPO, &version).await
+}
+
+/// The webview finished booting (used by `--self-test`).
+#[tauri::command]
+pub fn ui_ready() {
+    crate::selftest::UI_READY.store(true, std::sync::atomic::Ordering::SeqCst);
+}
