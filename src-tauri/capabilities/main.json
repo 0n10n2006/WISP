@@ -95,6 +95,7 @@
     "allow-selftest-action",
     "allow-selftest-report",
     "allow-pause-shortcuts",
-    "allow-capture-overlay-ready"
+    "allow-capture-overlay-ready",
+    "allow-reverse-image-search"
   ]
 }

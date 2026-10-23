@@ -43,6 +43,14 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Circle actions, folding & floating ball (v0.2.6)
+
+- [ ] Circle a photo of a landmark or product and press **Google Lens**: the browser opens Lens results for that crop. Disconnect the network and repeat: Wisp says the image is on the clipboard; Ctrl+V in the Lens page works.
+- [ ] Circle a maths question and press **Answer it**: it answers. Circle a paragraph and press **Copy text**: the text is on the clipboard. **Search the web** shows sources.
+- [ ] Open the bar, move the mouse away: it folds after about a second. Type something and move away at once: it stays. Start an answer and move away: it stays until the answer ends.
+- [ ] Click a dashboard tab, then press Esc: the bar folds. Press `Ctrl+Alt+Space` twice: it opens and folds.
+- [ ] Settings → Notch & personality → Floating ball, each corner in turn: the ball sits in that corner above the taskbar; hovering peeks from it; the bar opens from the corner and grows away from it; games and fullscreen still hide it. Switching back to Notch restores the notch.
+
 ### Polish (v0.2.5)
 
 - [ ] `Ctrl+Shift+S` on one and two monitors: the screen doesn't flash; the frozen screen appears identical to the live one and only the dimming fades in. A second capture right after opens instantly.

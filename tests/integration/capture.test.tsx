@@ -16,7 +16,7 @@ describe("select to ask", () => {
     await user.click(await screen.findByRole("button", { name: /select an area/i }));
 
     expect(await screen.findByText(/screen area attached/i)).toBeInTheDocument();
-    expect(screen.getByText(/only when you press send/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing is sent until you do/i)).toBeInTheDocument();
     expect(ask).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Send" }));
@@ -27,6 +27,50 @@ describe("select to ask", () => {
     expect(req.prompt).toBe(DEFAULT_SCREEN_PROMPT);
     expect(await screen.findByAltText("Selected screen region")).toBeInTheDocument();
     expect(screen.queryByText(/screen area attached/i)).not.toBeInTheDocument();
+  });
+
+  it("offers one-click actions on the circled area", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const ask = vi.spyOn(h, "ask");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    await user.click(await screen.findByRole("button", { name: /select an area/i }));
+    await user.click(await screen.findByRole("button", { name: /search the web/i }));
+    await waitFor(() => expect(ask).toHaveBeenCalledOnce());
+    const req = ask.mock.calls[0]![0];
+    expect(req.web).toBe(true);
+    expect(req.contextKind).toBe("screen");
+    expect(req.attachments).toHaveLength(1);
+    expect(screen.queryByText(/screen area attached/i)).not.toBeInTheDocument();
+  });
+
+  it("reverse image searches the circled area with Google Lens", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const lens = vi.spyOn(h, "reverseImageSearch");
+    const ask = vi.spyOn(h, "ask");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    await user.click(await screen.findByRole("button", { name: /select an area/i }));
+    await user.click(await screen.findByRole("button", { name: /google lens/i }));
+    await waitFor(() => expect(lens).toHaveBeenCalledOnce());
+    expect(lens.mock.calls[0]![0].length).toBeGreaterThan(10);
+    expect(ask).not.toHaveBeenCalled();
+    expect(await screen.findByText(/google lens/i)).toBeInTheDocument();
+    expect(screen.queryByText(/screen area attached/i)).not.toBeInTheDocument();
+  });
+
+  it("copies the text in the circled area", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const copy = vi.spyOn(h, "copyText").mockResolvedValue();
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    await user.click(await screen.findByRole("button", { name: /select an area/i }));
+    await user.click(await screen.findByRole("button", { name: /copy text/i }));
+    await waitFor(() => expect(copy).toHaveBeenCalled(), { timeout: 5000 });
+    expect(await screen.findByText(/text copied/i)).toBeInTheDocument();
   });
 
   it("can discard the capture", async () => {

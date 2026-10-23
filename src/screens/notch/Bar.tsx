@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ClipboardCard } from "../../components/ClipboardCard";
 import { DictationCard } from "../../components/DictationCard";
 import { ErrorBanner } from "../../components/ErrorBanner";
-import { Icon } from "../../components/Icon";
+import { Icon, type IconName } from "../../components/Icon";
 import { MessageList } from "../../components/MessageList";
 import { ReminderBanner } from "../../components/ReminderBanner";
 import { VoiceCard } from "../../components/VoiceCard";
@@ -10,7 +10,7 @@ import { useOnline } from "../../hooks/useOnline";
 import { chipsFor } from "../../lib/chips";
 import { host } from "../../services/host";
 import { askAboutClipboard, useClipboardAssist } from "../../state/assist";
-import { useCapture } from "../../state/capture";
+import { runCaptureAction, useCapture, type CaptureAction } from "../../state/capture";
 import { useConversation } from "../../state/conversation";
 import { useDictation } from "../../state/dictation";
 import { useNotch } from "../../state/notch";
@@ -19,9 +19,20 @@ import { toast } from "../../state/toast";
 import { useVoice } from "../../state/voice";
 import { Dashboard } from "../dashboard/load";
 import { useConfirm } from "./actions";
+import { busy } from "./busy";
 import { CommandBar, type CommandBarHandle } from "./CommandBar";
-import { closeBar, lastHeight, rememberBarHeight } from "./control";
+import { blurCloseAllowed, closeBar, lastHeight, rememberBarHeight } from "./control";
 import { Sources } from "./Sources";
+
+/** How long the bar waits after the mouse leaves before folding away. */
+export const LEAVE_FOLD_MS = 900;
+/** Text typed this recently counts as "still working on it". */
+const TYPING_GRACE_MS = 3000;
+
+/** "Ctrl+Alt+Space" as people read it on Windows. */
+export function shortcutLabel(accel: string): string {
+  return accel.replace(/CommandOrControl|CmdOrCtrl/g, "Ctrl").replace(/Super|Meta|Cmd/g, "Win");
+}
 
 /** Tallest the open bar may grow (CSS px); its body scrolls beyond this. */
 const MAX_BAR_HEIGHT = 620;
@@ -164,8 +175,28 @@ function Chips() {
   );
 }
 
+const CAPTURE_ACTIONS: { id: CaptureAction; label: string; icon: IconName; title: string }[] = [
+  { id: "answer", label: "Answer it", icon: "spark", title: "Answer the question shown (Gemini)" },
+  { id: "explain", label: "Explain", icon: "info", title: "Explain what's shown (Gemini)" },
+  {
+    id: "search",
+    label: "Search the web",
+    icon: "globe",
+    title: "Gemini identifies it and searches the web, with sources",
+  },
+  { id: "text", label: "Copy text", icon: "copy", title: "Read the text and copy it (Gemini)" },
+  {
+    id: "lens",
+    label: "Google Lens",
+    icon: "search",
+    title: "Reverse image search: opens Google Lens results in your browser",
+  },
+];
+
 function PendingCapture({ sendCapture }: { sendCapture(): void }) {
   const pending = useCapture((c) => c.pending);
+  const web = useNotch((n) => n.web);
+  const think = useNotch((n) => n.think);
   const setPending = useCapture((c) => c.setPending);
   if (!pending) return null;
   return (
@@ -173,7 +204,19 @@ function PendingCapture({ sendCapture }: { sendCapture(): void }) {
       <img src={pending.dataUrl} alt="Selected screen area" />
       <div className="attachment-text">
         <strong>Screen area attached</strong>
-        Type a question if you like. Sent to Google Gemini only when you press Send.
+        Type a question, or pick an action. Nothing is sent until you do.
+        <div className="capture-actions" role="group" aria-label="Do something with this area">
+          {CAPTURE_ACTIONS.map((a) => (
+            <button
+              key={a.id}
+              className="chip"
+              title={a.title}
+              onClick={() => void runCaptureAction(a.id, web, think)}
+            >
+              <Icon name={a.icon} size={13} /> {a.label}
+            </button>
+          ))}
+        </div>
       </div>
       <button className="btn btn-small btn-primary" onClick={sendCapture}>
         Send
@@ -188,6 +231,19 @@ function PendingCapture({ sendCapture }: { sendCapture(): void }) {
       </button>
     </div>
   );
+}
+
+/** Esc: dismiss what's in front (a confirmation, a running answer), else fold. */
+function escape() {
+  const conversation = useConversation.getState();
+  if (useConfirm.getState().pending) useConfirm.getState().clear();
+  else if (conversation.requestActive) conversation.cancel();
+  else closeBar();
+}
+
+function FoldHint() {
+  const accel = useSettings((s) => s.snapshot?.settings.globalShortcuts.toggleIsland);
+  return <p className="bar-hint">Esc{accel ? ` or ${shortcutLabel(accel)}` : ""} to fold away</p>;
 }
 
 export default function Bar() {
@@ -205,6 +261,42 @@ export default function Bar() {
   useEffect(() => {
     input.current?.focus();
     return host().onFocusPrompt(() => input.current?.focus());
+  }, []);
+
+  // Fold away once the mouse has left, unless the user is still mid-task.
+  const typedAt = useRef(0);
+  useEffect(() => {
+    typedAt.current = Date.now();
+  }, [query]);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelLeave = () => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    leaveTimer.current = null;
+  };
+  const onLeave = () => {
+    cancelLeave();
+    if (!(useSettings.getState().snapshot?.settings.foldOnLeave ?? true)) return;
+    leaveTimer.current = setTimeout(() => {
+      leaveTimer.current = null;
+      const typing =
+        !!useNotch.getState().query.trim() && Date.now() - typedAt.current < TYPING_GRACE_MS;
+      const picking = document.activeElement?.tagName === "SELECT";
+      if (blurCloseAllowed() && !busy() && !typing && !picking) closeBar();
+    }, LEAVE_FOLD_MS);
+  };
+  useEffect(() => cancelLeave, []);
+
+  // Esc folds the bar wherever focus is (after clicking a dashboard tab, or
+  // with nothing focused at all); a running answer is stopped first.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (root.current?.contains(e.target as Node)) return; // the bar's own handler
+      e.preventDefault();
+      escape();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, []);
 
   // Size the window to the content so the bar never covers more than it
@@ -274,7 +366,7 @@ export default function Bar() {
     );
 
   return (
-    <div className="bar-wrap">
+    <div className="bar-wrap" onPointerLeave={onLeave} onPointerEnter={cancelLeave}>
       <section
         ref={root}
         className="bar"
@@ -283,8 +375,7 @@ export default function Bar() {
         onKeyDown={(e) => {
           if (e.key === "Escape" && !e.defaultPrevented) {
             e.preventDefault();
-            if (useConfirm.getState().pending) useConfirm.getState().clear();
-            else closeBar();
+            escape();
           }
         }}
       >
@@ -318,6 +409,7 @@ export default function Bar() {
             <Icon name="warning" size={12} /> Offline. Apps, controls and reminders still work.
           </p>
         )}
+        <FoldHint />
       </section>
     </div>
   );

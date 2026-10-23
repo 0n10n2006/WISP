@@ -119,6 +119,7 @@ export function createTauriHost(): Host {
       const bytes = await call<ArrayBuffer>("capture_preview", { monitor });
       return URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
     },
+    reverseImageSearch: (dataBase64) => call("reverse_image_search", { dataBase64 }),
     captureOverlayReady: () => void call("capture_overlay_ready").catch(() => {}),
     onCaptureSession: (cb) => subscribe<number>("wisp://capture-session", () => cb()),
     captureSelect: (monitor, rect) => call("capture_select", { monitor, rect }),

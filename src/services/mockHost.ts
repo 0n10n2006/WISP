@@ -700,6 +700,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     },
     captureCancel: async () => {},
     captureOverlayReady: () => {},
+    reverseImageSearch: async () => ({ opened: true, pasted: false }),
     onCaptureSession: () => () => {},
     showMe: async (question) => {
       if (!hasKey)

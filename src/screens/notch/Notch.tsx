@@ -1,5 +1,6 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ToastHost } from "../../components/Toast";
+import { WispMark } from "../../components/WispMark";
 import { useOrbState } from "../../hooks/useOrbState";
 import { prefetchCatalogue } from "../../lib/catalogue";
 import { lazyWithPreload, whenIdle } from "../../lib/preload";
@@ -14,27 +15,12 @@ import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
 import { useVoice } from "../../state/voice";
 import { preloadDashboard } from "../dashboard/load";
-import { useConfirm } from "./confirm";
+import { busy } from "./busy";
 import { blurCloseAllowed, changeMode, closeBar as close, openBar as open } from "./control";
 import { Peek } from "./Peek";
 
 /** The open bar is a separate chunk, fetched while idle so opening is instant. */
 const Bar = lazyWithPreload(() => import("./Bar"));
-
-/** Clicking elsewhere folds the bar away unless something needs the user. */
-function busy(): boolean {
-  const d = useDictation.getState().phase;
-  const v = useVoice.getState().phase;
-  return (
-    useConversation.getState().requestActive ||
-    (d !== "idle" && d !== "error") ||
-    v === "listening" ||
-    v === "transcribing" ||
-    !!useConfirm.getState().pending ||
-    !!useCapture.getState().pending ||
-    useConversation.getState().messages.some((m) => m.actions?.some((a) => a.confirmId))
-  );
-}
 
 /** How long the peek waits after the pointer leaves before folding away
  * (just enough to forgive brushing past the edge). */
@@ -48,6 +34,7 @@ function Idle() {
   const voice = useVoice((v) => v.phase === "listening" || v.phase === "transcribing");
   const sticky = listening || voice;
   const sliverStyle = useSettings((s) => s.snapshot?.settings.sliverStyle ?? "glow");
+  const ball = useSettings((s) => s.snapshot?.settings.notchStyle === "ball");
 
   const peek = useCallback(() => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
@@ -65,7 +52,7 @@ function Idle() {
     <button
       className={`notch-idle notch-${mode}`}
       data-state={state}
-      data-style={sliverStyle}
+      data-style={ball ? "ball" : sliverStyle}
       onPointerEnter={peek}
       onPointerLeave={unpeek}
       onFocus={peek}
@@ -73,7 +60,15 @@ function Idle() {
       aria-label={`Open Wisp — ${ORB_LABELS[state]}`}
       title="Open Wisp"
     >
-      {mode === "peek" ? <Peek /> : <SliverGlow />}
+      {mode === "peek" ? (
+        <Peek />
+      ) : ball ? (
+        <span className="ball" aria-hidden>
+          <WispMark state={state} size={22} />
+        </span>
+      ) : (
+        <SliverGlow />
+      )}
     </button>
   );
 }
@@ -131,10 +126,18 @@ function onHold(e: HoldEvent) {
 export function Notch() {
   const mode = useNotch((n) => n.mode);
   const accent = useSettings((s) => s.snapshot?.settings.accent ?? "cyan");
+  const style = useSettings((s) => s.snapshot?.settings.notchStyle ?? "notch");
+  const corner = useSettings((s) => s.snapshot?.settings.ballCorner ?? "bottom-right");
 
   useEffect(() => {
     document.documentElement.dataset.accent = accent;
   }, [accent]);
+  // A notch at the top, or a floating ball in a corner (styled in notch.css).
+  useEffect(() => {
+    const root = document.documentElement.dataset;
+    root.notch = style;
+    root.corner = corner;
+  }, [style, corner]);
 
   // Fetch the bar and the dashboard while the PC is idle.
   useEffect(() => {

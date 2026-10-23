@@ -1,5 +1,12 @@
 import { DASHBOARD_TABS } from "../../lib/commands";
-import type { Accent, NotchPosition, SliverStyle, Tone } from "../../services/types";
+import type {
+  Accent,
+  BallCorner,
+  NotchPosition,
+  NotchStyle,
+  SliverStyle,
+  Tone,
+} from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { Choice, Toggle } from "./common";
 
@@ -92,46 +99,84 @@ export function NotchTab() {
     <div className="tab">
       <h2>Notch &amp; personality</h2>
       <section className="group">
-        <h3>The notch</h3>
+        <h3>Where Wisp lives</h3>
         <p className="setting-desc">
-          Wisp rests as a thin glow at the top of the screen. Hover for the time, timer or what's
-          playing; click or press the shortcut to open the command bar.
+          {s.notchStyle === "ball"
+            ? "Wisp rests as a small ball in a corner of the screen. Hover it for the time, timer or what's playing; click or press the shortcut to open the command bar."
+            : "Wisp rests as a thin glow at the top of the screen. Hover for the time, timer or what's playing; click or press the shortcut to open the command bar."}{" "}
+          To hide it entirely, turn off “Show the notch” in General.
         </p>
-        <Choice<NotchPosition>
-          name="notch-position"
-          label="Position"
-          value={s.notchPosition}
+        <Choice<NotchStyle>
+          name="notch-style"
+          label="Look"
+          value={s.notchStyle}
           options={[
-            { value: "left", label: "Left" },
-            { value: "center", label: "Centre" },
-            { value: "right", label: "Right" },
+            { value: "notch", label: "Notch at the top" },
+            { value: "ball", label: "Floating ball" },
           ]}
-          onChange={(notchPosition) => void update({ notchPosition })}
+          onChange={(notchStyle) => void update({ notchStyle })}
         />
-        <Choice<SliverStyle>
-          name="sliver-style"
-          label="When resting"
-          value={s.sliverStyle}
-          options={[
-            { value: "glow", label: "Glow" },
-            { value: "subtle", label: "Subtle" },
-            { value: "hidden", label: "Invisible" },
-          ]}
-          onChange={(sliverStyle) => void update({ sliverStyle })}
-        />
-        <p className="setting-desc">
-          {s.sliverStyle === "hidden"
-            ? "Nothing shows until you hover the top edge or press the shortcut."
-            : s.sliverStyle === "subtle"
-              ? "A faint line with no glow."
-              : "A soft accent line that brightens when Wisp is working."}
-        </p>
+        {s.notchStyle === "ball" ? (
+          <Choice<BallCorner>
+            name="ball-corner"
+            label="Corner"
+            value={s.ballCorner}
+            options={[
+              { value: "top-left", label: "Top left" },
+              { value: "top-right", label: "Top right" },
+              { value: "bottom-left", label: "Bottom left" },
+              { value: "bottom-right", label: "Bottom right" },
+            ]}
+            onChange={(ballCorner) => void update({ ballCorner })}
+          />
+        ) : (
+          <Choice<NotchPosition>
+            name="notch-position"
+            label="Position"
+            value={s.notchPosition}
+            options={[
+              { value: "left", label: "Left" },
+              { value: "center", label: "Centre" },
+              { value: "right", label: "Right" },
+            ]}
+            onChange={(notchPosition) => void update({ notchPosition })}
+          />
+        )}
+        {s.notchStyle === "notch" && (
+          <>
+            <Choice<SliverStyle>
+              name="sliver-style"
+              label="When resting"
+              value={s.sliverStyle}
+              options={[
+                { value: "glow", label: "Glow" },
+                { value: "subtle", label: "Subtle" },
+                { value: "hidden", label: "Invisible" },
+              ]}
+              onChange={(sliverStyle) => void update({ sliverStyle })}
+            />
+            <p className="setting-desc">
+              {s.sliverStyle === "hidden"
+                ? "Nothing shows until you hover the top edge or press the shortcut."
+                : s.sliverStyle === "subtle"
+                  ? "A faint line with no glow."
+                  : "A soft accent line that brightens when Wisp is working."}
+            </p>
+          </>
+        )}
         <Toggle
           id="close-on-blur"
           label="Close the bar when I click elsewhere"
-          description="Off keeps the bar open until you press Esc or the shortcut."
+          description="Esc or the shortcut always folds it."
           checked={s.closeOnBlur}
           onChange={(closeOnBlur) => void update({ closeOnBlur })}
+        />
+        <Toggle
+          id="fold-on-leave"
+          label="Fold away when the mouse leaves"
+          description="The bar folds itself up a moment after you move away, unless you're typing, recording or waiting on an answer."
+          checked={s.foldOnLeave}
+          onChange={(foldOnLeave) => void update({ foldOnLeave })}
         />
         <Toggle
           id="tucked"

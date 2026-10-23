@@ -1580,3 +1580,127 @@ select.input {
 .tab-order input[type="checkbox"] {
   accent-color: var(--color-accent);
 }
+
+/* ---------- Actions on a circled screen area ---------- */
+.capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.capture-actions .chip {
+  padding: 3px 9px;
+}
+
+/* ---------- How to fold the bar away ---------- */
+.bar-hint {
+  margin: 0;
+  padding: 2px 16px 8px;
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+  text-align: right;
+  user-select: none;
+}
+
+/* ---------- Floating ball ----------
+   Instead of a notch flush with the top edge, Wisp can rest as a small ball
+   in a corner of the screen. The peek and the bar then float as rounded
+   panels that open out of that corner (the window is placed by the host). */
+.ball {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin: auto;
+  border-radius: 50%;
+  background: var(--notch-bg);
+  --color-accent: var(--accent-on-dark);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.08),
+    0 0 10px -2px color-mix(in srgb, var(--accent-on-dark) 55%, transparent),
+    0 3px 8px rgb(0 0 0 / 0.35);
+  transition:
+    transform var(--duration-fast) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
+  animation: ball-in var(--duration-base) var(--ease);
+}
+.notch-idle:hover .ball,
+.notch-idle[data-state="listening"] .ball,
+.notch-idle[data-state="thinking"] .ball {
+  transform: scale(1.06);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.12),
+    0 0 14px 0 color-mix(in srgb, var(--accent-on-dark) 70%, transparent),
+    0 3px 8px rgb(0 0 0 / 0.35);
+}
+.notch-idle[data-style="ball"] {
+  align-items: center;
+}
+.notch-idle:focus-visible .ball {
+  outline: 2px solid var(--accent-on-dark);
+  outline-offset: 2px;
+}
+@keyframes ball-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+html[data-notch="ball"] .notch {
+  align-items: center;
+}
+html[data-notch="ball"] .notch.notch-mode-open {
+  align-items: flex-start;
+}
+html[data-notch="ball"] .peek::before,
+html[data-notch="ball"] .peek::after,
+html[data-notch="ball"] .bar-wrap::before,
+html[data-notch="ball"] .bar-wrap::after {
+  display: none;
+}
+html[data-notch="ball"] .peek {
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.06),
+    0 4px 10px -2px rgb(0 0 0 / 0.5);
+  animation-name: ball-panel-in;
+}
+html[data-notch="ball"] .bar-wrap {
+  width: calc(100% - 16px);
+  margin-top: 4px;
+  border-radius: 20px;
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.06),
+    0 10px 20px -8px rgb(0 0 0 / 0.55);
+  animation-name: ball-panel-in;
+}
+/* Panels grow out of the ball's corner. */
+html[data-notch="ball"][data-corner="top-left"] :is(.peek, .bar-wrap) {
+  transform-origin: top left;
+}
+html[data-notch="ball"][data-corner="top-right"] :is(.peek, .bar-wrap) {
+  transform-origin: top right;
+}
+html[data-notch="ball"][data-corner="bottom-left"] :is(.peek, .bar-wrap) {
+  transform-origin: bottom left;
+}
+html[data-notch="ball"][data-corner="bottom-right"] :is(.peek, .bar-wrap) {
+  transform-origin: bottom right;
+}
+@keyframes ball-panel-in {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ball,
+  html[data-notch="ball"] :is(.peek, .bar-wrap) {
+    animation: none;
+    transition: none;
+  }
+}
