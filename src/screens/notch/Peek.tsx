@@ -28,7 +28,7 @@ function useRunningJobs(): AgentJob[] {
         .then((j) => setJobs(j.filter((x) => x.status === "running")))
         .catch(() => {});
     load();
-    return host().onDataChanged((scope) => scope === "jobs" && load());
+    return host().onDataChanged((scope) => (scope === "jobs" || scope === "everything") && load());
   }, []);
   return jobs;
 }

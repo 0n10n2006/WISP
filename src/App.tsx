@@ -37,6 +37,15 @@ export function App() {
     root.style.setProperty("--accent-custom", accentColor);
   }, [accent, accentColor]);
 
+  // `--self-test` asks each window to run its part of the UI scenario.
+  useEffect(
+    () =>
+      host().onSelfTestRun(
+        (section) => void import("./lib/selftest").then((m) => m.runSelfTest(section)),
+      ),
+    [],
+  );
+
   // Pause decorative animation whenever Wisp isn't visible (PRD §22.1).
   useEffect(() => {
     const root = document.documentElement;
@@ -45,15 +54,19 @@ export function App() {
       else delete root.dataset.hidden;
     };
     document.addEventListener("visibilitychange", sync);
-    const off = host().onIslandVisibility((visible) => {
-      if (visible && !document.hidden) delete root.dataset.hidden;
-      else root.dataset.hidden = "true";
-    });
+    // Island visibility events reach every window; only the island pauses.
+    const off =
+      kind === "island"
+        ? host().onIslandVisibility((visible) => {
+            if (visible && !document.hidden) delete root.dataset.hidden;
+            else root.dataset.hidden = "true";
+          })
+        : () => {};
     return () => {
       document.removeEventListener("visibilitychange", sync);
       off();
     };
-  }, []);
+  }, [kind]);
 
   if (kind === "island") return <Notch />;
   return (

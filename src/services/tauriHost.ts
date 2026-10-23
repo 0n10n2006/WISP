@@ -16,11 +16,29 @@ import type {
   HoldEvent,
 } from "./types";
 
+/** Note a problem in the host's local error log (never throws). */
+function report(message: string): void {
+  void invoke("report_ui_error", { message: message.slice(0, 2000) }).catch(() => {});
+}
+
+/** Errors that are part of normal use and not worth logging. */
+const EXPECTED = new Set([
+  "cancelled",
+  "invalid",
+  "missing_key",
+  "rate_limited",
+  "quota_exhausted",
+  "unsupported",
+  "permission_denied",
+]);
+
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(cmd, args);
   } catch (e) {
-    throw toWispError(e);
+    const err = toWispError(e);
+    if (!EXPECTED.has(err.code)) report(`${cmd} failed: ${err.code}: ${err.message}`);
+    throw err;
   }
 }
 
@@ -128,7 +146,7 @@ export function createTauriHost(): Host {
 
     installedApps: () => call("installed_apps"),
     checkForUpdates: () => call("check_for_updates"),
-    uiReady: () => void invoke("ui_ready").catch(() => {}),
+    uiReady: () => void invoke("ui_ready").catch((e) => report(`ui_ready failed: ${String(e)}`)),
     onIslandVisibility: (cb) => subscribe<boolean>("wisp://visibility", cb),
 
     historyList: (limit) => call("history_list", { limit: limit ?? null }),
@@ -174,5 +192,11 @@ export function createTauriHost(): Host {
     openWindows: () => call("open_windows"),
     switchWindow: (id) => call("switch_window", { id }),
     screenStatus: () => call("screen_status"),
+
+    reportError: report,
+    onSelfTestRun: (cb) => subscribe<string>("wisp://selftest-run", cb),
+    selfTestProbe: () => call("selftest_probe"),
+    selfTestAction: (action) => call("selftest_action", { action }),
+    selfTestReport: (section, steps) => call("selftest_report", { section, steps }),
   };
 }

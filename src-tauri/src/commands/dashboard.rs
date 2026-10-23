@@ -235,7 +235,7 @@ pub async fn launch_item(
     match result {
         Ok(()) => {
             let _ = state.db.record_launch(&item.id);
-            audit(&state, "launch_app", &format!("Opened {name}"), "success");
+            audit(&state, "launch_app", &format!("Opened {name}"), "done");
             Ok(())
         }
         Err(e) => {
@@ -259,7 +259,7 @@ pub async fn power_action(app: AppHandle, action: PowerAction) -> CmdResult<()> 
         &app.state::<AppState>(),
         "power",
         action.label(),
-        if result.is_ok() { "success" } else { "failed" },
+        if result.is_ok() { "done" } else { "failed" },
     );
     result
 }

@@ -8,6 +8,7 @@
     "core:event:allow-unlisten",
     "allow-get-settings",
     "allow-ui-ready",
-    "allow-highlights-get"
+    "allow-highlights-get",
+    "allow-report-ui-error"
   ]
 }

@@ -359,6 +359,7 @@ pub async fn screenshot_here(app: &AppHandle) -> Result<Shot> {
 }
 
 pub const HIGHLIGHT: &str = "highlight";
+static HIGHLIGHT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Show me: point at the on-screen element that answers `question`.
 pub async fn show_me(app: &AppHandle, question: &str) -> Result<Vec<Highlight>> {
@@ -374,9 +375,18 @@ pub async fn show_me(app: &AppHandle, question: &str) -> Result<Vec<Highlight>> 
         return Ok(found);
     }
     *state.highlights.lock().expect("highlights") = found.clone();
+    // Replace an earlier highlight: wait until it's really gone, since a new
+    // window can't reuse the label while the old one still exists.
     if let Some(w) = app.get_webview_window(HIGHLIGHT) {
         let _ = w.close();
+        for _ in 0..40 {
+            if app.get_webview_window(HIGHLIGHT).is_none() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
     }
+    let generation = HIGHLIGHT_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     let win = WebviewWindowBuilder::new(
         app,
         HIGHLIGHT,
@@ -401,8 +411,11 @@ pub async fn show_me(app: &AppHandle, question: &str) -> Result<Vec<Highlight>> 
     let a = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(6)).await;
-        if let Some(w) = a.get_webview_window(HIGHLIGHT) {
-            let _ = w.close();
+        // Only close the highlight this call made, not a newer one.
+        if HIGHLIGHT_GEN.load(std::sync::atomic::Ordering::SeqCst) == generation {
+            if let Some(w) = a.get_webview_window(HIGHLIGHT) {
+                let _ = w.close();
+            }
         }
     });
     Ok(found)

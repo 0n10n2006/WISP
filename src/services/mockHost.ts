@@ -3,7 +3,7 @@
 // into a prompt to exercise error states.
 
 import type { WispError } from "./errors";
-import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
+import type { AskHandle, Host, SelfTestStep, Unsubscribe, WindowKind } from "./host";
 import { createFakeRecorder } from "./recorder";
 import {
   DEFAULT_SETTINGS,
@@ -200,7 +200,10 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     tucked: new Set<(t: boolean) => void>(),
     blur: new Set<() => void>(),
     hold: new Set<(e: HoldEvent) => void>(),
+    selfTest: new Set<(section: string) => void>(),
   };
+  const errors: string[] = [];
+  const selfTestReports: { section: string; steps: SelfTestStep[] }[] = [];
   let layout: IslandLayout = { mode: "sliver", expanded: false, height: 0 };
   const metrics = { modeCalls: 0, opens: 0 };
   const setLayout = (mode: NotchMode, height?: number) => {
@@ -425,6 +428,9 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
         listeners.focus.forEach((cb) => cb());
       },
       metrics,
+      errors,
+      selfTestReports,
+      runSelfTest: (section = "island") => listeners.selfTest.forEach((cb) => cb(section)),
       hold: (e: HoldEvent) => {
         if (e.phase === "start" && layout.mode !== "open") setLayout("peek");
         listeners.hold.forEach((cb) => cb(e));
@@ -1073,5 +1079,31 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       setLayout("sliver");
     },
     screenStatus: async () => "show",
+
+    reportError: (message) => {
+      errors.push(message);
+    },
+    onSelfTestRun: (cb) => on(listeners.selfTest, cb),
+    selfTestProbe: async () => ({
+      mode: layout.mode,
+      visible: true,
+      x: 0,
+      y: 0,
+      width: layout.mode === "open" ? 680 : layout.mode === "peek" ? 400 : 180,
+      height: layout.mode === "open" ? 360 : layout.mode === "peek" ? 58 : 10,
+      settingsOpen: false,
+      overlays: 0,
+      focused: layout.mode === "open",
+    }),
+    selfTestAction: async (action) => {
+      if (action === "summon") {
+        setLayout("open");
+        listeners.focus.forEach((cb) => cb());
+      }
+      if (action === "close") setLayout("sliver");
+    },
+    selfTestReport: async (section, steps) => {
+      selfTestReports.push({ section, steps });
+    },
   };
 }

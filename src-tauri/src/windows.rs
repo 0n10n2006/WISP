@@ -130,13 +130,17 @@ pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> Island
             (OPEN_WIDTH, layout.height)
         }
     };
-    let monitor = {
-        let mut cached = OPEN_MONITOR.lock().expect("monitor");
-        let staying_open = mode == NotchMode::Open && before.mode == NotchMode::Open;
-        if !staying_open || cached.is_none() {
-            *cached = target_monitor(&win);
+    // Never hold a lock across a window call: off the main thread those calls
+    // wait for the main thread, which may itself be waiting for the lock.
+    let staying_open = mode == NotchMode::Open && before.mode == NotchMode::Open;
+    let cached = *OPEN_MONITOR.lock().expect("monitor");
+    let monitor = match cached {
+        Some(m) if staying_open => Some(m),
+        _ => {
+            let m = target_monitor(&win);
+            *OPEN_MONITOR.lock().expect("monitor") = m;
+            m
         }
-        *cached
     };
     if let Some(m) = monitor {
         // Never taller than 85% of the screen.
@@ -148,22 +152,32 @@ pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> Island
             settings.island_scale as f64,
             settings.notch_position,
         );
-        let mut last = LAST_RECT.lock().expect("rect");
-        let (moved, resized) = rect_changes(*last, rect);
-        // Resize before moving so the window never pokes past the screen edge.
-        if resized {
-            let _ = win.set_size(Size::Physical(PhysicalSize::new(rect.2, rect.3)));
-        }
+        let (moved, resized) = {
+            let mut last = LAST_RECT.lock().expect("rect");
+            let changes = rect_changes(*last, rect);
+            *last = Some(rect);
+            changes
+        };
+        // Move first, then size: moving onto a monitor with another scale
+        // makes Windows rescale the window, so the size must come last.
         if moved {
             let _ = win.set_position(Position::Physical(PhysicalPosition::new(rect.0, rect.1)));
         }
-        *last = Some(rect);
+        if resized || moved {
+            let _ = win.set_size(Size::Physical(PhysicalSize::new(rect.2, rect.3)));
+        }
     }
     *state.island.lock().expect("island") = layout;
     if layout.mode != before.mode || (layout.height - before.height).abs() > 0.5 {
         let _ = app.emit_to(ISLAND, "wisp://layout", layout);
     }
     layout
+}
+
+/// Forget the cached rect (e.g. after Windows rescaled the window), so the
+/// next layout is applied in full.
+pub fn forget_rect() {
+    *LAST_RECT.lock().expect("rect") = None;
 }
 
 /// Backwards-compatible helper: open the bar or return to the sliver.
@@ -268,15 +282,23 @@ pub fn open_settings(app: &AppHandle, tab: Option<String>) {
         ),
         None => "index.html".to_string(),
     };
-    if let Ok(win) = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(url.into()))
-        .title("Wisp Settings")
-        .inner_size(880.0, 660.0)
-        .min_inner_size(640.0, 480.0)
-        .center()
-        .build()
-    {
-        crate::chrome::apply_theme(&win, theme);
-    }
+    // Build off the main thread: on Windows, creating a webview from a sync
+    // command or an event handler deadlocks WebView2 (and with it all IPC).
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if app.get_webview_window(SETTINGS).is_some() {
+            return;
+        }
+        if let Ok(win) = WebviewWindowBuilder::new(&app, SETTINGS, WebviewUrl::App(url.into()))
+            .title("Wisp Settings")
+            .inner_size(880.0, 660.0)
+            .min_inner_size(640.0, 480.0)
+            .center()
+            .build()
+        {
+            crate::chrome::apply_theme(&win, theme);
+        }
+    });
 }
 
 #[cfg(test)]

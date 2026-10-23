@@ -11,6 +11,7 @@
     "allow-capture-preview",
     "allow-capture-select",
     "allow-capture-select-lasso",
-    "allow-capture-cancel"
+    "allow-capture-cancel",
+    "allow-report-ui-error"
   ]
 }

@@ -41,6 +41,8 @@ let recorder: AudioRecorder | null = null;
 let autoStop: ReturnType<typeof setTimeout> | null = null;
 /** Incremented on cancel so late transcription results are ignored. */
 let generation = 0;
+/** Stop asked for while the microphone was still opening (a quick tap). */
+let stopWhenReady: { autoInsert?: boolean } | null = null;
 
 const setListening = (v: boolean) => useActivity.getState().setListening(v);
 
@@ -57,12 +59,15 @@ export const useDictation = create<DictationState>((set, get) => ({
   async start(hold = false) {
     if (get().phase === "starting" || get().phase === "listening") return;
     generation += 1;
+    const gen = generation;
+    stopWhenReady = null;
     set({ phase: "starting", transcript: "", error: null, level: 0 });
     host()
       .dictationTarget()
       .then((target) => set({ target }))
       .catch(() => set({ target: { available: false, title: null } }));
-    recorder = host().createRecorder();
+    const rec = host().createRecorder();
+    recorder = rec;
     try {
       const options = recorderOptions(
         !hold,
@@ -73,10 +78,16 @@ export const useDictation = create<DictationState>((set, get) => ({
         },
       );
       set({ handsFree: !!options.vad });
-      await recorder.start((level) => set({ level }), options);
+      await rec.start((level) => set({ level }), options);
     } catch (e) {
-      recorder = null;
-      set({ phase: "error", error: toWispError(e) });
+      if (recorder === rec) recorder = null;
+      // Cancelled while the microphone was opening: nothing to report.
+      if (gen === generation) set({ phase: "error", error: toWispError(e) });
+      return;
+    }
+    if (gen !== generation || recorder !== rec) {
+      // Cancelled (or restarted) while the microphone was opening.
+      rec.cancel();
       return;
     }
     setListening(true);
@@ -85,9 +96,19 @@ export const useDictation = create<DictationState>((set, get) => ({
       toast("Stopped after 2 minutes", "neutral");
       void get().stop();
     }, MAX_DICTATION_MS);
+    if (stopWhenReady) {
+      const { autoInsert } = stopWhenReady;
+      stopWhenReady = null;
+      await get().stop(autoInsert);
+    }
   },
 
   async stop(autoInsert) {
+    if (get().phase === "starting") {
+      // Released before the microphone was ready: stop as soon as it is.
+      stopWhenReady = { autoInsert };
+      return;
+    }
     if (get().phase !== "listening" || !recorder) return;
     if (autoStop) clearTimeout(autoStop);
     const rec = recorder;
@@ -121,6 +142,7 @@ export const useDictation = create<DictationState>((set, get) => ({
 
   cancel() {
     generation += 1;
+    stopWhenReady = null;
     if (autoStop) clearTimeout(autoStop);
     recorder?.cancel();
     recorder = null;

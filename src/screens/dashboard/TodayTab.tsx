@@ -330,7 +330,7 @@ export default function TodayTab() {
         .then(setTasks)
         .catch(() => {});
     load();
-    return host().onDataChanged((s) => s === "tasks" && load());
+    return host().onDataChanged((s) => (s === "tasks" || s === "everything") && load());
   }, []);
   const week = useMemo(() => weekFrom(now), [now]);
   return (

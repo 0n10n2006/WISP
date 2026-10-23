@@ -89,6 +89,10 @@
     "allow-foreground-app",
     "allow-open-windows",
     "allow-switch-window",
-    "allow-screen-status"
+    "allow-screen-status",
+    "allow-report-ui-error",
+    "allow-selftest-probe",
+    "allow-selftest-action",
+    "allow-selftest-report"
   ]
 }

@@ -52,14 +52,19 @@ pub fn evaluate(app: &AppHandle) {
         changed
     };
     let prev = std::mem::replace(&mut *state.cover.lock().expect("cover"), cover);
-    let open = state.island.lock().expect("island").mode == NotchMode::Open;
     if changed {
-        if hidden && open && game {
-            // A game took the foreground while the bar was open: get out of the way.
-            windows::close_bar(app);
-        } else if !open {
-            windows::set_island_visible(app, windows::sliver_wanted(app));
-        }
+        // Decide on the main thread, where the bar opens and closes, so the
+        // mode can't change between reading it and showing/hiding the window.
+        let a = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let open = a.state::<AppState>().island.lock().expect("island").mode == NotchMode::Open;
+            if hidden && open && game {
+                // A game took the foreground while the bar was open: get out of the way.
+                windows::close_bar(&a);
+            } else if !open {
+                windows::set_island_visible(&a, windows::sliver_wanted(&a));
+            }
+        });
     }
     if prev != cover {
         let _ = app.emit_to(windows::ISLAND, "wisp://cover", cover);

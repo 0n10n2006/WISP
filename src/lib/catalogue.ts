@@ -19,7 +19,11 @@ function load(force = false, rescan = false): Promise<Catalogue> {
         listeners.forEach((l) => l(c));
         return c;
       })
-      .catch(() => cache ?? { items: [], recent: [] });
+      .catch(() => {
+        // Let the next request try again instead of keeping the failure.
+        pending = null;
+        return cache ?? { items: [], recent: [] };
+      });
   }
   return pending;
 }

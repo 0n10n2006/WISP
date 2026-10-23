@@ -40,12 +40,10 @@ pub fn register_all(app: &AppHandle, shortcuts: &Shortcuts) -> Vec<ShortcutIssue
 pub fn set_game_mode(app: &AppHandle, game: bool) {
     let state = app.state::<AppState>();
     let s = state.settings();
-    if s.shortcuts_in_games {
-        return;
-    }
+    let release = game && !s.shortcuts_in_games;
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if game {
+        if release {
             let _ = app2.global_shortcut().unregister_all();
         } else {
             register_all(&app2, &s.global_shortcuts);

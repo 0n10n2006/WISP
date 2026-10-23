@@ -265,7 +265,19 @@ export const useConversation = create<ConversationState>((set, get) => ({
         ),
       })),
     }));
-    void host().respondAction(confirmId, approved);
+    void host()
+      .respondAction(confirmId, approved)
+      .catch(() => {
+        // The host no longer knows this request (it expired): say so.
+        set((s) => ({
+          messages: s.messages.map((m) => ({
+            ...m,
+            actions: m.actions?.map((a) =>
+              a.status === "pending" && !a.confirmId ? { ...a, status: "failed" } : a,
+            ),
+          })),
+        }));
+      });
   },
 
   dismissError: () => set({ error: null }),

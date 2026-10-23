@@ -20,6 +20,8 @@ pub struct DiagnosticsReport {
     pub shortcut_issues: Vec<String>,
     pub recent_requests: Vec<serde_json::Value>,
     pub recent_actions: Vec<serde_json::Value>,
+    /// Newest entries of the local error log (already redacted).
+    pub recent_errors: Vec<String>,
 }
 
 pub struct DiagnosticsInput<'a> {
@@ -30,6 +32,7 @@ pub struct DiagnosticsInput<'a> {
     pub shortcut_issues: Vec<String>,
     pub requests: &'a [RequestLog],
     pub actions: &'a [ActionAudit],
+    pub recent_errors: Vec<String>,
 }
 
 /// Settings copied into the report as they are: switches and choices only.
@@ -171,6 +174,7 @@ pub fn build(input: DiagnosticsInput) -> DiagnosticsReport {
                 })
             })
             .collect(),
+        recent_errors: input.recent_errors.iter().map(|e| redact(e)).collect(),
     }
 }
 
@@ -194,6 +198,7 @@ mod tests {
             shortcut_issues: vec!["key=abc failed".into()],
             requests: &[r],
             actions: &[a],
+            recent_errors: vec![],
         });
         let json = serde_json::to_string(&report).unwrap();
         assert!(!json.contains("secret"));
@@ -218,6 +223,7 @@ mod tests {
             shortcut_issues: vec![],
             requests: &[],
             actions: &[],
+            recent_errors: vec![],
         });
         let json = serde_json::to_string(&report).unwrap();
         assert!(!json.to_lowercase().contains("alexandra"));
