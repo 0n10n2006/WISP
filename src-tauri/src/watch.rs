@@ -79,14 +79,16 @@ pub fn spawn(app: AppHandle) {
         let mut last_light = crate::system_theme::get().system_light;
         let mut tick: u64 = 0;
         loop {
-            // Wake immediately on a foreground change, else poll every second.
-            let _ = tokio::time::timeout(Duration::from_secs(1), wake.notified()).await;
+            // Wake immediately on a foreground change. On Windows the hook
+            // catches every change, so the fallback poll can be lazy.
+            let fallback = if cfg!(windows) { 3 } else { 1 };
+            let _ = tokio::time::timeout(Duration::from_secs(fallback), wake.notified()).await;
             // Let the new window settle (fullscreen transitions take a frame).
             tokio::time::sleep(Duration::from_millis(60)).await;
             tick += 1;
             evaluate(&app);
             // The taskbar theme rarely changes; check it every few seconds.
-            if !tick.is_multiple_of(5) {
+            if !tick.is_multiple_of(if cfg!(windows) { 3 } else { 5 }) {
                 continue;
             }
             let light = crate::system_theme::get().system_light;

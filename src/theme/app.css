@@ -845,9 +845,30 @@ select {
 }
 
 /* ---------- Select-to-Ask overlay ---------- */
+/* Transparent until the frozen screen is painted, so the window can never
+   flash a blank frame; the dimming and toolbar then fade in. */
+html[data-window="overlay"],
 html[data-window="overlay"] body {
-  background: #000;
+  background: transparent;
   overflow: hidden;
+}
+.overlay:not(.overlay-ready) > * {
+  visibility: hidden;
+}
+.overlay-ready .overlay-dim,
+.overlay-ready .overlay-bar {
+  animation: overlay-in 160ms var(--ease) both;
+}
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay-ready .overlay-dim,
+  .overlay-ready .overlay-bar {
+    animation: none;
+  }
 }
 .overlay {
   position: fixed;

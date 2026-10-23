@@ -93,6 +93,8 @@
     "allow-report-ui-error",
     "allow-selftest-probe",
     "allow-selftest-action",
-    "allow-selftest-report"
+    "allow-selftest-report",
+    "allow-pause-shortcuts",
+    "allow-capture-overlay-ready"
   ]
 }

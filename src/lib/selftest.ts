@@ -214,8 +214,10 @@ async function island(): Promise<SelfTestStep[]> {
       if (!shown.ok) fail("no capture overlay appeared");
       if (!gone.ok) fail("the capture overlay didn't close");
       await h.selfTestAction("close");
+      return "overlay shown once its screen was painted, then put away";
     },
-    true,
+    // Headless Linux test displays may not allow screen capture; Windows must.
+    !navigator.userAgent.includes("Windows"),
   );
 
   await run.step("back-to-sliver", async () => {

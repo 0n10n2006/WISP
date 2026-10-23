@@ -72,6 +72,9 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
         }
     }
     crate::hotkeys::set_enabled(new.hold_to_talk && new.voice_enabled);
+    if old.hold_dictate != new.hold_dictate || old.hold_ask != new.hold_ask {
+        crate::hotkeys::configure(&new.hold_dictate, &new.hold_ask);
+    }
     if old.theme != new.theme {
         if let Some(win) = app.get_webview_window(windows::SETTINGS) {
             crate::chrome::apply_theme(&win, new.theme);
@@ -84,6 +87,7 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             windows::set_island_visible(app, windows::sliver_wanted(app));
         }
         let _ = app.emit("wisp://tucked", new.tucked);
+        crate::tray::sync_notch(!new.tucked);
     }
     let game = app
         .state::<AppState>()
@@ -204,4 +208,10 @@ pub fn register_shortcuts(app: AppHandle) -> Vec<ShortcutIssue> {
 #[tauri::command]
 pub fn validate_shortcut(accelerator: String) -> CmdResult<String> {
     wisp_core::shortcuts::normalize(&accelerator)
+}
+
+/// Settings is recording a new shortcut (true) or finished (false).
+#[tauri::command]
+pub fn pause_shortcuts(app: AppHandle, paused: bool) {
+    shortcuts::pause_for_recording(&app, paused);
 }

@@ -104,7 +104,12 @@ export interface Host {
   /** Select to Ask. */
   startCapture(): Promise<void>;
   overlayMonitor(): number;
+  /** URL of the frozen screen for this overlay (an object URL on Tauri). */
   capturePreview(monitor: number): Promise<string>;
+  /** The overlay painted its frozen screen; the host shows it. */
+  captureOverlayReady(): void;
+  /** A new capture reuses this (hidden) overlay. */
+  onCaptureSession(cb: () => void): Unsubscribe;
   captureSelect(monitor: number, rect: SelectionRect): Promise<void>;
   captureSelectLasso(
     monitor: number,
@@ -210,6 +215,8 @@ export interface Host {
   /** Why the notch is hidden right now. */
   screenStatus(): Promise<Cover>;
 
+  /** Release Wisp's shortcuts while the user records a new one. */
+  pauseShortcuts(paused: boolean): void;
   /** Keep a redacted note of a script error or failed call in the local log. */
   reportError(message: string): void;
   /** `--self-test`: the host asks this window to run its UI scenario. */

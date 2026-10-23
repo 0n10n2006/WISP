@@ -145,6 +145,10 @@ pub struct Settings {
     pub dictation_style: DictationStyle,
     /// Hold Ctrl+Win to dictate and Win+Alt to ask by voice.
     pub hold_to_talk: bool,
+    /// Modifier pair held to dictate, e.g. "ctrl+win" (or "off").
+    pub hold_dictate: String,
+    /// Modifier pair held to ask by voice, e.g. "win+alt" (or "off").
+    pub hold_ask: String,
     /// Hide the notch while a fullscreen app (game, video) is in front.
     pub auto_hide_fullscreen: bool,
     /// The notch is tucked away until summoned.
@@ -189,6 +193,9 @@ pub struct Settings {
     pub app_awareness: bool,
     /// Include window titles in that context (they can contain document names).
     pub share_window_titles: bool,
+    /// Forget history (requests, actions, clipboard) whenever Wisp closes
+    /// or Windows shuts down.
+    pub clear_history_on_exit: bool,
     pub screen_context_enabled: bool,
     pub dictation_auto_insert: bool,
     pub retain_audio: bool,
@@ -229,6 +236,8 @@ impl Default for Settings {
             fast_mode: true,
             dictation_style: DictationStyle::Clean,
             hold_to_talk: true,
+            hold_dictate: "ctrl+win".into(),
+            hold_ask: "win+alt".into(),
             auto_hide_fullscreen: true,
             tucked: false,
             clipboard_history: false,
@@ -253,6 +262,7 @@ impl Default for Settings {
             never_over_apps: Vec::new(),
             app_awareness: true,
             share_window_titles: false,
+            clear_history_on_exit: false,
             screen_context_enabled: true,
             dictation_auto_insert: false,
             retain_audio: false,
@@ -332,6 +342,18 @@ impl Settings {
             .retain(|t| DASHBOARD_TABS.contains(&t.as_str()) && seen.insert(t.clone()));
         if s.dashboard_tabs.is_empty() {
             return Err(WispError::invalid("Keep at least one dashboard tab"));
+        }
+        s.hold_dictate = s.hold_dictate.trim().to_ascii_lowercase();
+        s.hold_ask = s.hold_ask.trim().to_ascii_lowercase();
+        if crate::hold::parse_chord(&s.hold_dictate).is_none()
+            || crate::hold::parse_chord(&s.hold_ask).is_none()
+        {
+            return Err(WispError::invalid("Choose a hold key pair from the list"));
+        }
+        if s.hold_dictate != "off" && s.hold_dictate == s.hold_ask {
+            return Err(WispError::invalid(
+                "Dictation and asking need different hold keys",
+            ));
         }
         if !(500..=4000).contains(&s.silence_ms) {
             return Err(WispError::invalid(
@@ -620,6 +642,8 @@ mod tests {
         assert_eq!(s.never_over_apps, vec!["obs64", "photoshop"]);
 
         for bad in [
+            json!({"holdDictate": "ctrl+x"}),
+            json!({"holdDictate": "win+alt"}),
             json!({"accentColor": "red"}),
             json!({"dashboardTabs": ["bogus"]}),
             json!({"silenceMs": 100}),

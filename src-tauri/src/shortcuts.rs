@@ -35,6 +35,22 @@ pub fn register_all(app: &AppHandle, shortcuts: &Shortcuts) -> Vec<ShortcutIssue
     issues
 }
 
+/// While the user records a new shortcut in Settings, Wisp's own
+/// combinations and the hold keys are released, so pressing a combination
+/// records it instead of triggering it.
+pub fn pause_for_recording(app: &AppHandle, recording: bool) {
+    crate::hotkeys::set_recording(recording);
+    if recording {
+        let _ = app.global_shortcut().unregister_all();
+    } else {
+        let game = app
+            .state::<AppState>()
+            .game_active
+            .load(std::sync::atomic::Ordering::SeqCst);
+        set_game_mode(app, game);
+    }
+}
+
 /// Release Wisp's key combinations while a game is in front (so the game
 /// gets them), and take them back afterwards.
 pub fn set_game_mode(app: &AppHandle, game: bool) {

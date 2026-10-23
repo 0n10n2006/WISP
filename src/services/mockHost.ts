@@ -699,6 +699,8 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       if (points.length < 3) throw err("invalid", "Draw around the area you want to ask about");
     },
     captureCancel: async () => {},
+    captureOverlayReady: () => {},
+    onCaptureSession: () => () => {},
     showMe: async (question) => {
       if (!hasKey)
         throw err("missing_key", "Add your Gemini API key in Settings → Model to ask Wisp.");
@@ -1082,6 +1084,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     },
     screenStatus: async () => "show",
 
+    pauseShortcuts: () => {},
     reportError: (message) => {
       errors.push(message);
     },

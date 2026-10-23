@@ -112,10 +112,11 @@ pub fn probe(app: &AppHandle) -> Probe {
         width,
         height,
         settings_open: app.get_webview_window(windows::SETTINGS).is_some(),
+        // Overlays stay loaded (hidden) between captures: count shown ones.
         overlays: app
             .webview_windows()
-            .keys()
-            .filter(|l| l.starts_with("overlay-"))
+            .iter()
+            .filter(|(l, w)| l.starts_with("overlay-") && w.is_visible().unwrap_or(false))
             .count(),
         focused: win
             .as_ref()

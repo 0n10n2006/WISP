@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DictationStyle } from "../../services/types";
+import { chordLabel, type DictationStyle } from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { Choice, Toggle } from "./common";
 
@@ -89,9 +89,19 @@ export function VoiceTab() {
           label="Hold-to-talk keys"
           description={
             <>
-              Hold <kbd>Ctrl</kbd>+<kbd>Win</kbd> to dictate into any app and release to type it in.
-              Hold <kbd>Win</kbd>+<kbd>Alt</kbd> to ask by voice. Pressing any other key while
-              holding them keeps your normal Windows shortcuts working.
+              {s.holdDictate !== "off" && (
+                <>
+                  Hold <kbd>{chordLabel(s.holdDictate)}</kbd> to dictate into any app and release to
+                  type it in.{" "}
+                </>
+              )}
+              {s.holdAsk !== "off" && (
+                <>
+                  Hold <kbd>{chordLabel(s.holdAsk)}</kbd> to ask by voice.{" "}
+                </>
+              )}
+              Pressing any other key while holding them keeps your normal Windows shortcuts working.
+              Change the keys in Shortcuts.
             </>
           }
           checked={s.holdToTalk}

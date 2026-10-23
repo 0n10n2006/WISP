@@ -75,7 +75,10 @@ pub fn spawn(app: AppHandle) {
         let mut last_text: Option<String> = None;
         let mut was_enabled = false;
         loop {
-            tokio::time::sleep(Duration::from_millis(800)).await;
+            // Off (the default): just check now and then whether it was
+            // turned on, instead of waking up every 0.8 s for nothing.
+            let pause = if was_enabled { 800 } else { 3000 };
+            tokio::time::sleep(Duration::from_millis(pause)).await;
             let state = app.state::<AppState>();
             let enabled = state.settings.lock().expect("settings").clipboard_history;
             if !enabled {

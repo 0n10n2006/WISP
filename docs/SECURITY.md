@@ -109,6 +109,12 @@ code; if you change one of the boundaries below, update this file in the same ch
 - Wallpaper paths must be on a local drive (no network or device paths, checked before the file is touched, and
   again after resolving links), and the UI can't change the list of wallpapers Wisp trusts.
 
+## Clear history on exit
+
+- Optional (off by default). When Wisp quits or Windows ends the session (Tauri's exit event, which tao raises on
+  `WM_ENDSESSION`), request history, the action log and unpinned clipboard history are deleted with
+  `secure_delete` on. If Wisp didn't exit cleanly (crash, power loss), the same happens at the next start.
+
 ## Error log
 
 - Script errors, failed host calls and failed window changes are written to `logs\errors.log` in Wisp's data

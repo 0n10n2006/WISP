@@ -236,6 +236,10 @@ export function parseCommand(input: string): CommandResult[] {
     });
   if (l === "settings" || l === "preferences")
     add("settings", "Open Wisp settings", "Wisp", { type: "settings" });
+  if (/^(shortcuts?|hotkeys?|keyboard shortcuts?|change shortcuts?)$/.test(l))
+    add("settings-shortcuts", "Change shortcuts", "Wisp", { type: "settings", tab: "shortcuts" });
+  if (/^(hide|show|toggle) (the )?notch$/.test(l))
+    add("tuck-notch", "Show or hide the notch", "Wisp", { type: "settings", tab: "general" });
   if (l === "privacy")
     add("settings-privacy", "Privacy settings", "Wisp", { type: "settings", tab: "privacy" });
 

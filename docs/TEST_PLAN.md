@@ -43,6 +43,14 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Polish (v0.2.5)
+
+- [ ] `Ctrl+Shift+S` on one and two monitors: the screen doesn't flash; the frozen screen appears identical to the live one and only the dimming fades in. A second capture right after opens instantly.
+- [ ] Settings → General → Show the notch off: the glow disappears; the tray's "Show notch" tick follows; shortcuts still open the bar.
+- [ ] Settings → Shortcuts: record `Ctrl+Alt+Space` again for "Open the command bar" — the bar doesn't open while recording. Change "Hold to dictate" to Ctrl+Alt and confirm it works and Ctrl+Win no longer does.
+- [ ] Hover the notch and move away: the peek folds within about a tenth of a second.
+- [ ] Settings → Privacy → Clear history when Wisp closes: ask something, quit from the tray, reopen — History is empty; reminders and memory remain. Same after a Windows restart.
+
 ### Security (v0.2.3)
 
 - [ ] Ask "copy hello to my clipboard" and "remind me to stretch in 5 minutes": both now ask first and show the text and time.

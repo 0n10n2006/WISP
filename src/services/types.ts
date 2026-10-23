@@ -35,8 +35,12 @@ export interface Settings {
   /** Skip the model's thinking step for much faster answers. */
   fastMode: boolean;
   dictationStyle: DictationStyle;
-  /** Hold Ctrl+Win to dictate, Win+Alt to ask by voice. */
+  /** Hold Ctrl+Win to dictate, Win+Alt to ask by voice (keys configurable). */
   holdToTalk: boolean;
+  /** Modifier pair held to dictate, e.g. "ctrl+win", or "off". */
+  holdDictate: HoldChord;
+  /** Modifier pair held to ask by voice, e.g. "win+alt", or "off". */
+  holdAsk: HoldChord;
   autoHideFullscreen: boolean;
   tucked: boolean;
   clipboardHistory: boolean;
@@ -69,6 +73,8 @@ export interface Settings {
   neverOverApps: string[];
   appAwareness: boolean;
   shareWindowTitles: boolean;
+  /** Forget history whenever Wisp closes or Windows shuts down. */
+  clearHistoryOnExit: boolean;
   screenContextEnabled: boolean;
   dictationAutoInsert: boolean;
   retainAudio: boolean;
@@ -78,6 +84,28 @@ export interface Settings {
   notificationsEnabled: boolean;
   telemetryOptIn: boolean;
   allowedApps: AllowedApp[];
+}
+
+export type HoldChord =
+  "ctrl+win" | "win+alt" | "ctrl+alt" | "ctrl+shift" | "alt+shift" | "win+shift" | "off";
+
+export const HOLD_CHOICES: HoldChord[] = [
+  "ctrl+win",
+  "win+alt",
+  "ctrl+alt",
+  "ctrl+shift",
+  "alt+shift",
+  "win+shift",
+  "off",
+];
+
+/** "ctrl+win" → "Ctrl+Win". */
+export function chordLabel(c: HoldChord): string {
+  if (c === "off") return "Off";
+  return c
+    .split("+")
+    .map((p) => p[0]!.toUpperCase() + p.slice(1))
+    .join("+");
 }
 
 export type DictationStyle = "verbatim" | "clean" | "formal";
@@ -209,6 +237,8 @@ export const DEFAULT_SETTINGS: Settings = {
   fastMode: true,
   dictationStyle: "clean",
   holdToTalk: true,
+  holdDictate: "ctrl+win",
+  holdAsk: "win+alt",
   autoHideFullscreen: true,
   tucked: false,
   clipboardHistory: false,
@@ -242,6 +272,7 @@ export const DEFAULT_SETTINGS: Settings = {
   neverOverApps: [],
   appAwareness: true,
   shareWindowTitles: false,
+  clearHistoryOnExit: false,
   screenContextEnabled: true,
   dictationAutoInsert: false,
   retainAudio: false,

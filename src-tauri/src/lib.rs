@@ -143,6 +143,12 @@ pub fn run() {
             clipboard_history::spawn(handle.clone());
             hotkeys::set_enabled(settings.hold_to_talk && settings.voice_enabled);
             hotkeys::install(handle.clone());
+            hotkeys::configure(&settings.hold_dictate, &settings.hold_ask);
+            // Last session ended without a clean exit (crash, power cut):
+            // still honour "clear history when Wisp closes".
+            if settings.clear_history_on_exit {
+                clear_history(&handle);
+            }
             // Housekeeping that doesn't need to delay the notch appearing.
             let warm = handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -176,9 +182,24 @@ pub fn run() {
             // crash) ends the capture, so the next one can start and the
             // notch comes back.
             if let WindowEvent::Destroyed = e {
-                if win.label().starts_with("overlay-") {
+                // Settings closed mid-recording: give the shortcuts back.
+                if win.label() == windows::SETTINGS && hotkeys::RECORDING.load(std::sync::atomic::Ordering::SeqCst) {
+                    shortcuts::pause_for_recording(win.app_handle(), false);
+                }
+                if let Some(i) = win
+                    .label()
+                    .strip_prefix("overlay-")
+                    .and_then(|n| n.parse::<usize>().ok())
+                {
                     let app = win.app_handle();
-                    let active = app.state::<AppState>().capture.lock().expect("capture").is_some();
+                    // Only an overlay of the running capture ends it.
+                    let active = app
+                        .state::<AppState>()
+                        .capture
+                        .lock()
+                        .expect("capture")
+                        .as_ref()
+                        .is_some_and(|s| i < s.monitors.len());
                     if active {
                         capture::cancel(app);
                     }
@@ -210,6 +231,7 @@ pub fn run() {
             commands::capture::capture_preview,
             commands::capture::capture_select,
             commands::capture::capture_cancel,
+            commands::capture::capture_overlay_ready,
             commands::capture::capture_select_lasso,
             commands::capture::show_me,
             commands::capture::highlights_get,
@@ -230,6 +252,7 @@ pub fn run() {
             commands::system::installed_apps,
             commands::system::check_for_updates,
             commands::system::ui_ready,
+            commands::settings::pause_shortcuts,
             commands::system::report_ui_error,
             selftest::selftest_probe,
             selftest::selftest_action,
@@ -275,8 +298,29 @@ pub fn run() {
             commands::dashboard::switch_window,
             commands::dashboard::screen_status,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Wisp");
+        .build(tauri::generate_context!())
+        .expect("error while building Wisp")
+        // Quitting from the tray and Windows shutting down both end here.
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if app
+                    .try_state::<AppState>()
+                    .is_some_and(|s| s.settings().clear_history_on_exit)
+                {
+                    clear_history(app);
+                }
+            }
+        });
+}
+
+/// "Clear history when Wisp closes": request and action history and
+/// unpinned clipboard history. Reminders, memory and settings are kept.
+fn clear_history(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let state = app.state::<AppState>();
+    let _ = state.db.clear_requests();
+    let _ = state.db.clear_actions();
+    let _ = state.db.clear_clips(false);
 }
 
 /// Apply the history retention period to stored history and kept audio.
