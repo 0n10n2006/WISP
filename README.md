@@ -20,18 +20,19 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 
 ## Status
 
-| Milestone                                                                  | State |
-| -------------------------------------------------------------------------- | ----- |
-| v0.1: PRD v1.1 complete (island, Gemini, Select to Ask, dictation, voice…) | ✅    |
-| v0.2 "Notch": new brand and installer art                                  | ✅    |
-| v0.2: notch (sliver/peek/bar), command bar, fullscreen auto-hide, tuck     | ✅    |
-| v0.2: dashboard (Today, Controls, Stats, Clipboard, Apps, Agents, …)       | ✅    |
-| v0.2: hold-to-talk, circle to ask, dictation clean-up, Show me             | ✅    |
-| v0.2: web answers with sources, fast mode, personality, agents             | ✅    |
-| Text-to-speech removed                                                     | ✅    |
-| v0.2.2: game-safe, app-aware, hands-free voice, deeper customisation       | ✅    |
-| v0.2.3: security hardening (see docs/SECURITY.md)                          | ✅    |
-| v0.2.4: notch opens again; real end-to-end UI test in CI                   | ✅    |
+| Milestone                                                                             | State |
+| ------------------------------------------------------------------------------------- | ----- |
+| v0.1: PRD v1.1 complete (island, Gemini, Select to Ask, dictation, voice…)            | ✅    |
+| v0.2 "Notch": new brand and installer art                                             | ✅    |
+| v0.2: notch (sliver/peek/bar), command bar, fullscreen auto-hide, tuck                | ✅    |
+| v0.2: dashboard (Today, Controls, Stats, Clipboard, Apps, Agents, …)                  | ✅    |
+| v0.2: hold-to-talk, circle to ask, dictation clean-up, Show me                        | ✅    |
+| v0.2: web answers with sources, fast mode, personality, agents                        | ✅    |
+| Text-to-speech removed                                                                | ✅    |
+| v0.2.2: game-safe, app-aware, hands-free voice, deeper customisation                  | ✅    |
+| v0.2.3: security hardening (see docs/SECURITY.md)                                     | ✅    |
+| v0.2.4: notch opens again; real end-to-end UI test in CI                              | ✅    |
+| v0.2.5: seamless screen select, notch on/off, custom hold keys, clear history on exit | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -142,7 +143,9 @@ test downloads from `speed.cloudflare.com` only when you press the button. Agent
 | **Hold** to dictate into any app     | `Ctrl+Win` (release to insert) |
 | **Hold** to ask by voice             | `Win+Alt` (release to ask)     |
 
-Change them in **Settings → Shortcuts**; turn hold-to-talk off in **Settings → Voice & dictation**. The hold
+Change them in **Settings → Shortcuts** (or type `shortcuts` in the bar): click a shortcut and press the new
+keys; Wisp's own shortcuts pause while you do. The hold keys can be any two of Ctrl, Alt, Shift and Win (or
+off), also in **Settings → Shortcuts**; turn hold-to-talk off in **Settings → Voice & dictation**. The hold
 keys are watched by a keyboard hook that only looks at modifier keys and never blocks or records typing. If you
 press any other key while holding them, they act as normal Windows shortcuts (e.g. `Ctrl+Win+D`).
 

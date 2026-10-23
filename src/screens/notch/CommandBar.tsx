@@ -12,7 +12,7 @@ import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
 import { useVoice } from "../../state/voice";
-import type { OpenWindow } from "../../services/types";
+import { chordLabel, type HoldChord, type OpenWindow } from "../../services/types";
 import { runResult } from "./actions";
 
 export interface CommandBarHandle {
@@ -22,6 +22,8 @@ export interface CommandBarHandle {
 }
 
 const NO_STARS: string[] = [];
+const holdTitle = (what: string, chord: HoldChord) =>
+  chord === "off" ? what : `${what} (or hold ${chordLabel(chord)})`;
 function resultIcon(r: BarResult): IconName {
   if (r.kind === "ask") return "spark";
   if (r.kind === "window") return "external";
@@ -100,6 +102,11 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   const selected = sel.query === query ? sel.index : 0;
 
   const awareness = useSettings((s) => s.snapshot?.settings.appAwareness ?? true);
+  const holdOn = useSettings((s) => s.snapshot?.settings.holdToTalk ?? true);
+  const holdDictate = useSettings(
+    (s) => (holdOn ? s.snapshot?.settings.holdDictate : "off") ?? "ctrl+win",
+  );
+  const holdAsk = useSettings((s) => (holdOn ? s.snapshot?.settings.holdAsk : "off") ?? "win+alt");
   // Windows that are open right now, fetched once per bar open.
   const [windows, setWindows] = useState<OpenWindow[]>([]);
   useEffect(() => {
@@ -260,7 +267,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
               className="icon-btn icon-btn-small"
               onClick={() => void useDictation.getState().start()}
               aria-label="Dictate"
-              title="Dictate (or hold Ctrl+Win)"
+              title={holdTitle("Dictate", holdDictate)}
             >
               <Icon name="mic" size={17} />
             </button>
@@ -268,7 +275,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
               className="icon-btn icon-btn-small"
               onClick={() => void useVoice.getState().start()}
               aria-label="Ask by voice"
-              title="Ask by voice (or hold Win+Alt)"
+              title={holdTitle("Ask by voice", holdAsk)}
             >
               <Icon name="talk" size={17} />
             </button>

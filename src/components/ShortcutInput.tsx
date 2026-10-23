@@ -1,4 +1,5 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
+import { host } from "../services/host";
 
 const CODE_KEYS: Record<string, string> = {
   Space: "Space",
@@ -59,6 +60,12 @@ interface Props {
 
 export function ShortcutInput({ id, label, value, onChange }: Props) {
   const [recording, setRecording] = useState(false);
+  // While recording, Wisp's own shortcuts step aside so the keys are captured.
+  useEffect(() => {
+    if (!recording) return;
+    host().pauseShortcuts(true);
+    return () => host().pauseShortcuts(false);
+  }, [recording]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (!recording) {

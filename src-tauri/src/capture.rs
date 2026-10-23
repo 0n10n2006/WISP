@@ -28,8 +28,17 @@ pub struct CapturedMonitor {
 #[derive(Default)]
 pub struct CaptureSession {
     pub monitors: Vec<CapturedMonitor>,
+    /// Ready-made JPEG of each monitor for the overlay background.
+    pub previews: Vec<Vec<u8>>,
     pub island_was_visible: bool,
 }
+
+/// Bumped on every capture; an overlay that never reports ready is shown
+/// anyway after a moment, and idle overlays are closed after a while.
+static SESSION_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Overlays stay loaded (hidden) this long after a capture, so the next one
+/// opens instantly; then they're closed to free memory.
+const OVERLAY_KEEP: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,10 +86,11 @@ pub fn start(app: &AppHandle) {
     if let Some(w) = windows::island(app) {
         let _ = w.hide();
     }
+    let generation = SESSION_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         // Give the compositor a moment to remove Wisp from the screen.
-        tokio::time::sleep(Duration::from_millis(180)).await;
+        tokio::time::sleep(Duration::from_millis(120)).await;
         let grabbed = tauri::async_runtime::spawn_blocking(grab_all).await;
         let monitors = match grabbed {
             Ok(Ok(m)) if !m.is_empty() => m,
@@ -97,44 +107,137 @@ pub fn start(app: &AppHandle) {
             .iter()
             .map(|m| (m.x, m.y, m.image.width(), m.image.height()))
             .collect();
+        // Encode every screen's background in parallel.
+        let (monitors, previews) = tauri::async_runtime::spawn_blocking(move || {
+            let previews = encode_previews(&monitors);
+            (monitors, previews)
+        })
+        .await
+        .unwrap_or_default();
+        // Overlays for screens that no longer exist go away (before the
+        // session starts, so closing them can't cancel it).
+        for (label, win) in app.webview_windows() {
+            if let Some(i) = label
+                .strip_prefix(OVERLAY_PREFIX)
+                .and_then(|n| n.parse::<usize>().ok())
+            {
+                if i >= geometry.len() {
+                    let _ = win.close();
+                }
+            }
+        }
         *app.state::<AppState>().capture.lock().expect("capture") = Some(CaptureSession {
             monitors,
+            previews,
             island_was_visible,
         });
         for (i, (x, y, w, h)) in geometry.into_iter().enumerate() {
-            let url = format!("index.html?window=overlay&monitor={i}");
-            let built = WebviewWindowBuilder::new(
-                &app,
-                format!("{OVERLAY_PREFIX}{i}"),
-                WebviewUrl::App(url.into()),
-            )
-            .title("Wisp — select an area")
-            .decorations(false)
-            .resizable(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .shadow(false)
-            .visible(false)
-            .build();
-            match built {
-                Ok(win) => {
-                    let _ = win.set_position(Position::Physical(PhysicalPosition::new(x, y)));
-                    let _ = win.set_size(Size::Physical(PhysicalSize::new(w, h)));
-                    let _ = win.show();
-                    if i == 0 {
-                        let _ = win.set_focus();
+            let label = format!("{OVERLAY_PREFIX}{i}");
+            let win = match app.get_webview_window(&label) {
+                // Reuse a loaded overlay: it reloads its background.
+                Some(win) => {
+                    let _ = app.emit_to(label.as_str(), "wisp://capture-session", generation);
+                    win
+                }
+                None => {
+                    let url = format!("index.html?window=overlay&monitor={i}");
+                    let built =
+                        WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+                            .title("Wisp — select an area")
+                            .decorations(false)
+                            .resizable(false)
+                            .always_on_top(true)
+                            .skip_taskbar(true)
+                            .shadow(false)
+                            .transparent(true)
+                            .focused(false)
+                            .visible(false)
+                            .build();
+                    match built {
+                        Ok(win) => {
+                            crate::chrome::borderless(&win);
+                            win
+                        }
+                        Err(e) => {
+                            cancel(&app);
+                            return emit_error(
+                                &app,
+                                WispError::internal(format!(
+                                    "Couldn't open the selection overlay: {e}"
+                                )),
+                            );
+                        }
                     }
                 }
-                Err(e) => {
-                    cancel(&app);
-                    return emit_error(
-                        &app,
-                        WispError::internal(format!("Couldn't open the selection overlay: {e}")),
-                    );
+            };
+            let _ = win.set_position(Position::Physical(PhysicalPosition::new(x, y)));
+            let _ = win.set_size(Size::Physical(PhysicalSize::new(w, h)));
+        }
+        // The overlays show themselves once their frozen screen is painted
+        // (`overlay_ready`), so the switch is seamless. Safety net: show them
+        // anyway if one doesn't report in time.
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        if SESSION_GEN.load(std::sync::atomic::Ordering::SeqCst) == generation
+            && app
+                .state::<AppState>()
+                .capture
+                .lock()
+                .expect("capture")
+                .is_some()
+        {
+            for (label, win) in app.webview_windows() {
+                if label.starts_with(OVERLAY_PREFIX) && !win.is_visible().unwrap_or(true) {
+                    show_overlay(&win, &label);
                 }
             }
         }
     });
+}
+
+fn show_overlay(win: &tauri::WebviewWindow, label: &str) {
+    let _ = win.show();
+    if label == format!("{OVERLAY_PREFIX}0") {
+        let _ = win.set_focus();
+    }
+}
+
+/// An overlay painted its frozen screen: show it now.
+pub fn overlay_ready(app: &AppHandle, label: &str) {
+    if !label.starts_with(OVERLAY_PREFIX)
+        || app
+            .state::<AppState>()
+            .capture
+            .lock()
+            .expect("capture")
+            .is_none()
+    {
+        return;
+    }
+    if let Some(win) = app.get_webview_window(label) {
+        show_overlay(&win, label);
+    }
+}
+
+/// JPEG backgrounds for the overlays, one per monitor, encoded in parallel.
+fn encode_previews(monitors: &[CapturedMonitor]) -> Vec<Vec<u8>> {
+    std::thread::scope(|scope| {
+        let jobs: Vec<_> = monitors
+            .iter()
+            .map(|m| {
+                scope.spawn(move || {
+                    let rgb = DynamicImage::ImageRgba8(m.image.clone()).to_rgb8();
+                    let mut out = Vec::new();
+                    // High quality: the frozen screen should look just like
+                    // the live one underneath.
+                    let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 92);
+                    rgb.write_with_encoder(enc).map(|_| out).unwrap_or_default()
+                })
+            })
+            .collect();
+        jobs.into_iter()
+            .map(|j| j.join().unwrap_or_default())
+            .collect()
+    })
 }
 
 fn fail_start(app: &AppHandle, island_was_visible: bool, err: WispError) {
@@ -165,12 +268,33 @@ fn grab_all() -> Result<Vec<CapturedMonitor>> {
     Ok(out)
 }
 
+/// Put the overlays away. They stay loaded (hidden) for a while so the next
+/// capture opens instantly, then close to free memory.
 fn close_overlays(app: &AppHandle) {
     for (label, win) in app.webview_windows() {
         if label.starts_with(OVERLAY_PREFIX) {
-            let _ = win.close();
+            let _ = win.hide();
         }
     }
+    let generation = SESSION_GEN.load(std::sync::atomic::Ordering::SeqCst);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(OVERLAY_KEEP).await;
+        let idle = SESSION_GEN.load(std::sync::atomic::Ordering::SeqCst) == generation
+            && app
+                .state::<AppState>()
+                .capture
+                .lock()
+                .expect("capture")
+                .is_none();
+        if idle {
+            for (label, win) in app.webview_windows() {
+                if label.starts_with(OVERLAY_PREFIX) {
+                    let _ = win.close();
+                }
+            }
+        }
+    });
 }
 
 /// Drop the capture and restore Wisp as it was.
@@ -187,23 +311,20 @@ pub fn cancel(app: &AppHandle) {
     }
 }
 
-/// JPEG of a whole captured monitor for the overlay background.
-pub fn preview(app: &AppHandle, index: usize) -> Result<String> {
+/// JPEG of a whole captured monitor for the overlay background (raw bytes;
+/// no base64 round trip).
+pub fn preview(app: &AppHandle, index: usize) -> Result<Vec<u8>> {
     let state = app.state::<AppState>();
     let guard = state.capture.lock().expect("capture");
     let session = guard
         .as_ref()
         .ok_or_else(|| WispError::invalid("No capture in progress"))?;
-    let mon = session
-        .monitors
+    session
+        .previews
         .get(index)
-        .ok_or_else(|| WispError::invalid("Unknown screen"))?;
-    let rgb = DynamicImage::ImageRgba8(mon.image.clone()).to_rgb8();
-    let bytes = encode(&DynamicImage::ImageRgb8(rgb), ImageFormat::Jpeg)?;
-    Ok(format!(
-        "data:image/jpeg;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
+        .filter(|b| !b.is_empty())
+        .cloned()
+        .ok_or_else(|| WispError::invalid("Unknown screen"))
 }
 
 /// Crop the selection, close overlays, and give the island the result to confirm.

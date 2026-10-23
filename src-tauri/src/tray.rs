@@ -1,12 +1,25 @@
 use crate::windows;
+use std::sync::OnceLock;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
+/// The "Show notch" tick in the tray menu, kept in step with the setting.
+static SHOW_NOTCH: OnceLock<CheckMenuItem<tauri::Wry>> = OnceLock::new();
+
+/// Reflect the notch setting in the tray menu.
+pub fn sync_notch(shown: bool) {
+    if let Some(item) = SHOW_NOTCH.get() {
+        let _ = item.set_checked(shown);
+    }
+}
+
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "Open command bar", true, None::<&str>)?;
-    let tuck = MenuItem::with_id(app, "tuck", "Tuck away / bring back", true, None::<&str>)?;
+    let shown = !app.state::<crate::state::AppState>().settings().tucked;
+    let tuck = CheckMenuItem::with_id(app, "tuck", "Show notch", true, shown, None::<&str>)?;
+    let _ = SHOW_NOTCH.set(tuck.clone());
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Wisp", true, None::<&str>)?;
     let menu = Menu::with_items(

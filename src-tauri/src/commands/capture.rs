@@ -10,8 +10,14 @@ pub fn capture_start(app: AppHandle) {
 }
 
 #[tauri::command]
-pub async fn capture_preview(app: AppHandle, monitor: usize) -> CmdResult<String> {
-    capture::preview(&app, monitor)
+pub async fn capture_preview(app: AppHandle, monitor: usize) -> CmdResult<tauri::ipc::Response> {
+    capture::preview(&app, monitor).map(tauri::ipc::Response::new)
+}
+
+/// The overlay painted its frozen screen and can be shown.
+#[tauri::command]
+pub fn capture_overlay_ready(app: AppHandle, window: tauri::WebviewWindow) {
+    capture::overlay_ready(&app, window.label());
 }
 
 #[tauri::command]

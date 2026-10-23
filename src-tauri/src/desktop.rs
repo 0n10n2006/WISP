@@ -56,10 +56,27 @@ mod imp {
         pid
     }
 
+    /// The last process looked up: the foreground app rarely changes between
+    /// checks (e.g. while a window is dragged), so skip the system calls.
+    static LAST_EXE: std::sync::Mutex<(u32, String)> = std::sync::Mutex::new((0, String::new()));
+
     fn exe_path(pid: u32) -> String {
         if pid == 0 {
             return String::new();
         }
+        if let Ok(last) = LAST_EXE.lock() {
+            if last.0 == pid {
+                return last.1.clone();
+            }
+        }
+        let path = lookup_exe(pid);
+        if let Ok(mut last) = LAST_EXE.lock() {
+            *last = (pid, path.clone());
+        }
+        path
+    }
+
+    fn lookup_exe(pid: u32) -> String {
         let Ok(handle) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) })
         else {
             return String::new();

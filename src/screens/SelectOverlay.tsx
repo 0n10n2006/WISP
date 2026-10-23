@@ -32,6 +32,8 @@ export function pathBounds(points: Point[]) {
 export function SelectOverlay() {
   const monitor = host().overlayMonitor();
   const [bg, setBg] = useState<string | null>(null);
+  // Bumped when a new capture reuses this overlay.
+  const [session, setSession] = useState(0);
   const [mode, setMode] = useState<Mode>(initialMode);
   const [start, setStart] = useState<Point | null>(null);
   const [end, setEnd] = useState<Point | null>(null);
@@ -40,13 +42,54 @@ export function SelectOverlay() {
   const [error, setError] = useState<WispError | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
+  // A new capture reuses this overlay: start fresh.
+  useEffect(
+    () =>
+      host().onCaptureSession(() => {
+        setBg(null);
+        setError(null);
+        setStart(null);
+        setEnd(null);
+        setPath([]);
+        setDrawing(false);
+        setSession((n) => n + 1);
+      }),
+    [],
+  );
+
+  // Load the frozen screen, make sure it's decoded and painted, and only then
+  // let the host show this window: it then looks exactly like the live
+  // screen, so nothing flickers. The dimming fades in afterwards.
   useEffect(() => {
-    host()
-      .capturePreview(monitor)
-      .then(setBg)
-      .catch((e) => setError(toWispError(e)));
-    root.current?.focus();
-  }, [monitor]);
+    let live = true;
+    let url: string | null = null;
+    void (async () => {
+      try {
+        url = await host().capturePreview(monitor);
+        const img = new Image();
+        img.src = url;
+        // Not every engine has decode(); then the next frames will do.
+        if (typeof img.decode === "function") await img.decode().catch(() => {});
+        if (!live) return;
+        setBg(url);
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (!live) return;
+            host().captureOverlayReady();
+            root.current?.focus();
+          }),
+        );
+      } catch (e) {
+        if (!live) return;
+        setError(toWispError(e));
+        host().captureOverlayReady();
+      }
+    })();
+    return () => {
+      live = false;
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+    };
+  }, [monitor, session]);
 
   const switchMode = (m: Mode) => {
     setMode(m);
@@ -143,7 +186,7 @@ export function SelectOverlay() {
   return (
     <div
       ref={root}
-      className="overlay"
+      className={`overlay ${bg ? "overlay-ready" : ""}`}
       tabIndex={-1}
       role="application"
       aria-label="Circle or select an area of the screen. Enter for the whole screen, R for rectangle, L for lasso, Escape to cancel."

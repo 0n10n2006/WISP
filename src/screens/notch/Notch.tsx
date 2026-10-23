@@ -36,6 +36,10 @@ function busy(): boolean {
   );
 }
 
+/** How long the peek waits after the pointer leaves before folding away
+ * (just enough to forgive brushing past the edge). */
+export const FOLD_DELAY_MS = 120;
+
 function Idle() {
   const mode = useNotch((n) => n.mode);
   const state = useOrbState();
@@ -53,7 +57,7 @@ function Idle() {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     leaveTimer.current = setTimeout(() => {
       if (useNotch.getState().mode === "peek" && !sticky) void changeMode("sliver");
-    }, 450);
+    }, FOLD_DELAY_MS);
   }, [sticky]);
   useEffect(() => () => void (leaveTimer.current && clearTimeout(leaveTimer.current)), []);
 

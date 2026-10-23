@@ -122,3 +122,15 @@ describe("lasso", () => {
     expect(lasso.mock.calls[0]![1]).toHaveLength(5);
   });
 });
+
+describe("seamless overlay", () => {
+  it("asks to be shown only after its frozen screen is painted", async () => {
+    const h = await setupMockHost({ windowKind: "overlay" });
+    const ready = vi.spyOn(h, "captureOverlayReady");
+    render(<App />);
+    const overlay = await screen.findByRole("application");
+    await waitFor(() => expect(overlay.style.backgroundImage).toContain("data:image"));
+    await waitFor(() => expect(ready).toHaveBeenCalledOnce());
+    expect(overlay.className).toContain("overlay-ready");
+  });
+});

@@ -114,7 +114,13 @@ export function createTauriHost(): Host {
 
     startCapture: () => call("capture_start"),
     overlayMonitor: () => Number(new URLSearchParams(window.location.search).get("monitor") ?? 0),
-    capturePreview: (monitor) => call("capture_preview", { monitor }),
+    capturePreview: async (monitor) => {
+      // Raw JPEG bytes (no base64): an object URL the overlay can paint.
+      const bytes = await call<ArrayBuffer>("capture_preview", { monitor });
+      return URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+    },
+    captureOverlayReady: () => void call("capture_overlay_ready").catch(() => {}),
+    onCaptureSession: (cb) => subscribe<number>("wisp://capture-session", () => cb()),
     captureSelect: (monitor, rect) => call("capture_select", { monitor, rect }),
     captureSelectLasso: (monitor, points, viewWidth, viewHeight) =>
       call("capture_select_lasso", { monitor, points, viewWidth, viewHeight }),
@@ -194,6 +200,7 @@ export function createTauriHost(): Host {
     screenStatus: () => call("screen_status"),
 
     reportError: report,
+    pauseShortcuts: (paused) => void call("pause_shortcuts", { paused }).catch(() => {}),
     onSelfTestRun: (cb) => subscribe<string>("wisp://selftest-run", cb),
     selfTestProbe: () => call("selftest_probe"),
     selfTestAction: (action) => call("selftest_action", { action }),

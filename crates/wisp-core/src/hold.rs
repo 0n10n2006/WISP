@@ -1,4 +1,5 @@
-//! Hold-to-talk detection for modifier-only chords (Ctrl+Win, Win+Alt).
+//! Hold-to-talk detection for modifier-only chords (Ctrl+Win and Win+Alt
+//! by default; the user can pick other pairs).
 //!
 //! A pure state machine fed with key down/up events from a low-level
 //! keyboard hook. It never consumes keys: it only reports when a chord has
@@ -40,12 +41,70 @@ pub enum HoldEvent {
 
 pub const HOLD_DELAY: Duration = Duration::from_millis(250);
 
-#[derive(Debug, Default)]
+/// A set of held modifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Mods {
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub win: bool,
+}
+
+/// The pairs offered for hold-to-talk (two modifiers, nothing else).
+pub const HOLD_CHOICES: &[&str] = &[
+    "ctrl+win",
+    "win+alt",
+    "ctrl+alt",
+    "ctrl+shift",
+    "alt+shift",
+    "win+shift",
+    "off",
+];
+
+/// "ctrl+win" → `Some(Some(mods))`; "off" → `Some(None)`; anything not
+/// offered → `None`.
+pub fn parse_chord(text: &str) -> Option<Option<Mods>> {
+    let t = text.trim().to_ascii_lowercase();
+    if !HOLD_CHOICES.contains(&t.as_str()) {
+        return None;
+    }
+    if t == "off" {
+        return Some(None);
+    }
+    let mut m = Mods::default();
+    for part in t.split('+') {
+        match part {
+            "ctrl" => m.ctrl = true,
+            "alt" => m.alt = true,
+            "shift" => m.shift = true,
+            "win" => m.win = true,
+            _ => return None,
+        }
+    }
+    Some(Some(m))
+}
+
+const CTRL_WIN: Mods = Mods {
+    ctrl: true,
+    alt: false,
+    shift: false,
+    win: true,
+};
+const WIN_ALT: Mods = Mods {
+    ctrl: false,
+    alt: true,
+    shift: false,
+    win: true,
+};
+
+#[derive(Debug)]
 pub struct HoldDetector {
     ctrl: bool,
     alt: bool,
     shift: bool,
     win: bool,
+    dictate: Option<Mods>,
+    ask: Option<Mods>,
     /// Chord candidate and when it began.
     candidate: Option<(Chord, Instant)>,
     active: Option<Chord>,
@@ -53,16 +112,61 @@ pub struct HoldDetector {
     spoiled: bool,
 }
 
+impl Default for HoldDetector {
+    fn default() -> Self {
+        Self {
+            ctrl: false,
+            alt: false,
+            shift: false,
+            win: false,
+            dictate: Some(CTRL_WIN),
+            ask: Some(WIN_ALT),
+            candidate: None,
+            active: None,
+            spoiled: false,
+        }
+    }
+}
+
 impl HoldDetector {
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Choose which modifier pairs mean dictate and ask (None turns one off).
+    pub fn set_chords(&mut self, dictate: Option<Mods>, ask: Option<Mods>) {
+        self.dictate = dictate;
+        self.ask = if ask == dictate { None } else { ask };
+        self.candidate = None;
+        self.active = None;
+    }
+
+    /// The modifiers of a chord (to know whether it involves the Win key).
+    pub fn mods(&self, chord: Chord) -> Option<Mods> {
+        match chord {
+            Chord::Dictate => self.dictate,
+            Chord::Ask => self.ask,
+        }
+    }
+
+    /// A chord is being held but hasn't started yet (needs `tick`).
+    pub fn waiting(&self) -> bool {
+        self.candidate.is_some()
+    }
+
     fn chord(&self) -> Option<Chord> {
-        match (self.ctrl, self.alt, self.shift, self.win) {
-            (true, false, false, true) => Some(Chord::Dictate),
-            (false, true, false, true) => Some(Chord::Ask),
-            _ => None,
+        let held = Some(Mods {
+            ctrl: self.ctrl,
+            alt: self.alt,
+            shift: self.shift,
+            win: self.win,
+        });
+        if self.dictate.is_some() && held == self.dictate {
+            Some(Chord::Dictate)
+        } else if self.ask.is_some() && held == self.ask {
+            Some(Chord::Ask)
+        } else {
+            None
         }
     }
 
@@ -143,6 +247,39 @@ impl HoldDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chords_can_be_changed() {
+        assert_eq!(
+            parse_chord("Ctrl+Alt").unwrap(),
+            Some(Mods {
+                ctrl: true,
+                alt: true,
+                ..Default::default()
+            })
+        );
+        assert_eq!(parse_chord("off").unwrap(), None);
+        assert!(parse_chord("ctrl+x").is_none());
+        assert!(parse_chord("ctrl+alt+shift").is_none());
+        let t0 = Instant::now();
+        let mut d = HoldDetector::new();
+        d.set_chords(parse_chord("ctrl+alt").unwrap(), None);
+        d.key(Key::Mod(Mod::Ctrl), true, t0);
+        d.key(Key::Mod(Mod::Alt), true, t0);
+        assert!(d.waiting());
+        assert_eq!(
+            d.tick(t0 + HOLD_DELAY),
+            Some(HoldEvent::Start(Chord::Dictate))
+        );
+        assert_eq!(d.mods(Chord::Dictate).map(|m| m.win), Some(false));
+        // The old Ctrl+Win chord no longer does anything.
+        let mut d2 = HoldDetector::new();
+        d2.set_chords(parse_chord("ctrl+alt").unwrap(), None);
+        d2.key(Key::Mod(Mod::Ctrl), true, t0);
+        d2.key(Key::Mod(Mod::Win), true, t0);
+        assert!(!d2.waiting());
+        assert_eq!(d2.tick(t0 + HOLD_DELAY), None);
+    }
 
     fn at(ms: u64, base: Instant) -> Instant {
         base + Duration::from_millis(ms)

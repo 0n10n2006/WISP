@@ -3,12 +3,15 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ShortcutInput } from "../../components/ShortcutInput";
 import { presentError, toWispError } from "../../services/errors";
 import { host } from "../../services/host";
-import type {
-  ModelInfo,
-  Settings,
-  ShortcutAction,
-  Shortcuts,
-  UpdateInfo,
+import {
+  chordLabel,
+  HOLD_CHOICES,
+  type HoldChord,
+  type ModelInfo,
+  type Settings,
+  type ShortcutAction,
+  type Shortcuts,
+  type UpdateInfo,
 } from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { Choice, ExternalLink, LINKS, StatusLine, Toggle, useStatus } from "./common";
@@ -30,6 +33,15 @@ export function GeneralTab() {
   return (
     <div className="tab">
       <h2>General</h2>
+      <section className="group">
+        <Toggle
+          id="show-notch"
+          label="Show the notch"
+          description="Turn off to hide Wisp's glow at the top of the screen. The shortcuts and the tray icon still open Wisp."
+          checked={!s.tucked}
+          onChange={(shown) => void set({ tucked: !shown })}
+        />
+      </section>
       <section className="group">
         <h3>Appearance</h3>
         <Choice
@@ -253,9 +265,9 @@ const SHORTCUT_LABELS: Record<ShortcutAction, { label: string; desc: string }> =
     label: "Circle to ask",
     desc: "Circle or drag around anything on screen and ask about it.",
   },
-  dictation: { label: "Dictation", desc: "Start or stop dictating (or hold Ctrl+Win)." },
+  dictation: { label: "Dictation", desc: "Start or stop dictating." },
   clipboardAssist: { label: "Clipboard", desc: "Clipboard history, or help with copied text." },
-  voice: { label: "Ask by voice", desc: "Speak a question (or hold Win+Alt)." },
+  voice: { label: "Ask by voice", desc: "Speak a question." },
   tuck: { label: "Tuck Wisp away", desc: "Hide the notch completely, or bring it back." },
 };
 
@@ -274,8 +286,8 @@ export function ShortcutsTab() {
     <div className="tab">
       <h2>Shortcuts</h2>
       <p className="setting-desc">
-        Global shortcuts work from any app. Use Ctrl, Alt or Win with a key. Select a shortcut and
-        press the new combination; Backspace disables it.
+        Global shortcuts work from any app. Use Ctrl, Alt or Win with a key. Click a shortcut and
+        press the new combination (Wisp's own shortcuts pause while you do); Backspace disables it.
       </p>
       {snapshot.shortcutIssues.length > 0 && (
         <div className="banner banner-warning" role="alert">
@@ -342,7 +354,64 @@ export function ShortcutsTab() {
         </button>
       </div>
       <StatusLine status={status} />
+      <HoldKeys />
     </div>
+  );
+}
+
+/** Which two modifier keys, held on their own, dictate or ask by voice. */
+function HoldKeys() {
+  const s = useSettingsValue();
+  const update = useSettings((st) => st.update);
+  const { status, fail, clear } = useStatus();
+  if (!s) return null;
+  const pick = async (patch: Partial<Settings>) => {
+    clear();
+    const err = await update(patch);
+    if (err) fail(err);
+  };
+  const select = (
+    id: string,
+    value: HoldChord,
+    other: HoldChord,
+    key: "holdDictate" | "holdAsk",
+  ) => (
+    <select
+      id={id}
+      className="select-inline"
+      value={value}
+      disabled={!s.holdToTalk || !s.voiceEnabled}
+      onChange={(e) => void pick({ [key]: e.target.value as HoldChord })}
+    >
+      {HOLD_CHOICES.map((c) => (
+        <option key={c} value={c} disabled={c !== "off" && c === other}>
+          {chordLabel(c)}
+        </option>
+      ))}
+    </select>
+  );
+  return (
+    <section className="group">
+      <h3>Hold to talk</h3>
+      <p className="setting-desc">
+        Hold two modifier keys on their own to talk; let go to finish. Pressing any other key while
+        holding them keeps your normal shortcuts working.
+        {!s.holdToTalk && " Hold-to-talk is off in Voice & dictation."}
+      </p>
+      <div className="setting-row">
+        <div className="setting-text">
+          <label htmlFor="hold-dictate">Hold to dictate into any app</label>
+        </div>
+        {select("hold-dictate", s.holdDictate, s.holdAsk, "holdDictate")}
+      </div>
+      <div className="setting-row">
+        <div className="setting-text">
+          <label htmlFor="hold-ask">Hold to ask by voice</label>
+        </div>
+        {select("hold-ask", s.holdAsk, s.holdDictate, "holdAsk")}
+      </div>
+      <StatusLine status={status} />
+    </section>
   );
 }
 
@@ -397,6 +466,13 @@ export function PrivacyTab() {
           description="Include your saved memory notes in requests."
           checked={s.useMemory}
           onChange={(useMemory) => void update({ useMemory })}
+        />
+        <Toggle
+          id="clear-on-exit"
+          label="Clear history when Wisp closes"
+          description="Forgets request history, the action log and unpinned clipboard history every time you quit Wisp or shut down the PC. Reminders, memory and settings are kept."
+          checked={s.clearHistoryOnExit}
+          onChange={(clearHistoryOnExit) => void update({ clearHistoryOnExit })}
         />
         <Toggle
           id="content-history"

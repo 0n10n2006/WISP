@@ -145,3 +145,10 @@ describe("open windows in the bar", () => {
     });
   });
 });
+
+describe("settings shortcuts in the bar", () => {
+  it("opens the shortcut settings", () => {
+    expect(parseCommand("shortcuts")[0]?.command).toEqual({ type: "settings", tab: "shortcuts" });
+    expect(parseCommand("hotkeys")[0]?.command).toEqual({ type: "settings", tab: "shortcuts" });
+  });
+});

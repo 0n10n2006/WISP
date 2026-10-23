@@ -1,4 +1,5 @@
-//! Hold-to-talk: hold Ctrl+Win to dictate, Win+Alt to ask by voice.
+//! Hold-to-talk: hold Ctrl+Win to dictate, Win+Alt to ask by voice (or
+//! the pairs the user picked in Settings → Shortcuts).
 //!
 //! A low-level keyboard hook *observes* key events and feeds the pure
 //! `wisp_core::hold::HoldDetector`. Keys are never swallowed or recorded;
@@ -46,6 +47,13 @@ pub fn set_paused(paused: bool) {
     PAUSED.store(paused, Ordering::SeqCst);
 }
 
+/// Hold-to-talk is also off while the user records a new shortcut.
+pub static RECORDING: AtomicBool = AtomicBool::new(false);
+
+pub fn set_recording(on: bool) {
+    RECORDING.store(on, Ordering::SeqCst);
+}
+
 #[cfg(windows)]
 mod imp {
     use super::*;
@@ -68,6 +76,14 @@ mod imp {
 
     static DETECTOR: OnceLock<Mutex<HoldDetector>> = OnceLock::new();
     static TX: OnceLock<Sender<HoldEvent>> = OnceLock::new();
+    /// Wakes the timer thread only while a chord is being held.
+    static WAKE: OnceLock<Sender<()>> = OnceLock::new();
+
+    pub fn configure(dictate: &str, ask: &str) {
+        let d = wisp_core::hold::parse_chord(dictate).flatten();
+        let a = wisp_core::hold::parse_chord(ask).flatten();
+        detector().lock().expect("hold").set_chords(d, a);
+    }
 
     fn detector() -> &'static Mutex<HoldDetector> {
         DETECTOR.get_or_init(|| Mutex::new(HoldDetector::new()))
@@ -84,7 +100,11 @@ mod imp {
     }
 
     unsafe extern "system" fn hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if code >= 0 && ENABLED.load(Ordering::Relaxed) && !PAUSED.load(Ordering::Relaxed) {
+        if code >= 0
+            && ENABLED.load(Ordering::Relaxed)
+            && !PAUSED.load(Ordering::Relaxed)
+            && !RECORDING.load(Ordering::Relaxed)
+        {
             let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
             // Ignore synthetic input (including our own Start-menu suppressor).
             if !info.flags.contains(LLKHF_INJECTED) {
@@ -94,6 +114,11 @@ mod imp {
                     if let Some(e) = d.key(classify(info.vkCode), down, Instant::now()) {
                         if let Some(tx) = TX.get() {
                             let _ = tx.send(e);
+                        }
+                    }
+                    if d.waiting() {
+                        if let Some(w) = WAKE.get() {
+                            let _ = w.send(());
                         }
                     }
                 }
@@ -126,8 +151,15 @@ mod imp {
     }
 
     fn handle(app: &AppHandle, e: HoldEvent) {
-        if let HoldEvent::Start(_) = e {
-            suppress_start_menu();
+        if let HoldEvent::Start(chord) = e {
+            // Only a chord with the Win key would otherwise open Start.
+            let win = detector()
+                .lock()
+                .map(|d| d.mods(chord).is_some_and(|m| m.win))
+                .unwrap_or(true);
+            if win {
+                suppress_start_menu();
+            }
             // Remember where dictated text should go, and show the notch
             // without taking focus away from that app.
             if let Some(t) = crate::foreground::current() {
@@ -157,14 +189,27 @@ mod imp {
                 let _ = a.run_on_main_thread(move || handle(&h, e));
             }
         });
-        // Promote held chords after the hold delay.
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_millis(40));
-            if !ENABLED.load(Ordering::Relaxed) {
-                continue;
-            }
-            if let Some(e) = detector().lock().expect("hold").tick(Instant::now()) {
-                let _ = tx.send(e);
+        // Promote held chords after the hold delay. The thread sleeps until a
+        // chord is actually being held, so it costs nothing while idle.
+        let (wake_tx, wake_rx) = channel::<()>();
+        let _ = WAKE.set(wake_tx);
+        std::thread::spawn(move || {
+            while wake_rx.recv().is_ok() {
+                loop {
+                    std::thread::sleep(Duration::from_millis(30));
+                    let (event, waiting) = {
+                        let mut d = detector().lock().expect("hold");
+                        (d.tick(Instant::now()), d.waiting())
+                    };
+                    if let Some(e) = event {
+                        let _ = tx.send(e);
+                    }
+                    if !waiting {
+                        break;
+                    }
+                }
+                // Drop wake-ups queued while we were ticking.
+                while wake_rx.try_recv().is_ok() {}
             }
         });
         // The hook needs a thread with a message loop.
@@ -186,9 +231,10 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     pub fn install(_app: tauri::AppHandle) {}
+    pub fn configure(_dictate: &str, _ask: &str) {}
 }
 
-pub use imp::install;
+pub use imp::{configure, install};
 
 #[cfg(test)]
 mod tests {
