@@ -54,9 +54,14 @@ export interface Settings {
   accentColor: string;
   notchPosition: NotchPosition;
   sliverStyle: SliverStyle;
+  /** A notch along the top, or a floating ball in a corner. */
+  notchStyle: NotchStyle;
+  ballCorner: BallCorner;
   /** Dashboard tabs to show, in order. */
   dashboardTabs: string[];
   closeOnBlur: boolean;
+  /** Fold the bar away shortly after the mouse leaves it. */
+  foldOnLeave: boolean;
   /** Stop listening automatically when you finish speaking. */
   autoStopVoice: boolean;
   /** Pause that counts as "done talking", in ms. */
@@ -113,6 +118,8 @@ export type Tone = "concise" | "friendly" | "professional";
 export type Accent = "cyan" | "lavender" | "ember" | "mint" | "custom";
 export type NotchPosition = "left" | "center" | "right";
 export type SliverStyle = "glow" | "subtle" | "hidden";
+export type NotchStyle = "notch" | "ball";
+export type BallCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export interface Persona {
   tone: Tone;
@@ -251,6 +258,8 @@ export const DEFAULT_SETTINGS: Settings = {
   accentColor: "#78e4f2",
   notchPosition: "center",
   sliverStyle: "glow",
+  notchStyle: "notch",
+  ballCorner: "bottom-right",
   dashboardTabs: [
     "today",
     "controls",
@@ -262,6 +271,7 @@ export const DEFAULT_SETTINGS: Settings = {
     "power",
   ],
   closeOnBlur: true,
+  foldOnLeave: true,
   autoStopVoice: true,
   silenceMs: 1200,
   voiceLanguage: "",

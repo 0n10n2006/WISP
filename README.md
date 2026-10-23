@@ -20,19 +20,20 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 
 ## Status
 
-| Milestone                                                                             | State |
-| ------------------------------------------------------------------------------------- | ----- |
-| v0.1: PRD v1.1 complete (island, Gemini, Select to Ask, dictation, voice…)            | ✅    |
-| v0.2 "Notch": new brand and installer art                                             | ✅    |
-| v0.2: notch (sliver/peek/bar), command bar, fullscreen auto-hide, tuck                | ✅    |
-| v0.2: dashboard (Today, Controls, Stats, Clipboard, Apps, Agents, …)                  | ✅    |
-| v0.2: hold-to-talk, circle to ask, dictation clean-up, Show me                        | ✅    |
-| v0.2: web answers with sources, fast mode, personality, agents                        | ✅    |
-| Text-to-speech removed                                                                | ✅    |
-| v0.2.2: game-safe, app-aware, hands-free voice, deeper customisation                  | ✅    |
-| v0.2.3: security hardening (see docs/SECURITY.md)                                     | ✅    |
-| v0.2.4: notch opens again; real end-to-end UI test in CI                              | ✅    |
-| v0.2.5: seamless screen select, notch on/off, custom hold keys, clear history on exit | ✅    |
+| Milestone                                                                                | State |
+| ---------------------------------------------------------------------------------------- | ----- |
+| v0.1: PRD v1.1 complete (island, Gemini, Select to Ask, dictation, voice…)               | ✅    |
+| v0.2 "Notch": new brand and installer art                                                | ✅    |
+| v0.2: notch (sliver/peek/bar), command bar, fullscreen auto-hide, tuck                   | ✅    |
+| v0.2: dashboard (Today, Controls, Stats, Clipboard, Apps, Agents, …)                     | ✅    |
+| v0.2: hold-to-talk, circle to ask, dictation clean-up, Show me                           | ✅    |
+| v0.2: web answers with sources, fast mode, personality, agents                           | ✅    |
+| Text-to-speech removed                                                                   | ✅    |
+| v0.2.2: game-safe, app-aware, hands-free voice, deeper customisation                     | ✅    |
+| v0.2.3: security hardening (see docs/SECURITY.md)                                        | ✅    |
+| v0.2.4: notch opens again; real end-to-end UI test in CI                                 | ✅    |
+| v0.2.5: seamless screen select, notch on/off, custom hold keys, clear history on exit    | ✅    |
+| v0.2.6: Google Lens and one-click actions on circled areas, fold on leave, floating ball | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -82,8 +83,15 @@ npm run tauri build    # produce installers in target/release/bundle/
 | Bar    | Click or `Ctrl+Alt+Space`: the command bar, sized to its content, with the dashboard.     |
 | Hidden | In games, over fullscreen apps and presentations, over apps you exclude, or when tucked.  |
 
-The bar folds back to the sliver when you press `Esc` or click elsewhere (you can turn that off), unless an
-answer is streaming, you're recording, or something is waiting for your confirmation.
+The bar folds back to the sliver when you press `Esc` (wherever focus is) or the same shortcut that opened it,
+when you click elsewhere, and a moment after the mouse leaves it (both can be turned off). It never folds on its
+own while you're typing, an answer is streaming, you're recording, or something is waiting for your
+confirmation; `Esc` during an answer stops it first.
+
+**Floating ball:** prefer something out of the way? **Settings → Notch & personality → Where Wisp lives →
+Floating ball** rests Wisp as a small ball in the corner you pick (above the taskbar). Hovering it peeks and
+clicking opens the bar out of that corner. To hide Wisp entirely, turn off **Show the notch** in General (or
+untick it in the tray); shortcuts keep working.
 
 ### Never in the way
 
@@ -154,7 +162,13 @@ press any other key while holding them, they act as normal Windows shortcuts (e.
 Press `Ctrl+Shift+S` (or the lasso button). Wisp hides and freezes your screens. **Circle** what you want to ask
 about (or switch to **Box**, `R`/`L`), press Enter for the whole screen, or Esc to cancel. Everything outside the
 circle is dimmed in the image. The area is attached to your next question and is sent only when you press
-**Send**.
+**Send**, or pick a one-click action:
+
+- **Answer it**: answers the question or problem shown (with sources if Web is on).
+- **Explain**, **Search the web** (Google Search through Gemini, with sources), **Copy text** (reads the text
+  and puts it on your clipboard).
+- **Google Lens**: reverse image search. Only the circled area is uploaded to Google Lens and the results open
+  in your browser. If that ever fails, the image is put on your clipboard and Lens opens for you to paste it.
 
 **Show me**: type `where is …` or `show me …` and Wisp takes one screenshot of the current screen, asks Gemini
 where that is, and rings it with a label for a few seconds (the overlay is click-through).
@@ -205,8 +219,9 @@ still asks first.
 
 **Settings → Notch & personality**: tone (Concise, Friendly, Professional), custom instructions sent with each
 question (e.g. "Use British spelling"), an accent colour (Cyan, Lavender, Ember, Mint or any colour you
-pick), the notch's position (left, centre, right), how it looks at rest (glow, subtle, invisible), whether
-clicking elsewhere closes the bar, and which dashboard tabs show in what order.
+pick), whether Wisp is a notch (left, centre, right) or a floating ball (any corner), how the notch looks at rest
+(glow, subtle, invisible), whether clicking elsewhere or moving the mouse away folds the bar, and which dashboard
+tabs show in what order.
 
 ## Gemini, quotas and your data
 

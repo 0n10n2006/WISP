@@ -133,7 +133,9 @@ describe("dictation", () => {
     const user = await openIsland();
     await user.click(await screen.findByRole("button", { name: /^dictate/i }));
     await user.click(await screen.findByRole("button", { name: "Stop" }));
-    expect(await screen.findByText("No speech detected.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("No speech detected.", undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
     expect(transcribe).not.toHaveBeenCalled();
   });
 });

@@ -232,6 +232,7 @@ pub fn run() {
             commands::capture::capture_select,
             commands::capture::capture_cancel,
             commands::capture::capture_overlay_ready,
+            commands::capture::reverse_image_search,
             commands::capture::capture_select_lasso,
             commands::capture::show_me,
             commands::capture::highlights_get,

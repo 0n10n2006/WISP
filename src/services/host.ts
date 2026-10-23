@@ -106,6 +106,8 @@ export interface Host {
   overlayMonitor(): number;
   /** URL of the frozen screen for this overlay (an object URL on Tauri). */
   capturePreview(monitor: number): Promise<string>;
+  /** Reverse image search on Google Lens (only the given PNG is sent). */
+  reverseImageSearch(dataBase64: string): Promise<{ opened: boolean; pasted: boolean }>;
   /** The overlay painted its frozen screen; the host shows it. */
   captureOverlayReady(): void;
   /** A new capture reuses this (hidden) overlay. */

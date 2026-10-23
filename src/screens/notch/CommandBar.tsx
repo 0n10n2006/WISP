@@ -138,7 +138,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
         contextKind: "screen",
         attachments: [{ mimeType: pending.mimeType, dataBase64: pending.dataBase64 }],
         imagePreview: pending.dataUrl,
-        web: false,
+        web,
         think,
       });
       return;

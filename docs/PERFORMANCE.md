@@ -19,18 +19,20 @@ node scripts/perf/notch-shots.mjs ./shots dark
 
 ## Results (median of 5–7 runs, same machine)
 
-| Metric                                    | v0.2.0 | v0.2.1  | v0.2.2  | v0.2.5  |
-| ----------------------------------------- | ------ | ------- | ------- | ------- |
-| JS loaded at start (transferred)          | 104 KB | 36 KB   | 37 KB   | 42 KB   |
-| Island bundle (raw)                       | 274 KB | 29 KB   | 30 KB   | 31 KB   |
-| Idle cost, 5 s with only the sliver       | ~0 ms  | ~0 ms   | ~0 ms   | ~0 ms   |
-| Click → bar open and stable (cold)        | 429 ms | ~145 ms | ~147 ms | ~120 ms |
-| Window resizes per open (cold)            | 4      | 3       | 3       | 3       |
-| Re-open → bar shown (warm)                | —      | ~19 ms  | ~25 ms  | ~21 ms  |
-| Window resizes per re-open                | —      | 1       | 1       | 1       |
-| Long tasks while opening                  | 0–2    | 0       | 0       | 0       |
-| Keystroke → results                       | 54 ms  | 41 ms   | 46 ms   | 37 ms   |
-| Warm start → sliver on screen (self-test) | 680 ms | ~350 ms | ~355 ms | ~355 ms |
+| Metric                                    | v0.2.0 | v0.2.1  | v0.2.2  | v0.2.5  | v0.2.6  |
+| ----------------------------------------- | ------ | ------- | ------- | ------- | ------- |
+| JS loaded at start (transferred)          | 104 KB | 36 KB   | 37 KB   | 42 KB   | 42 KB   |
+| Island bundle (raw)                       | 274 KB | 29 KB   | 30 KB   | 31 KB   | 33 KB   |
+| Idle cost, 5 s with only the sliver       | ~0 ms  | ~0 ms   | ~0 ms   | ~0 ms   | ~0 ms   |
+| Click → bar open and stable (cold)        | 429 ms | ~145 ms | ~147 ms | ~120 ms | ~117 ms |
+| Window resizes per open (cold)            | 4      | 3       | 3       | 3       | 3       |
+| Re-open → bar shown (warm)                | —      | ~19 ms  | ~25 ms  | ~21 ms  | ~20 ms  |
+| Window resizes per re-open                | —      | 1       | 1       | 1       | 1       |
+| Long tasks while opening                  | 0–2    | 0       | 0       | 0       | 0       |
+| Keystroke → results                       | 54 ms  | 41 ms   | 46 ms   | 37 ms   | 36 ms   |
+| Warm start → sliver on screen (self-test) | 680 ms | ~350 ms | ~355 ms | ~355 ms | ~270 ms |
+
+v0.2.6 measures the same with the new fold hint and circle actions; the floating ball adds no start-up JavaScript. JS at start varies between 42 and 59 KB between runs depending on whether the idle prefetch of the bar has begun when the harness samples it.
 
 Cold-open time includes the hover peek that the harness triggers on its way to the click. On a direct shortcut press, the bar renders in about 30 ms and settles in about 80 ms.
 

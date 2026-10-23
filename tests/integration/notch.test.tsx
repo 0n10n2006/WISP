@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/preact";
+import { fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
 import { setupMockHost } from "../helpers";
@@ -71,5 +71,72 @@ describe("notch", () => {
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: /ask wisp/i })).toHaveValue("wait /slow"),
     );
+  });
+
+  it("folds away when the mouse leaves, but not while you're typing", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const hide = vi.spyOn(h, "hideIsland");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    const box = await screen.findByRole("combobox", { name: /ask wisp/i });
+    const wrap = () => document.querySelector(".bar-wrap")!;
+
+    // Typing just now: leaving doesn't fold.
+    await user.type(box, "half a thought");
+    fireEvent.pointerLeave(wrap());
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(hide).not.toHaveBeenCalled();
+
+    // Coming back cancels a pending fold.
+    await user.clear(box);
+    fireEvent.pointerLeave(wrap());
+    fireEvent.pointerEnter(wrap());
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(hide).not.toHaveBeenCalled();
+
+    fireEvent.pointerLeave(wrap());
+    await waitFor(() => expect(hide).toHaveBeenCalled(), { timeout: 3000 });
+    expect(await screen.findByRole("button", { name: /open wisp/i })).toBeInTheDocument();
+  });
+
+  it("stays open on leave when folding on leave is off", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    await h.updateSettings({ foldOnLeave: false });
+    const hide = vi.spyOn(h, "hideIsland");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    await screen.findByRole("combobox", { name: /ask wisp/i });
+    fireEvent.pointerLeave(document.querySelector(".bar-wrap")!);
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(hide).not.toHaveBeenCalled();
+  });
+
+  it("folds with Esc even when focus isn't in the bar, and shows how", async () => {
+    await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    const box = await screen.findByRole("combobox", { name: /ask wisp/i });
+    expect(screen.getByText(/esc or ctrl\+alt\+space to fold away/i)).toBeInTheDocument();
+    await waitFor(() => expect(box).toHaveFocus());
+    box.blur();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(await screen.findByRole("button", { name: /open wisp/i })).toBeInTheDocument();
+  });
+
+  it("can rest as a floating ball in a corner and opens from it", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    await h.updateSettings({ notchStyle: "ball", ballCorner: "top-left" });
+    const user = userEvent.setup();
+    render(<App />);
+    const btn = screen.getByRole("button", { name: /open wisp/i });
+    await waitFor(() => expect(document.documentElement.dataset.notch).toBe("ball"));
+    expect(document.documentElement.dataset.corner).toBe("top-left");
+    expect(btn.querySelector(".ball")).not.toBeNull();
+    expect(btn.querySelector(".sliver")).toBeNull();
+    await user.click(btn);
+    expect(await screen.findByRole("combobox", { name: /ask wisp/i })).toBeInTheDocument();
   });
 });

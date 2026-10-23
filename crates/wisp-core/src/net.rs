@@ -254,9 +254,120 @@ pub async fn speed_test(url: &str) -> Result<SpeedResult> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Google Lens: reverse image search for a circled area, on an explicit click.
+
+pub const LENS_BASE: &str = "https://lens.google.com";
+/// Largest image sent to Lens.
+pub const MAX_LENS_BYTES: usize = 15 * 1024 * 1024;
+
+/// A Lens results page URL, or nothing if `raw` isn't one (only https
+/// pages on lens.google.com are ever opened).
+pub fn lens_result_url(raw: &str) -> Option<String> {
+    let url = crate::tools::validate_url(raw.trim()).ok()?;
+    let parsed = url::Url::parse(&url).ok()?;
+    (parsed.scheme() == "https" && parsed.host_str() == Some("lens.google.com")).then_some(url)
+}
+
+/// The first Lens results URL in an HTML page (when Lens answers with a page
+/// instead of a redirect).
+pub fn lens_url_in_body(body: &str) -> Option<String> {
+    let start = body.find("https://lens.google.com/search?")?;
+    let rest = &body[start..];
+    let end = rest
+        .find(|c: char| c == '"' || c == '\'' || c == '<' || c.is_whitespace())
+        .unwrap_or(rest.len());
+    lens_result_url(&rest[..end].replace("&amp;", "&"))
+}
+
+/// Upload a PNG to Google Lens and return the results page to open.
+/// `base` is `LENS_BASE` (tests point it at a mock server).
+pub async fn lens_upload(base: &str, png: &[u8]) -> Result<String> {
+    if png.len() > MAX_LENS_BYTES || !png.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err(WispError::invalid(
+            "That isn't a PNG image Wisp can search for",
+        ));
+    }
+    let boundary = format!("wisp{}", uuid::Uuid::new_v4().simple());
+    let mut body = Vec::with_capacity(png.len() + 256);
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"encoded_image\"; filename=\"wisp.png\"\r\nContent-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(png);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    let stamp = chrono::Utc::now().timestamp_millis().to_string();
+    let http = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(20))
+        // We want the redirect itself: it's the results page to open.
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Wisp/",
+            env!("CARGO_PKG_VERSION")
+        ))
+        .build()
+        .map_err(|e| WispError::internal(e.to_string()))?;
+    let resp = http
+        .post(format!("{}/v3/upload", base.trim_end_matches('/')))
+        .query(&[("hl", "en"), ("st", stamp.as_str())])
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .map_err(net_err)?;
+    let unexpected = || {
+        WispError::new(
+            ErrorCode::MalformedResponse,
+            "Google Lens didn't return results",
+        )
+    };
+    if resp.status().is_redirection() {
+        return resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(lens_result_url)
+            .ok_or_else(unexpected);
+    }
+    if !resp.status().is_success() {
+        return Err(unexpected());
+    }
+    // A page that links to the results: read at most 1 MB of it.
+    let mut stream = resp.bytes_stream();
+    let mut buf = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(net_err)?;
+        buf.extend_from_slice(&chunk);
+        if buf.len() > 1024 * 1024 {
+            break;
+        }
+    }
+    lens_url_in_body(&String::from_utf8_lossy(&buf)).ok_or_else(unexpected)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lens_urls_are_only_lens_pages() {
+        assert!(lens_result_url("https://lens.google.com/search?p=abc&ep=x").is_some());
+        assert!(lens_result_url("https://evil.example/search?p=abc").is_none());
+        assert!(lens_result_url("http://lens.google.com/search?p=abc").is_none());
+        assert!(lens_result_url("https://lens.google.com.evil.example/").is_none());
+        let page = "<html><a href=\"https://lens.google.com/search?p=AB&amp;ep=gsbubb\">go</a>";
+        assert_eq!(
+            lens_url_in_body(page).as_deref(),
+            Some("https://lens.google.com/search?p=AB&ep=gsbubb")
+        );
+        assert!(lens_url_in_body("<html>nothing</html>").is_none());
+    }
 
     #[test]
     fn labels_and_maths() {

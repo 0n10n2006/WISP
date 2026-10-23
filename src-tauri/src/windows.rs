@@ -1,8 +1,9 @@
 //! The notch (island) and settings windows.
 //!
-//! The island lives at the top-centre of a monitor and has three modes:
-//! a tiny glowing **sliver** (idle), a small **peek** notch on hover, and the
-//! **open** command bar. It only ever covers what its current mode needs.
+//! The island lives at the top of a monitor (or, as a floating ball, in one
+//! of its corners) and has three modes: a tiny glowing **sliver** or ball
+//! (idle), a small **peek** on hover, and the **open** command bar. It only
+//! ever covers what its current mode needs.
 
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
@@ -10,13 +11,17 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder,
 };
-use wisp_core::settings::NotchPosition;
+use wisp_core::settings::{BallCorner, NotchPosition, NotchStyle, Settings};
 
 pub const ISLAND: &str = "island";
 pub const SETTINGS: &str = "settings";
 
 /// Logical sizes per mode (open height is chosen by the UI).
 pub const SLIVER: (f64, f64) = (180.0, 10.0);
+/// The resting floating ball: the ball plus room for its glow.
+pub const BALL: (f64, f64) = (56.0, 56.0);
+/// Gap between the ball (and what grows from it) and the screen's edges.
+pub const BALL_MARGIN: f64 = 12.0;
 /// Peek window: the notch shape plus room for its shoulders and shadow.
 pub const PEEK: (f64, f64) = (400.0, 58.0);
 pub const OPEN_WIDTH: f64 = 760.0;
@@ -70,6 +75,56 @@ fn target_monitor(win: &WebviewWindow) -> Option<(i32, i32, i32, i32, f64)> {
         a.size.height as i32,
         pick.scale_factor(),
     ))
+}
+
+/// Where the island is anchored on its monitor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Anchor {
+    /// Flush with the top edge, as a notch.
+    Top(NotchPosition),
+    /// A floating ball in a corner; whatever opens grows out of that corner.
+    Corner(BallCorner),
+}
+
+impl Anchor {
+    pub fn from_settings(s: &Settings) -> Self {
+        match s.notch_style {
+            NotchStyle::Notch => Anchor::Top(s.notch_position),
+            NotchStyle::Ball => Anchor::Corner(s.ball_corner),
+        }
+    }
+}
+
+/// Physical rect (x, y, w, h) for `logical` at `anchor` on `monitor`.
+pub fn place(
+    monitor: (i32, i32, i32, i32, f64),
+    logical: (f64, f64),
+    user_scale: f64,
+    anchor: Anchor,
+) -> (i32, i32, u32, u32) {
+    let corner = match anchor {
+        Anchor::Top(position) => return place_top(monitor, logical, user_scale, position),
+        Anchor::Corner(c) => c,
+    };
+    let (mx, my, mw, mh, scale) = monitor;
+    let s = scale * user_scale;
+    let w = ((logical.0 * s).round() as i32).min(mw);
+    let h = ((logical.1 * s).round() as i32).min(mh);
+    let margin = (BALL_MARGIN * s).round() as i32;
+    let left = matches!(corner, BallCorner::TopLeft | BallCorner::BottomLeft);
+    let top = matches!(corner, BallCorner::TopLeft | BallCorner::TopRight);
+    // Keep the anchored edges fixed, so a growing bar extends away from them.
+    let x = if left {
+        mx + margin.min(mw - w)
+    } else {
+        mx + (mw - w - margin).max(0)
+    };
+    let y = if top {
+        my + margin.min(mh - h)
+    } else {
+        my + (mh - h - margin).max(0)
+    };
+    (x, y, w as u32, h as u32)
 }
 
 /// Placement along the top edge (left, centre or right).
@@ -127,7 +182,9 @@ pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> Island
     let mut layout = before;
     layout.mode = mode;
     layout.expanded = mode == NotchMode::Open;
+    let anchor = Anchor::from_settings(&settings);
     let logical = match mode {
+        NotchMode::Sliver if matches!(anchor, Anchor::Corner(_)) => BALL,
         NotchMode::Sliver => SLIVER,
         NotchMode::Peek => PEEK,
         NotchMode::Open => {
@@ -156,12 +213,7 @@ pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> Island
         // Never taller than 85% of the screen.
         let max_h = m.3 as f64 * 0.85 / (m.4 * settings.island_scale as f64);
         let logical = (logical.0, logical.1.min(max_h));
-        let rect = place_top(
-            m,
-            logical,
-            settings.island_scale as f64,
-            settings.notch_position,
-        );
+        let rect = place(m, logical, settings.island_scale as f64, anchor);
         let (moved, resized) = {
             let mut last = LAST_RECT.lock().expect("rect");
             let changes = rect_changes(*last, rect);
@@ -345,6 +397,61 @@ mod tests {
         assert_eq!(
             place_top(m, (400.0, 58.0), 1.0, NotchPosition::Right).0,
             1920 - 400 - 48
+        );
+    }
+
+    #[test]
+    fn the_ball_sits_in_its_corner_and_grows_away_from_it() {
+        // 1920×1040 work area (taskbar excluded) at 100%.
+        let m = (0, 0, 1920, 1040, 1.0);
+        let at = |c, size| place(m, size, 1.0, Anchor::Corner(c));
+        assert_eq!(at(BallCorner::TopLeft, BALL), (12, 12, 56, 56));
+        assert_eq!(
+            at(BallCorner::BottomRight, BALL),
+            (1920 - 56 - 12, 1040 - 56 - 12, 56, 56)
+        );
+        // The bar opens from the same corner: bottom corners grow upward and
+        // keep the bottom edge where the ball was.
+        let ball = at(BallCorner::BottomLeft, BALL);
+        let bar = at(BallCorner::BottomLeft, (OPEN_WIDTH, 400.0));
+        assert_eq!(bar.0, ball.0);
+        assert_eq!(bar.1 + bar.3 as i32, ball.1 + ball.3 as i32);
+        let peek = at(BallCorner::TopRight, PEEK);
+        assert_eq!(peek.0 + peek.2 as i32, 1920 - 12);
+        assert_eq!(peek.1, 12);
+        // A monitor elsewhere, at 150%: still inside it.
+        let m2 = (-1280, 200, 1280, 984, 1.5);
+        let r = place(m2, BALL, 1.0, Anchor::Corner(BallCorner::BottomRight));
+        assert_eq!(r, (-84 - 18, 200 + 984 - 84 - 18, 84, 84));
+        // Too big for the screen: clamped, never off it.
+        let r = place(
+            (0, 0, 700, 500, 1.0),
+            (OPEN_WIDTH, 620.0),
+            1.0,
+            Anchor::Corner(BallCorner::BottomRight),
+        );
+        assert_eq!(r, (0, 0, 700, 500));
+    }
+
+    #[test]
+    fn notch_anchor_matches_top_placement() {
+        let m = (0, 0, 1920, 1040, 1.0);
+        let s = Settings::default();
+        assert_eq!(
+            Anchor::from_settings(&s),
+            Anchor::Top(NotchPosition::Center)
+        );
+        assert_eq!(
+            place(m, PEEK, 1.0, Anchor::Top(NotchPosition::Left)),
+            place_top(m, PEEK, 1.0, NotchPosition::Left)
+        );
+        let ball = Settings {
+            notch_style: NotchStyle::Ball,
+            ..Settings::default()
+        };
+        assert_eq!(
+            Anchor::from_settings(&ball),
+            Anchor::Corner(BallCorner::BottomRight)
         );
     }
 

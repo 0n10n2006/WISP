@@ -76,6 +76,28 @@ pub enum NotchPosition {
     Right,
 }
 
+/// What Wisp looks like when it's resting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum NotchStyle {
+    /// A notch along the top edge.
+    #[default]
+    Notch,
+    /// A small floating ball in a corner of the screen.
+    Ball,
+}
+
+/// Which corner of the screen the floating ball sits in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum BallCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    #[default]
+    BottomRight,
+}
+
 /// How visible the idle notch is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -169,10 +191,14 @@ pub struct Settings {
     pub accent_color: String,
     pub notch_position: NotchPosition,
     pub sliver_style: SliverStyle,
+    pub notch_style: NotchStyle,
+    pub ball_corner: BallCorner,
     /// Dashboard tabs to show, in order.
     pub dashboard_tabs: Vec<String>,
     /// Fold the bar away when you click another app.
     pub close_on_blur: bool,
+    /// Fold the bar away shortly after the mouse leaves it.
+    pub fold_on_leave: bool,
     /// Stop listening automatically when you finish speaking.
     pub auto_stop_voice: bool,
     /// Pause after speech that counts as "done talking" (ms).
@@ -250,8 +276,11 @@ impl Default for Settings {
             accent_color: "#78e4f2".into(),
             notch_position: NotchPosition::Center,
             sliver_style: SliverStyle::Glow,
+            notch_style: NotchStyle::Notch,
+            ball_corner: BallCorner::BottomRight,
             dashboard_tabs: DASHBOARD_TABS.iter().map(|t| t.to_string()).collect(),
             close_on_blur: true,
+            fold_on_leave: true,
             auto_stop_voice: true,
             silence_ms: 1200,
             voice_language: String::new(),
@@ -629,6 +658,8 @@ mod tests {
                 "dashboardTabs": ["power", "bogus", "power", "today"],
                 "notchPosition": "right",
                 "sliverStyle": "hidden",
+                "notchStyle": "ball",
+                "ballCorner": "top-left",
                 "vocabulary": [" Alexandra ", "alexandra", "", "Kubernetes"],
                 "neverOverApps": ["C:\\Tools\\OBS64.EXE", "obs64", "photoshop.exe"],
                 "voiceLanguage": "en-GB",
@@ -638,6 +669,8 @@ mod tests {
         assert_eq!(s.dashboard_tabs, vec!["power", "today"]);
         assert_eq!(s.notch_position, NotchPosition::Right);
         assert_eq!(s.sliver_style, SliverStyle::Hidden);
+        assert_eq!(s.notch_style, NotchStyle::Ball);
+        assert_eq!(s.ball_corner, BallCorner::TopLeft);
         assert_eq!(s.vocabulary, vec!["Alexandra", "Kubernetes"]);
         assert_eq!(s.never_over_apps, vec!["obs64", "photoshop"]);
 
@@ -650,6 +683,8 @@ mod tests {
             json!({"silenceMs": 9000}),
             json!({"voiceLanguage": "en GB; drop"}),
             json!({"notchPosition": "bottom"}),
+            json!({"notchStyle": "square"}),
+            json!({"ballCorner": "middle"}),
         ] {
             assert!(Settings::default().patched(&bad).is_err(), "{bad}");
         }

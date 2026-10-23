@@ -555,3 +555,60 @@ async fn never_follows_redirects_with_the_key() {
     assert!(client(&server).list_models(KEY).await.is_err());
     elsewhere.verify().await;
 }
+
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\nfake image bytes";
+
+#[tokio::test]
+async fn lens_follows_its_redirect_to_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v3/upload"))
+        .respond_with(
+            ResponseTemplate::new(303)
+                .insert_header("location", "https://lens.google.com/search?p=XYZ&ep=gsbubb"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let url = wisp_core::net::lens_upload(&server.uri(), PNG)
+        .await
+        .unwrap();
+    assert_eq!(url, "https://lens.google.com/search?p=XYZ&ep=gsbubb");
+    let req = &server.received_requests().await.unwrap()[0];
+    let ct = req.headers.get("content-type").unwrap().to_str().unwrap();
+    assert!(ct.starts_with("multipart/form-data; boundary="));
+    let body = String::from_utf8_lossy(&req.body);
+    assert!(body.contains("name=\"encoded_image\""));
+}
+
+#[tokio::test]
+async fn lens_reads_results_from_a_page_and_rejects_other_hosts() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v3/upload"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"<html><meta content="0;url=https://lens.google.com/search?p=Q1&amp;ep=x"></html>"#,
+        ))
+        .mount(&server)
+        .await;
+    assert_eq!(
+        wisp_core::net::lens_upload(&server.uri(), PNG)
+            .await
+            .unwrap(),
+        "https://lens.google.com/search?p=Q1&ep=x"
+    );
+
+    let other = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(302).insert_header("location", "https://evil.example/phish"),
+        )
+        .mount(&other)
+        .await;
+    assert!(wisp_core::net::lens_upload(&other.uri(), PNG)
+        .await
+        .is_err());
+    assert!(wisp_core::net::lens_upload(&other.uri(), b"not a png")
+        .await
+        .is_err());
+}

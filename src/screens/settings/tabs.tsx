@@ -435,8 +435,9 @@ export function PrivacyTab() {
           <li>
             <strong>Only when you use them:</strong> web answers and research briefs use Google
             Search through Gemini; “Show me” and screen replicas send one screenshot of the current
-            screen to Gemini; weather sends the place you picked to Open-Meteo; the speed test
-            downloads from speed.cloudflare.com; update checks contact GitHub.
+            screen to Gemini; “Google Lens” on a circled area sends just that area to Google Lens
+            and opens the results in your browser; weather sends the place you picked to Open-Meteo;
+            the speed test downloads from speed.cloudflare.com; update checks contact GitHub.
           </li>
           <li>
             <strong>Stays on this PC:</strong> settings, reminders, memory, clipboard history (off

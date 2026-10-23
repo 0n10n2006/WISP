@@ -27,6 +27,7 @@ const COMMANDS: &[&str] = &[
     "capture_select",
     "capture_cancel",
     "capture_overlay_ready",
+    "reverse_image_search",
     "capture_select_lasso",
     "show_me",
     "highlights_get",

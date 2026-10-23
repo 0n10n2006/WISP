@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { host } from "../services/host";
 import type { IslandLayout } from "../services/types";
+import { useSettings } from "../state/settings";
 
 /** Logical window sizes, mirroring `src-tauri/src/windows.rs`. */
 const SIZES = { sliver: [180, 10], peek: [400, 58], open: [760, 0] } as const;
+const BALL = [56, 56] as const;
 
 /**
  * Browser preview only: simulates the desktop around the notch window so the
@@ -18,7 +20,8 @@ export function PreviewFrame({ children }: { children: ReactNode }) {
   useEffect(() => host().onIslandLayout(setLayout), []);
   const call = (fn: string, arg?: unknown) =>
     (window as unknown as { wispMock: Record<string, (a?: unknown) => void> }).wispMock[fn]?.(arg);
-  const [w, h] = SIZES[layout.mode];
+  const ball = useSettings((s) => s.snapshot?.settings.notchStyle === "ball");
+  const [w, h] = ball && layout.mode === "sliver" ? BALL : SIZES[layout.mode];
   return (
     <div className="preview-desktop">
       <div
