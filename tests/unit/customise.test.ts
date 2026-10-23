@@ -22,8 +22,8 @@ describe("customisation helpers", () => {
   });
 
   it("reads the vocabulary box", () => {
-    expect(parseVocabulary("Naumaan\nKubernetes, kubernetes\n\n  WISP ")).toEqual([
-      "Naumaan",
+    expect(parseVocabulary("Alexandra\nKubernetes, kubernetes\n\n  WISP ")).toEqual([
+      "Alexandra",
       "Kubernetes",
       "WISP",
     ]);

@@ -184,6 +184,7 @@ async fn run(
                     "The model didn't return a web page. Try again.",
                 ));
             }
+            let html = wisp_core::sanitize::sanitize_html(&html);
             let path = dir.join(format!("{}.html", file_stem("screen replica", &stamp)));
             std::fs::write(&path, html).map_err(|e| WispError::internal(e.to_string()))?;
             Ok(path.display().to_string())
@@ -195,7 +196,7 @@ async fn run(
             progress(app, id, 0.9, "Writing the brief…");
             let md = prompt::research_markdown(
                 &topic,
-                &out.text,
+                &wisp_core::sanitize::sanitize_markdown(&out.text),
                 &out.sources,
                 &chrono::Local::now().format("%-d %B %Y").to_string(),
             );
@@ -216,6 +217,17 @@ pub fn cancel(app: &AppHandle, id: &str) {
     {
         t.cancel();
     }
+}
+
+/// `path` if it is an `.html`/`.md` file really inside Documents\\Wisp
+/// (links and `..` resolved), i.e. something an agent wrote.
+pub fn owned_output(app: &AppHandle, path: &str) -> Option<std::path::PathBuf> {
+    let dir = std::fs::canonicalize(output_dir(app).ok()?).ok()?;
+    let real = std::fs::canonicalize(path).ok()?;
+    let ext_ok = real
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("md"));
+    (real.starts_with(&dir) && ext_ok && real.is_file()).then_some(real)
 }
 
 #[cfg(test)]

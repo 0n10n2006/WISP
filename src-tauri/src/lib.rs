@@ -5,6 +5,7 @@ mod agents;
 mod apps;
 mod capture;
 mod chrome;
+mod cleanup;
 mod clipboard_history;
 mod com_worker;
 mod commands;
@@ -41,6 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             windows::summon_island(app);
         }))
+        .plugin(navigation_guard())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
@@ -137,12 +139,13 @@ pub fn run() {
             let warm = handle.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                let s = warm.state::<AppState>().settings();
-                let _ = warm
-                    .state::<AppState>()
-                    .db
-                    .prune_history(s.history_retention_days.max(1), s.content_history);
+                housekeeping(&warm);
                 commands::dashboard::cached_catalogue(&warm, false).await;
+                // Retention applies while Wisp keeps running, too.
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
+                    housekeeping(&warm);
+                }
             });
             if !settings.onboarding_complete && !self_test {
                 windows::open_settings(&handle, Some("welcome".into()));
@@ -250,4 +253,115 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Wisp");
+}
+
+/// Apply the history retention period to stored history and kept audio.
+fn housekeeping(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let state = app.state::<AppState>();
+    let s = state.settings();
+    let _ = state
+        .db
+        .prune_history(s.history_retention_days.max(1), s.content_history);
+    if let Ok(dir) = app.path().app_data_dir() {
+        let days = if s.retain_audio {
+            s.history_retention_days.max(1)
+        } else {
+            0
+        };
+        cleanup::prune_recordings(&dir, days);
+    }
+}
+
+/// Wisp's webviews only ever show Wisp's own pages. Any attempt to navigate
+/// elsewhere (a link that slipped through, injected content) is blocked;
+/// links are opened in the browser through the validated `open_external`.
+fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(|_webview, url| is_app_url(url))
+        .build()
+}
+
+fn is_app_url(url: &tauri::Url) -> bool {
+    match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => {
+            url.host_str() == Some("tauri.localhost")
+                || (cfg!(debug_assertions)
+                    && matches!(url.host_str(), Some("localhost") | Some("127.0.0.1"))
+                    && url.port() == Some(1420))
+        }
+        "about" => url.as_str() == "about:blank",
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod acl_tests {
+    #[test]
+    fn webviews_stay_on_wisp_pages() {
+        let ok = |u: &str| super::is_app_url(&tauri::Url::parse(u).unwrap());
+        assert!(ok("tauri://localhost/index.html?window=settings"));
+        assert!(ok("http://tauri.localhost/index.html"));
+        assert!(!ok("https://evil.example/"));
+        assert!(!ok("http://tauri.localhost.evil.example/"));
+        assert!(!ok("file:///C:/Users/me/x.html"));
+        assert!(!ok("javascript:alert(1)"));
+    }
+
+    /// Commands from a `generate_handler![...]` block or a quoted list.
+    fn names(text: &str, start: &str, end: &str, quoted: bool) -> Vec<String> {
+        let from = text.find(start).expect("start marker") + start.len();
+        let body = &text[from..];
+        let body = &body[..body.find(end).expect("end marker")];
+        body.split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                if quoted {
+                    s.trim_matches('"').to_string()
+                } else {
+                    s.rsplit("::").next().unwrap().to_string()
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_command_is_declared_and_granted() {
+        let lib = include_str!("lib.rs");
+        let build = include_str!("../build.rs");
+        let mut handled = names(lib, "generate_handler![", "]", false);
+        let mut declared = names(build, "const COMMANDS: &[&str] = &[", "];", true);
+        handled.sort();
+        declared.sort();
+        assert_eq!(handled, declared, "build.rs COMMANDS out of sync");
+        let main: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/main.json")).unwrap();
+        let granted: Vec<&str> = main["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p.as_str()?.strip_prefix("allow-"))
+            .collect();
+        for c in &declared {
+            assert!(
+                granted.contains(&c.replace('_', "-").as_str()),
+                "{c} not granted to the main windows"
+            );
+        }
+        for small in ["overlay", "highlight"] {
+            let path = format!("{}/capabilities/{small}.json", env!("CARGO_MANIFEST_DIR"));
+            let cap: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let perms = cap["permissions"].as_array().unwrap();
+            for risky in [
+                "allow-update-settings",
+                "allow-launch-item",
+                "allow-power-action",
+            ] {
+                assert!(!perms.iter().any(|p| p == risky), "{small} has {risky}");
+            }
+        }
+    }
 }

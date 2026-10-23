@@ -21,13 +21,51 @@ pub fn data_stats(state: State<'_, AppState>) -> CmdResult<StorageStats> {
     state.db.stats()
 }
 
-/// Delete local data. `"settings"` resets preferences; `"everything"` also removes the API key.
+/// Windows' own confirmation, drawn by the host rather than the webview, so
+/// the most destructive action can't be triggered by page content alone.
+async fn native_confirm(app: &AppHandle, title: &str, body: &str, ok: &str) -> bool {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let (a, title, body, ok) = (
+        app.clone(),
+        title.to_string(),
+        body.to_string(),
+        ok.to_string(),
+    );
+    tauri::async_runtime::spawn_blocking(move || {
+        a.dialog()
+            .message(body)
+            .title(title)
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(ok, "Cancel".into()))
+            .blocking_show()
+    })
+    .await
+    .unwrap_or(false)
+}
+
+/// Delete local data. `"settings"` resets preferences; `"everything"` also
+/// removes the API key, backups, kept audio and crash logs (after Windows
+/// asks the user to confirm).
 #[tauri::command]
-pub fn data_delete(
+pub async fn data_delete(
     app: AppHandle,
     state: State<'_, AppState>,
     scope: String,
 ) -> CmdResult<StorageStats> {
+    if scope == "everything"
+        && !native_confirm(
+            &app,
+            "Delete everything in Wisp?",
+            "History, memory, reminders, clipboard history, saved audio, crash logs, settings and your API key will be removed from this PC. Files agents saved in Documents\\Wisp are kept.",
+            "Delete everything",
+        )
+        .await
+    {
+        return Err(WispError::new(
+            wisp_core::ErrorCode::Cancelled,
+            "Nothing was deleted.",
+        ));
+    }
     let reset_settings = |state: &AppState, keep_onboarding: bool| -> CmdResult<()> {
         let old = state.settings();
         let new = Settings {
@@ -49,8 +87,14 @@ pub fn data_delete(
             state.db.delete_data(DataScope::All)?;
             state.secrets.delete()?;
             reset_settings(&state, false)?;
+            if let Ok(dir) = app.path().app_data_dir() {
+                crate::cleanup::wipe_leftovers(&dir);
+            }
         }
         _ => return Err(WispError::invalid("Unknown data category")),
+    }
+    if let Ok(dir) = app.path().app_data_dir() {
+        crate::cleanup::remove_backups(&dir);
     }
     let snap = super::settings::get_settings(app.clone(), app.state::<AppState>());
     let _ = app.emit("wisp://settings", &snap);

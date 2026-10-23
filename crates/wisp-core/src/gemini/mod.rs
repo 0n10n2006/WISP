@@ -40,6 +40,9 @@ impl GeminiClient {
     pub fn with_base_url(base: impl Into<String>) -> Self {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
+            // The API key travels in a custom header that reqwest would
+            // forward on a cross-host redirect; Gemini never redirects.
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("Wisp/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("http client");
@@ -108,7 +111,10 @@ impl GeminiClient {
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
-        let body = resp.text().await.unwrap_or_default();
+        let body = read_limited(resp, MAX_ERROR_BODY)
+            .await
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
         Err(map_http_error(
             status.as_u16(),
             &body,
@@ -137,7 +143,7 @@ impl GeminiClient {
                     }
                     async move {
                         let r = self.send_checked(rb).await?;
-                        r.json::<ListModelsResponse>().await.map_err(|_| {
+                        read_json::<ListModelsResponse>(r).await.map_err(|_| {
                             WispError::new(
                                 ErrorCode::MalformedResponse,
                                 "Couldn't read the model list.",
@@ -239,7 +245,7 @@ impl GeminiClient {
                     .body(body.clone());
                 async move {
                     let r = self.send_checked(rb).await?;
-                    r.json::<GenerateContentResponse>().await.map_err(|_| {
+                    read_json::<GenerateContentResponse>(r).await.map_err(|_| {
                         WispError::new(
                             ErrorCode::MalformedResponse,
                             "Gemini sent a response Wisp couldn't read.",
@@ -317,6 +323,12 @@ impl GeminiClient {
                     for data in parser.push(&bytes) {
                         handle(data, &mut out)?;
                     }
+                    if parser.pending() > MAX_RESPONSE_BODY || out.text.len() > MAX_RESPONSE_BODY {
+                        return Err(WispError::new(
+                            ErrorCode::MalformedResponse,
+                            "Gemini's answer was too large.",
+                        ));
+                    }
                 }
             }
         }
@@ -325,6 +337,48 @@ impl GeminiClient {
         }
         finish(out)
     }
+}
+
+/// Largest error body read (they are short JSON messages).
+const MAX_ERROR_BODY: usize = 64 * 1024;
+/// Largest response or streamed answer accepted.
+const MAX_RESPONSE_BODY: usize = 8 * 1024 * 1024;
+/// A whole non-streamed body must arrive within this time.
+const BODY_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Read at most `max` bytes of a body, within `BODY_TIMEOUT`.
+async fn read_limited(mut resp: reqwest::Response, max: usize) -> Result<Vec<u8>> {
+    let read = async {
+        let mut buf = Vec::new();
+        while let Some(chunk) = resp.chunk().await.map_err(|e| map_transport_error(&e))? {
+            if buf.len() + chunk.len() > max {
+                return Err(WispError::new(
+                    ErrorCode::MalformedResponse,
+                    "Gemini's answer was too large.",
+                ));
+            }
+            buf.extend_from_slice(&chunk);
+        }
+        Ok(buf)
+    };
+    tokio::time::timeout(BODY_TIMEOUT, read)
+        .await
+        .map_err(|_| {
+            WispError::new(
+                ErrorCode::Timeout,
+                "Gemini took too long to answer. Try again.",
+            )
+        })?
+}
+
+async fn read_json<T: serde::de::DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
+    let bytes = read_limited(resp, MAX_RESPONSE_BODY).await?;
+    serde_json::from_slice(&bytes).map_err(|_| {
+        WispError::new(
+            ErrorCode::MalformedResponse,
+            "Gemini sent a response Wisp couldn't read.",
+        )
+    })
 }
 
 impl Default for GeminiClient {

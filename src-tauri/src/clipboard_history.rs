@@ -103,6 +103,11 @@ pub fn spawn(app: AppHandle) {
             let Ok(text) = app.clipboard().read_text() else {
                 continue;
             };
+            // If something else was copied while reading (e.g. a password
+            // manager), skip this round; the next one checks it properly.
+            if cfg!(windows) && imp::sequence() != last_seq {
+                continue;
+            }
             if last_text.as_deref() == Some(text.as_str()) {
                 continue;
             }

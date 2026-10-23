@@ -167,8 +167,14 @@ pub async fn ask(
             break;
         }
         let mut responses = Vec::new();
-        for call in &out.function_calls {
-            let response = handle_call(&app, &state, call, &on_event, &cancel).await;
+        for (i, call) in out.function_calls.iter().enumerate() {
+            // A reply asking for many actions at once is a sign of injected
+            // instructions; only the first few are considered.
+            let response = if i < wisp_core::tools::MAX_CALLS_PER_TURN {
+                handle_call(&app, &state, call, &on_event, &cancel).await
+            } else {
+                json!({ "ok": false, "error": "Too many actions at once; this one was not run." })
+            };
             responses.push(FunctionResponse {
                 name: call.name.clone(),
                 response,
@@ -231,6 +237,7 @@ async fn desktop_context(app: &AppHandle, state: &AppState, titles: bool) -> Des
     let installed = super::dashboard::cached_catalogue(app, false)
         .await
         .iter()
+        .filter(|i| !wisp_core::launcher::is_shell(i))
         .map(|i| i.name.clone())
         .collect();
     DesktopContext {

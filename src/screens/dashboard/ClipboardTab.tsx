@@ -7,6 +7,7 @@ import { useConversation } from "../../state/conversation";
 import { useSettings } from "../../state/settings";
 import { toast } from "../../state/toast";
 import { timeAgo } from "./util";
+import { clipboardPrompt } from "../../state/assist";
 
 type Filter = "all" | "text" | "link";
 
@@ -113,10 +114,12 @@ export default function ClipboardTab() {
                   aria-label="Ask Wisp about this"
                   title="Ask Wisp about this"
                   onClick={() =>
-                    void useConversation.getState().ask(`Help me with this:\n\n---\n${c.text}`, {
-                      contextKind: "clipboard",
-                      displayText: `About a clipboard item (${c.text.length.toLocaleString()} characters)`,
-                    })
+                    void useConversation
+                      .getState()
+                      .ask(clipboardPrompt("Help me with this:", c.text), {
+                        contextKind: "clipboard",
+                        displayText: `About a clipboard item (${c.text.length.toLocaleString()} characters)`,
+                      })
                   }
                 >
                   <Icon name="spark" size={14} />

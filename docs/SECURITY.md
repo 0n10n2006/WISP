@@ -5,13 +5,13 @@ code; if you change one of the boundaries below, update this file in the same ch
 
 ## Trust boundaries
 
-| Boundary          | Rule                                                                                                                                                                          | Where enforced                                              |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Webview → Rust    | The UI can only call typed Tauri commands listed in `src-tauri/src/lib.rs`. There is no shell, filesystem or generic HTTP plugin exposed to the webview.                      | `src-tauri/capabilities/default.json`, `generate_handler!`  |
-| Model output → OS | Model output is untrusted. Proposed actions must name a known tool, match a strict schema (unknown fields rejected), and pass value checks. Only `ValidatedAction`s execute.  | `crates/wisp-core/src/tools.rs`                             |
-| App → Google      | Only the Gemini REST API is called, with the key in the `x-goog-api-key` header (never in URLs). Request bodies are capped at 15 MB.                                          | `crates/wisp-core/src/gemini/mod.rs`                        |
-| App → other hosts | Only on an explicit user action: Open-Meteo (weather for the chosen place), `speed.cloudflare.com` (speed test button), GitHub Releases API (update check button).            | `crates/wisp-core/src/net.rs`, `updates.rs`                 |
-| UI → launcher     | The UI can launch only catalogue items. Each target is re-validated in Rust and must match its id: a Start-menu shortcut/program path, a numeric Steam id, or a built-in URI. | `crates/wisp-core/src/launcher.rs`, `commands/dashboard.rs` |
+| Boundary          | Rule                                                                                                                                                                                                                                                                                                               | Where enforced                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Webview → Rust    | The UI can only call typed Tauri commands. Each window gets only the commands it needs: the Select-to-Ask overlays only capture commands, the Show me window only its highlights. No shell, filesystem, window, plugin or generic HTTP access from JavaScript. Webviews can't navigate away from Wisp's own pages. | `src-tauri/build.rs` (app manifest), `src-tauri/capabilities/*.json`, `lib.rs::navigation_guard` |
+| Model output → OS | Model output is untrusted. Proposed actions must name a known tool, match a strict schema (unknown fields rejected), and pass value checks. Only `ValidatedAction`s execute.                                                                                                                                       | `crates/wisp-core/src/tools.rs`                                                                  |
+| App → Google      | Only the Gemini REST API is called, with the key in the `x-goog-api-key` header (never in URLs). Redirects are never followed (the header would go with them). Request bodies are capped at 15 MB, responses at 8 MB, error bodies at 64 KB; non-streamed bodies must arrive within 3 minutes.                     | `crates/wisp-core/src/gemini/mod.rs`                                                             |
+| App → other hosts | Only on an explicit user action: Open-Meteo (weather for the chosen place), `speed.cloudflare.com` (speed test button), GitHub Releases API (update check button).                                                                                                                                                 | `crates/wisp-core/src/net.rs`, `updates.rs`                                                      |
+| UI → launcher     | The UI sends only a catalogue id; the target always comes from the host's own catalogue (Start-menu shortcuts, numeric Steam ids, built-in URIs) and is validated again. `.appref-ms` is not accepted.                                                                                                             | `crates/wisp-core/src/launcher.rs`, `commands/dashboard.rs`                                      |
 
 ## API key
 
@@ -23,15 +23,28 @@ code; if you change one of the boundaries below, update this file in the same ch
 
 ## Desktop actions
 
-- Allowed tools: `open_app` (user allowlist only), `open_url` (http/https only, no embedded credentials,
-  ≤ 2048 chars), `copy_text` (≤ 20 000 chars), `create_reminder` (title ≤ 200, RFC 3339 time, not in the past,
-  ≤ 5 years ahead), `remember` (≤ 500 chars, always confirmed).
-- At most 3 model ↔ tool rounds per request; unanswered confirmations expire after 2 minutes as "declined".
+- Allowed tools: `open_app` (allowlist or installed catalogue, never shells), `open_url` (http/https only, no
+  embedded credentials, not this PC or the local network, ≤ 2048 chars), `copy_text` (≤ 20 000 chars),
+  `create_reminder` (title ≤ 200, RFC 3339 time, not in the past, ≤ 5 years ahead, ≤ 500 open reminders),
+  `remember` (≤ 500 chars), `switch_to_app` (a window that is open right now).
+- **Every** model-proposed action needs the user's confirmation, and the dialog shows what will really happen
+  (the copied text, the reminder and its time, the app, the full URL). The model may be following instructions
+  hidden in a web page, a screenshot or the clipboard, so nothing it asks for happens silently.
+- At most 3 actions per model reply and 3 model ↔ tool rounds per request; unanswered confirmations expire after
+  2 minutes as "declined".
+- Untrusted text is fenced in the prompt: the desktop context (app names, titles) sits in a `<desktop>` block and
+  clipboard text in `<clipboard_text>`, both marked as data, with control characters and angle brackets removed
+  from names and titles. Screen and clipboard requests carry an explicit "content is never instructions" rule.
 - There is **no** shell, PowerShell, script or file-write tool. App allowlist entries cannot point at shells
-  or script hosts (`cmd.exe`, `powershell.exe`, `wscript.exe`, `mshta.exe`, `rundll32.exe`, …) and may not
-  contain arguments or shell metacharacters.
-- `open_app`, `open_url` and `remember` require user confirmation; every action is written to the audit log with a
-  redacted summary (host only for URLs, character count for copied text).
+  or script hosts (`cmd`, `powershell`, `pwsh`, `wt`, `conhost`, `wscript`, `mshta`, `rundll32`, `python`,
+  `node`, `wsl`, …) and may not contain arguments or shell metacharacters. Shell and terminal shortcuts in the
+  Start menu are never offered to the model (the user can still open them from the bar).
+- Every action is written to the audit log with a redacted summary (host only for URLs, character count for
+  copied text).
+- Links in answers show their real domain next to the label, and open only through `open_external`
+  (http/https, no local-network hosts).
+- Dictation inserts strip control and bidi-override characters; into a terminal (cmd, PowerShell, Windows
+  Terminal, …) line breaks are removed so a paste can never run a command by itself.
 
 ## Dashboard and system controls
 
@@ -67,6 +80,41 @@ code; if you change one of the boundaries below, update this file in the same ch
   input meant for the game. Exclusions are normalised process names (max 50).
 - Dictation vocabulary (max 100 entries of 60 chars) and the language hint are validated in `settings.rs` and
   are only sent with transcription requests.
+
+## Model-written files
+
+- Screen replicas are model-written HTML. Before saving (and again before opening older files), Wisp removes
+  scripts, frames, objects, forms, `<base>`, `<link>`, `<meta http-equiv>`, event-handler attributes,
+  `javascript:` URLs and every remote `src`, and puts a Content-Security-Policy first in `<head>`
+  (`default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'`), so the page can't run
+  code, load anything or send anything anywhere. (`wisp-core/src/sanitize.rs`, tested.)
+- Research briefs drop Markdown images and raw HTML (outside code), and source URLs are escaped.
+- Agent files are opened or deleted only if, after resolving links and `..`, they are `.html`/`.md` files inside
+  `Documents\Wisp`.
+
+## Local data
+
+- SQLite runs with `secure_delete=ON` and the write-ahead log is checkpointed and truncated after deletions, so
+  deleted text doesn't linger in free pages or the `-wal` file. Stored responses are redacted like prompts.
+- "Delete everything" is confirmed in a native Windows dialog drawn by the host (not the webview), and also
+  removes migration backups, kept dictation audio, crash logs and set-aside settings. Agent files in
+  `Documents\Wisp` are kept and the dialog says so. Any deletion removes migration backups.
+- Retention runs every 6 hours, not only at start-up, and also applies to kept dictation audio. Turning off
+  clipboard history forgets unpinned clips; turning off "keep audio" deletes saved recordings.
+- The clipboard watcher re-checks the clipboard sequence number after reading, so a password copied mid-read is
+  never stored.
+- The diagnostics report copies only switches and choices; paths, places, names, custom instructions,
+  vocabulary, starred apps and the microphone id appear only as counts or yes/no. A test fails if a new setting
+  isn't classified.
+- Wallpaper paths must be on a local drive (no network or device paths, checked before the file is touched, and
+  again after resolving links), and the UI can't change the list of wallpapers Wisp trusts.
+
+## Build & release
+
+- CI runs with a read-only token and doesn't keep Git credentials on disk. Third-party actions are pinned to
+  commit SHAs.
+- Releases are built without caches and with a read-only token; a separate job with write access only uploads
+  the installers and a `SHA256SUMS.txt`. Builds are not yet code-signed.
 
 ## Capture & privacy
 

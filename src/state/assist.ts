@@ -50,10 +50,16 @@ export async function askAboutClipboard(prompt: string, label: string): Promise<
     return;
   }
   const clipped = text.slice(0, MAX_CLIPBOARD_CHARS);
-  await useConversation.getState().ask(`${prompt}\n\n---\n${clipped}`, {
+  await useConversation.getState().ask(clipboardPrompt(prompt, clipped), {
     contextKind: "clipboard",
     displayText: `${label} — clipboard text (${clipped.length.toLocaleString()} characters)`,
   });
+}
+
+/** The user's request plus the clipboard, fenced so it reads as data. */
+export function clipboardPrompt(prompt: string, text: string): string {
+  const safe = text.replace(/<\/?clipboard_text>/gi, "");
+  return `${prompt}\n\n<clipboard_text>\n${safe}\n</clipboard_text>`;
 }
 
 interface RemindersState {

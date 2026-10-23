@@ -205,27 +205,27 @@ pub async fn launcher_list(app: AppHandle, refresh: Option<bool>) -> CmdResult<C
     })
 }
 
-/// Launch a catalogue item. The target is re-validated here, so the UI can
-/// only ever start Start-menu shortcuts/programs, Steam games by id or the
-/// built-in Windows app URIs.
+/// Launch a catalogue item. Only the id is trusted from the UI: the target
+/// always comes from the host's own catalogue (Start-menu shortcuts, Steam
+/// games by id, built-in Windows URIs), and is validated again.
 #[tauri::command]
-pub fn launch_item(app: AppHandle, state: State<'_, AppState>, item: LaunchItem) -> CmdResult<()> {
-    launcher::validate_target(&item.target)?;
-    let expected_id = if item.target.starts_with("steam://") {
-        format!(
-            "steam:{}",
-            item.target.trim_start_matches("steam://rungameid/")
-        )
-    } else if launcher::BUILTIN.iter().any(|(_, u)| *u == item.target) {
-        format!("uri:{}", item.target)
-    } else {
-        format!("lnk:{}", item.target)
+pub async fn launch_item(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    item: LaunchItem,
+) -> CmdResult<()> {
+    let catalogue = cached_catalogue(&app, false).await;
+    let item = match launcher::find_by_id(&item.id, &catalogue) {
+        Some(found) => found.clone(),
+        None => {
+            // The Start menu may have changed since the catalogue was built.
+            let fresh = cached_catalogue(&app, true).await;
+            launcher::find_by_id(&item.id, &fresh)
+                .cloned()
+                .ok_or_else(|| WispError::invalid("That app isn't in the launcher any more"))?
+        }
     };
-    if item.id != expected_id {
-        return Err(WispError::invalid(
-            "That launcher entry doesn't match its target",
-        ));
-    }
+    launcher::validate_target(&item.target)?;
     let result = if item.id.starts_with("lnk:") {
         app.opener().open_path(&item.target, None::<&str>)
     } else {
@@ -368,6 +368,17 @@ pub fn agents_list(state: State<'_, AppState>) -> CmdResult<Vec<AgentJob>> {
 
 #[tauri::command]
 pub fn agent_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<bool> {
+    // Remove the file it wrote, too (only if it's still Wisp's).
+    if let Some(path) = state
+        .db
+        .list_jobs(200)?
+        .into_iter()
+        .find(|j| j.id == id)
+        .and_then(|j| j.output_path)
+        .and_then(|p| crate::agents::owned_output(&app, &p))
+    {
+        let _ = std::fs::remove_file(path);
+    }
     let ok = state.db.delete_job(&id)?;
     let _ = app.emit("wisp://data-changed", "jobs");
     Ok(ok)
@@ -385,16 +396,22 @@ pub fn agent_open(app: AppHandle, state: State<'_, AppState>, id: String) -> Cmd
     let path = job
         .output_path
         .ok_or_else(|| WispError::invalid("This job has no output yet"))?;
-    let dir = crate::agents::output_dir(&app)?;
-    let p = std::path::Path::new(&path);
-    let ext_ok = p
+    let real = crate::agents::owned_output(&app, &path)
+        .ok_or_else(|| WispError::invalid("That file has moved or isn't Wisp's"))?;
+    // Replicas made by older versions get the same clean-up before opening.
+    if real
         .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("md"));
-    if !p.starts_with(&dir) || !ext_ok || !p.is_file() {
-        return Err(WispError::invalid("That file has moved or isn't Wisp's"));
+        .is_some_and(|e| e.eq_ignore_ascii_case("html"))
+    {
+        let html =
+            std::fs::read_to_string(&real).map_err(|e| WispError::internal(e.to_string()))?;
+        let clean = wisp_core::sanitize::sanitize_html(&html);
+        if clean != html {
+            std::fs::write(&real, clean).map_err(|e| WispError::internal(e.to_string()))?;
+        }
     }
     app.opener()
-        .open_path(path, None::<&str>)
+        .open_path(real.to_string_lossy(), None::<&str>)
         .map_err(|e| WispError::new(ErrorCode::Internal, format!("Couldn't open it: {e}")))
 }
 

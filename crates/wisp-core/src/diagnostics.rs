@@ -1,5 +1,6 @@
 //! Diagnostics report: enough to debug a problem, nothing private.
-//! Contains no API key, prompts, responses, memory or reminder text.
+//! Contains no API key, prompts, responses, memory or reminder text, and no
+//! paths, places, names or free-text settings (only counts of them).
 
 use crate::redact::redact;
 use crate::settings::Settings;
@@ -31,16 +32,107 @@ pub struct DiagnosticsInput<'a> {
     pub actions: &'a [ActionAudit],
 }
 
+/// Settings copied into the report as they are: switches and choices only.
+const SAFE_SETTINGS: &[&str] = &[
+    "onboardingComplete",
+    "launchAtLogin",
+    "alwaysOnTop",
+    "startHidden",
+    "islandVisible",
+    "theme",
+    "motion",
+    "islandScale",
+    "globalShortcuts",
+    "selectedModel",
+    "voiceEnabled",
+    "fastMode",
+    "dictationStyle",
+    "holdToTalk",
+    "autoHideFullscreen",
+    "tucked",
+    "clipboardHistory",
+    "accent",
+    "focusMinutes",
+    "accentColor",
+    "notchPosition",
+    "sliverStyle",
+    "dashboardTabs",
+    "closeOnBlur",
+    "autoStopVoice",
+    "silenceMs",
+    "voiceLanguage",
+    "hideInGames",
+    "shortcutsInGames",
+    "appAwareness",
+    "shareWindowTitles",
+    "screenContextEnabled",
+    "dictationAutoInsert",
+    "retainAudio",
+    "useMemory",
+    "contentHistory",
+    "historyRetentionDays",
+    "notificationsEnabled",
+    "telemetryOptIn",
+];
+
+/// Settings that can hold paths, places, names or free text: reported only
+/// as counts or yes/no.
+fn summarised_settings(s: &Settings) -> serde_json::Map<String, serde_json::Value> {
+    let mut m = serde_json::Map::new();
+    let mut put = |k: &str, v: serde_json::Value| {
+        m.insert(k.into(), v);
+    };
+    put("allowedApps", serde_json::json!(s.allowed_apps.len()));
+    put("starredApps", serde_json::json!(s.starred_apps.len()));
+    put(
+        "recentWallpapers",
+        serde_json::json!(s.recent_wallpapers.len()),
+    );
+    put(
+        "weatherPlaceSet",
+        serde_json::json!(s.weather_place.is_some()),
+    );
+    put(
+        "persona",
+        serde_json::json!({
+            "tone": s.persona.tone,
+            "instructionsChars": s.persona.instructions.chars().count(),
+        }),
+    );
+    put("vocabulary", serde_json::json!(s.vocabulary.len()));
+    put("neverOverApps", serde_json::json!(s.never_over_apps.len()));
+    put(
+        "customMicrophone",
+        serde_json::json!(!s.mic_device.is_empty()),
+    );
+    m
+}
+
+/// Keys of `Settings` that are summarised rather than copied.
+#[cfg(test)]
+const SUMMARISED_KEYS: &[&str] = &[
+    "allowedApps",
+    "starredApps",
+    "recentWallpapers",
+    "weatherPlace",
+    "persona",
+    "vocabulary",
+    "neverOverApps",
+    "micDevice",
+    "windowPosition",
+];
+
 pub fn build(input: DiagnosticsInput) -> DiagnosticsReport {
-    let mut settings = serde_json::to_value(input.settings).unwrap_or_default();
-    if let Some(obj) = settings.as_object_mut() {
-        // App paths can contain the Windows user name.
-        obj.insert(
-            "allowedApps".into(),
-            serde_json::json!(input.settings.allowed_apps.len()),
-        );
-        obj.remove("windowPosition");
+    let full = serde_json::to_value(input.settings).unwrap_or_default();
+    let mut settings = summarised_settings(input.settings);
+    if let Some(obj) = full.as_object() {
+        for k in SAFE_SETTINGS {
+            if let Some(v) = obj.get(*k) {
+                settings.insert((*k).into(), v.clone());
+            }
+        }
     }
+    let settings = serde_json::Value::Object(settings);
     DiagnosticsReport {
         generated_at: chrono::Utc::now().to_rfc3339(),
         app_version: input.app_version.to_string(),
@@ -109,5 +201,36 @@ mod tests {
         assert!(!json.contains("host=example.com"));
         assert!(!json.contains("notepad.exe"));
         assert!(json.contains("key=[redacted]"));
+    }
+
+    #[test]
+    fn personal_settings_are_only_counted() {
+        let mut settings = Settings::default();
+        settings.persona.instructions = "I'm Alexandra, a nurse in Leeds".into();
+        settings.starred_apps = vec!["lnk:C:\\Users\\alexandra\\x.lnk".into()];
+        settings.vocabulary = vec!["Alexandra".into()];
+        settings.mic_device = "abc123".into();
+        let report = build(DiagnosticsInput {
+            app_version: "1.0",
+            has_api_key: false,
+            settings: &settings,
+            storage: StorageStats::default(),
+            shortcut_issues: vec![],
+            requests: &[],
+            actions: &[],
+        });
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(!json.to_lowercase().contains("alexandra"));
+        assert!(!json.contains("abc123"));
+        assert!(json.contains("\"instructionsChars\":31"));
+        // Every setting is either known to be safe or summarised, so a new
+        // personal setting can't slip into reports unnoticed.
+        let all = serde_json::to_value(Settings::default()).unwrap();
+        for k in all.as_object().unwrap().keys() {
+            assert!(
+                SAFE_SETTINGS.contains(&k.as_str()) || SUMMARISED_KEYS.contains(&k.as_str()),
+                "decide whether {k} is safe for diagnostics"
+            );
+        }
     }
 }

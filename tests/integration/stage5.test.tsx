@@ -147,13 +147,17 @@ describe("reminders", () => {
     expect(screen.queryByText("Reminder: Stand up")).not.toBeInTheDocument();
   });
 
-  it("creates reminders when the model asks", async () => {
+  it("creates reminders when the model asks, after confirming", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const user = await island();
     await user.type(
       await screen.findByRole("combobox", { name: /ask wisp/i }),
       "remind me /remind{Enter}",
     );
+    const group = await screen.findByRole("group", { name: /asking for permission/i });
+    expect(group).toHaveTextContent('Remind you "Stretch" in an hour');
+    expect(await h.tasksList(false)).toHaveLength(0);
+    await user.click(within(group).getByRole("button", { name: "Allow" }));
     expect(await screen.findByText(/reminder created/i)).toBeInTheDocument();
     expect(await h.tasksList(false)).toHaveLength(1);
   });

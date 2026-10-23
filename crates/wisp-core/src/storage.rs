@@ -92,6 +92,8 @@ const MIGRATIONS: &[&str] = &[
 
 pub use crate::tools::MAX_MEMORY_CHARS;
 pub const MAX_MEMORY_ENTRIES: usize = 200;
+/// Open reminders kept at once.
+pub const MAX_OPEN_TASKS: usize = 500;
 const MAX_LOG_TEXT: usize = 20_000;
 
 fn now() -> DateTime<Utc> {
@@ -424,6 +426,8 @@ impl Db {
     fn migrate(&self) -> Result<()> {
         let mut conn = self.conn.lock().expect("db");
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        // Deleted rows are overwritten with zeros, not left in free pages.
+        conn.pragma_update(None, "secure_delete", "ON")?;
         let version: u32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
         if version as usize > MIGRATIONS.len() {
             return Err(WispError::storage(
@@ -437,6 +441,18 @@ impl Db {
             tx.commit()?;
         }
         Ok(())
+    }
+
+    /// Fold the write-ahead log back into the database and empty it, so old
+    /// copies of deleted rows don't linger in the `-wal` file.
+    fn checkpoint(c: &Connection) -> rusqlite::Result<()> {
+        c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+    }
+
+    /// Whether deleted data is overwritten (for tests and diagnostics).
+    pub fn secure_delete_enabled(&self) -> bool {
+        self.with(|c| c.pragma_query_value(None, "secure_delete", |r| r.get::<_, i64>(0)))
+            .is_ok_and(|v| v == 1)
     }
 
     fn with<T>(&self, f: impl FnOnce(&mut Connection) -> rusqlite::Result<T>) -> Result<T> {
@@ -465,7 +481,7 @@ impl Db {
                     entry.context_kind,
                     entry.total_tokens.map(|v| v as i64),
                     entry.prompt.as_deref().map(|s| clip(&crate::redact::redact(s), MAX_LOG_TEXT)),
-                    entry.response.as_deref().map(|s| clip(s, MAX_LOG_TEXT)),
+                    entry.response.as_deref().map(|s| clip(&crate::redact::redact(s), MAX_LOG_TEXT)),
                 ],
             )
             .map(|_| ())
@@ -484,7 +500,11 @@ impl Db {
     }
 
     pub fn clear_requests(&self) -> Result<u64> {
-        self.with(|c| c.execute("DELETE FROM request_log", []).map(|n| n as u64))
+        self.with(|c| {
+            let n = c.execute("DELETE FROM request_log", [])?;
+            Self::checkpoint(c)?;
+            Ok(n as u64)
+        })
     }
 
     /// Remove history older than `days`, and stored content when content history is off.
@@ -500,7 +520,8 @@ impl Db {
                     [],
                 )?;
             }
-            tx.commit()
+            tx.commit()?;
+            Self::checkpoint(c)
         })
     }
 
@@ -576,6 +597,18 @@ impl Db {
                 Repeat::None
             },
         };
+        let open: i64 = self.with(|c| {
+            c.query_row(
+                "SELECT COUNT(*) FROM tasks WHERE completed_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+        })?;
+        if open as usize >= MAX_OPEN_TASKS {
+            return Err(WispError::invalid(format!(
+                "You have {MAX_OPEN_TASKS} open reminders. Complete or delete some first."
+            )));
+        }
         self.with(|c| {
             c.execute(
                 &format!(
@@ -847,7 +880,8 @@ impl Db {
             }
             tx.commit()?;
             // Reclaim space so deleted text doesn't linger in the file.
-            c.execute_batch("VACUUM")
+            c.execute_batch("VACUUM")?;
+            Self::checkpoint(c)
         })
     }
 
@@ -1042,7 +1076,11 @@ impl Db {
         } else {
             "DELETE FROM clipboard WHERE pinned = 0"
         };
-        self.with(|c| c.execute(sql, []).map(|n| n as u64))
+        self.with(|c| {
+            let n = c.execute(sql, [])?;
+            Self::checkpoint(c)?;
+            Ok(n as u64)
+        })
     }
 
     pub fn record_launch(&self, id: &str) -> Result<()> {
@@ -1233,7 +1271,7 @@ mod v2_tests {
         let d = db();
         assert!(d.add_clip("   ").unwrap().is_none());
         assert!(d
-            .add_clip("AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI")
+            .add_clip("AIzaSyFAKE00000000000000000000000000000")
             .unwrap()
             .is_none());
         assert!(d.add_clip("Tr0ub4dor&3xyzQw9!").unwrap().is_none());
@@ -1304,6 +1342,17 @@ mod v2_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deleted_rows_are_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("w.db")).unwrap();
+        assert!(db.secure_delete_enabled());
+        assert!(Db::open_in_memory().unwrap().secure_delete_enabled());
+        db.clear_requests().unwrap();
+        db.clear_clips(true).unwrap();
+        db.prune_history(30, false).unwrap();
+    }
     use chrono::Duration;
 
     fn db() -> Db {
@@ -1361,7 +1410,7 @@ mod tests {
         let d = db();
         let mut e = RequestLog::new("ask", "gemini-2.5-flash", "text");
         e.latency_ms = 420;
-        e.prompt = Some("my key is AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI".into());
+        e.prompt = Some("my key is AIzaSyFAKE00000000000000000000000000000".into());
         d.log_request(&e).unwrap();
         let got = d.list_requests(10).unwrap();
         assert_eq!(got.len(), 1);
