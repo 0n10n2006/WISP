@@ -1,11 +1,64 @@
-//! Desktop wallpaper: set a local image the user picked, and switch between
-//! recently used ones. Only image files are accepted.
+//! Desktop wallpaper: set a local image the user picked, switch between
+//! recently used ones, and flip through folders the user chose. Only image
+//! files are accepted.
 
 use std::path::Path;
 use wisp_core::{ErrorCode, Result, WispError};
 
 pub const MAX_RECENT: usize = 12;
 const EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "bmp"];
+/// Most images listed from one folder (the carousel stays light).
+pub const MAX_PER_FOLDER: usize = 500;
+pub const MAX_FOLDERS: usize = 10;
+
+/// A local folder (same rules as images, minus the extension).
+pub fn is_local_folder(path: &str) -> bool {
+    let b = path.as_bytes();
+    let drive =
+        b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'\\' | b'/');
+    #[cfg(not(windows))]
+    let drive = drive || (path.starts_with('/') && !path.starts_with("//"));
+    drive && !path.contains("..") && !path.chars().any(|c| c.is_control())
+}
+
+/// Images directly inside `folders` (not subfolders), sorted by name.
+pub fn scan(folders: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for folder in folders.iter().filter(|f| is_local_folder(f)) {
+        let Ok(entries) = std::fs::read_dir(folder) else {
+            continue;
+        };
+        let mut found: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+            .filter_map(|e| e.path().to_str().map(str::to_owned))
+            .filter(|p| is_local_image_path(p))
+            .take(MAX_PER_FOLDER * 2)
+            .collect();
+        found.sort_by_key(|p| p.to_lowercase());
+        found.truncate(MAX_PER_FOLDER);
+        out.extend(found);
+    }
+    out
+}
+
+/// The image after `current` in `list` (or a random other one).
+pub fn next_in(list: &[String], current: Option<&str>, shuffle: bool, seed: u64) -> Option<String> {
+    if list.is_empty() {
+        return None;
+    }
+    let at = current.and_then(|c| list.iter().position(|p| p.eq_ignore_ascii_case(c)));
+    let i = if shuffle && list.len() > 1 {
+        let mut i = (seed % list.len() as u64) as usize;
+        if Some(i) == at {
+            i = (i + 1) % list.len();
+        }
+        i
+    } else {
+        at.map_or(0, |a| (a + 1) % list.len())
+    };
+    Some(list[i].clone())
+}
 
 /// `C:\...\image.png` on a local drive: no network (UNC) or device paths,
 /// no `..`, and an image extension. Checked before touching the file, so a
@@ -59,6 +112,36 @@ pub fn push_recent(recent: &[String], path: &str) -> Vec<String> {
     );
     out.truncate(MAX_RECENT);
     out
+}
+
+/// `thumbnail`, remembered per path and modification time (the carousel
+/// asks for the same previews again and again).
+pub fn cached_thumbnail(path: &str) -> Result<String> {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static CACHE: Mutex<Option<HashMap<String, (std::time::SystemTime, String)>>> =
+        Mutex::new(None);
+    let mtime = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .map_err(|_| WispError::invalid("That image no longer exists."))?;
+    if let Some((t, url)) = CACHE
+        .lock()
+        .expect("thumbs")
+        .as_ref()
+        .and_then(|c| c.get(path))
+    {
+        if *t == mtime {
+            return Ok(url.clone());
+        }
+    }
+    let url = thumbnail(path)?;
+    let mut cache = CACHE.lock().expect("thumbs");
+    let map = cache.get_or_insert_with(HashMap::new);
+    if map.len() >= 300 {
+        map.clear();
+    }
+    map.insert(path.to_string(), (mtime, url.clone()));
+    Ok(url)
 }
 
 /// Small JPEG preview as a data URL (decoded locally).
@@ -137,6 +220,39 @@ pub fn current() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scans_folders_and_steps_through_them() {
+        let dir = tempfile::tempdir().unwrap();
+        for f in ["b.png", "a.jpg", "notes.txt", "c.bmp"] {
+            std::fs::write(dir.path().join(f), b"x").unwrap();
+        }
+        std::fs::create_dir(dir.path().join("sub.png")).unwrap();
+        let folder = dir.path().to_string_lossy().into_owned();
+        let list = scan(&[folder, "\\\\server\\share".into()]);
+        let names: Vec<String> = list
+            .iter()
+            .map(|p| p.rsplit(['/', '\\']).next().unwrap().to_string())
+            .collect();
+        assert_eq!(names, ["a.jpg", "b.png", "c.bmp"]);
+        assert_eq!(
+            next_in(&list, Some(&list[0]), false, 0).as_deref(),
+            Some(list[1].as_str())
+        );
+        assert_eq!(
+            next_in(&list, Some(&list[2]), false, 0).as_deref(),
+            Some(list[0].as_str())
+        );
+        assert_eq!(
+            next_in(&list, None, false, 0).as_deref(),
+            Some(list[0].as_str())
+        );
+        let r = next_in(&list, Some(&list[1]), true, 1).unwrap();
+        assert_ne!(r, list[1]);
+        assert!(next_in(&[], None, true, 3).is_none());
+        assert!(!is_local_folder("\\\\server\\share"));
+        assert!(!is_local_folder("C:\\a\\..\\b"));
+    }
 
     #[test]
     fn only_local_image_paths() {

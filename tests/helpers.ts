@@ -5,6 +5,7 @@ import { useClipboardAssist, useDueReminders } from "../src/state/assist";
 import { useCapture } from "../src/state/capture";
 import { useConversation } from "../src/state/conversation";
 import { useDictation } from "../src/state/dictation";
+import { resetSpeechStatus } from "../src/state/liveSpeech";
 import { useNotch } from "../src/state/notch";
 import { useSettings } from "../src/state/settings";
 import { useConfirm } from "../src/screens/notch/actions";
@@ -15,6 +16,7 @@ export async function setupMockHost(
 ): Promise<Host> {
   const h = createMockHost({ tokenDelay: 0, persist: false, ...opts });
   setHost(h);
+  resetSpeechStatus();
   useConversation.setState({
     messages: [],
     requestActive: false,

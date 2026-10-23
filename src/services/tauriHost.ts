@@ -6,6 +6,10 @@ import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
 import { createMediaRecorder } from "./recorder";
 import type { WispError } from "./errors";
 import type {
+  Heard,
+  ScheduledAction,
+  SpeechStatus,
+  WinSettingsState,
   FreeModel,
   ModelUsage,
   ActionEvent,
@@ -196,6 +200,25 @@ export function createTauriHost(): Host {
     wallpaperThumb: (path) => call("wallpaper_thumb", { path }),
     wallpaperPick: () => call("wallpaper_pick"),
     wallpaperSet: (path) => call("wallpaper_set", { path }),
+    wallpaperList: () => call<string[]>("wallpaper_list"),
+    wallpaperFolderAdd: () => call<string[]>("wallpaper_folder_add"),
+    wallpaperFolderRemove: (folder) => call<string[]>("wallpaper_folder_remove", { folder }),
+    wallpaperNext: (shuffle) => call<string | null>("wallpaper_next", { shuffle }),
+    winSettings: () => call<WinSettingsState>("win_settings_get"),
+    winSettingSet: (change) => call<{ message: string }>("win_setting_set", { change }),
+    winSettingsPage: (change) => call<string>("win_settings_page", { change }),
+    speechStatus: (language) => call<SpeechStatus>("speech_status", { language }),
+    speechStart: (language) => call("speech_start", { language }),
+    speechStop: () => call<Heard>("speech_stop"),
+    speechCancel: () => call("speech_cancel"),
+    onSpeech: (cb) => subscribe<string>("wisp://speech", cb),
+    scheduledList: () => call<ScheduledAction[]>("scheduled_list"),
+    scheduledCancel: (id) => call<boolean>("scheduled_cancel", { id }),
+    onScheduledRan: (cb) =>
+      subscribe<{ description: string; outcome: string; message: string }>(
+        "wisp://scheduled-ran",
+        cb,
+      ),
     agentStart: (kind) => call("agent_start", { kind }),
     agentCancel: (id) => call("agent_cancel", { id }),
     agentsList: () => call("agents_list"),

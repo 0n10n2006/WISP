@@ -72,6 +72,7 @@ const SAFE_SETTINGS: &[&str] = &[
     "ballCorner",
     "autoStopVoice",
     "silenceMs",
+    "speechEngine",
     "voiceLanguage",
     "hideInGames",
     "shortcutsInGames",
@@ -111,6 +112,10 @@ fn summarised_settings(s: &Settings) -> serde_json::Map<String, serde_json::Valu
             "instructionsChars": s.persona.instructions.chars().count(),
         }),
     );
+    put(
+        "wallpaperFolders",
+        serde_json::json!(s.wallpaper_folders.len()),
+    );
     put("vocabulary", serde_json::json!(s.vocabulary.len()));
     put("neverOverApps", serde_json::json!(s.never_over_apps.len()));
     put(
@@ -126,6 +131,7 @@ const SUMMARISED_KEYS: &[&str] = &[
     "allowedApps",
     "starredApps",
     "recentWallpapers",
+    "wallpaperFolders",
     "weatherPlace",
     "persona",
     "vocabulary",

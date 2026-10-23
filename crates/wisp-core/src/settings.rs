@@ -76,6 +76,17 @@ pub enum NotchPosition {
     Right,
 }
 
+/// What turns speech into text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SpeechEngine {
+    /// Windows' own recognizer: words appear as you speak; Gemini is the backup.
+    #[default]
+    Windows,
+    /// Gemini only (most accurate, a little slower).
+    Gemini,
+}
+
 /// What Wisp looks like when it's resting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -187,6 +198,9 @@ pub struct Settings {
     pub focus_minutes: u32,
     /// Wallpapers set from the dashboard, most recent first.
     pub recent_wallpapers: Vec<String>,
+    /// Folders the quick-switch wallpaper carousel shows (chosen in a
+    /// native folder picker; host-only, like `recent_wallpapers`).
+    pub wallpaper_folders: Vec<String>,
     /// Custom accent colour (`#rrggbb`) used when `accent` is `custom`.
     pub accent_color: String,
     pub notch_position: NotchPosition,
@@ -210,6 +224,8 @@ pub struct Settings {
     pub auto_stop_voice: bool,
     /// Pause after speech that counts as "done talking" (ms).
     pub silence_ms: u32,
+    /// What turns speech into text.
+    pub speech_engine: SpeechEngine,
     /// Spoken language hint (BCP-47 such as "en-GB"); empty = detect.
     pub voice_language: String,
     /// Microphone device id; empty = Windows default.
@@ -280,6 +296,7 @@ impl Default for Settings {
             starred_apps: Vec::new(),
             focus_minutes: 25,
             recent_wallpapers: Vec::new(),
+            wallpaper_folders: Vec::new(),
             accent_color: "#78e4f2".into(),
             notch_position: NotchPosition::Center,
             sliver_style: SliverStyle::Glow,
@@ -292,7 +309,8 @@ impl Default for Settings {
             simple_via_openrouter: true,
             openrouter_model: String::new(),
             auto_stop_voice: true,
-            silence_ms: 1200,
+            silence_ms: 800,
+            speech_engine: SpeechEngine::Windows,
             voice_language: String::new(),
             mic_device: String::new(),
             vocabulary: Vec::new(),
@@ -439,6 +457,9 @@ impl Settings {
         if s.never_over_apps.len() > MAX_NEVER_OVER {
             return Err(WispError::invalid("Too many apps in the list"));
         }
+        if s.wallpaper_folders.len() > 10 || s.wallpaper_folders.iter().any(|p| p.len() > 1000) {
+            return Err(WispError::invalid("Too many wallpaper folders"));
+        }
         if s.recent_wallpapers.len() > 12 || s.recent_wallpapers.iter().any(|p| p.len() > 1000) {
             return Err(WispError::invalid("Too many recent wallpapers"));
         }
@@ -487,6 +508,7 @@ impl Settings {
         // Kept by the host only: these paths are trusted for reading images,
         // so the UI must not be able to point them anywhere.
         s.recent_wallpapers = self.recent_wallpapers.clone();
+        s.wallpaper_folders = self.wallpaper_folders.clone();
         s.validated()
     }
 }
@@ -712,9 +734,10 @@ mod tests {
     #[test]
     fn patches_cannot_set_host_only_paths() {
         let s = Settings::default()
-            .patched(&json!({"recentWallpapers": ["\\\\attacker\\share\\x.png"]}))
+            .patched(&json!({"recentWallpapers": ["\\\\attacker\\share\\x.png"], "wallpaperFolders": ["\\\\attacker\\share"]}))
             .unwrap();
         assert!(s.recent_wallpapers.is_empty());
+        assert!(s.wallpaper_folders.is_empty());
     }
 
     #[test]

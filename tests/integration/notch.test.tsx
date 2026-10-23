@@ -152,4 +152,16 @@ describe("notch", () => {
     ).toBeInTheDocument();
     expect(await screen.findByText(/gemini 2\.5 flash is used up or busy/i)).toBeInTheDocument();
   });
+
+  it("can approve an action for later", async () => {
+    await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    const box = await screen.findByRole("combobox", { name: /ask wisp/i });
+    await user.type(box, "open chrome in 20 seconds /later{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Allow" }));
+    expect(await screen.findByText(/it will run in 20 seconds/i)).toBeInTheDocument();
+    expect(screen.getByText("Scheduled:")).toBeInTheDocument();
+  });
 });

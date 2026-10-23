@@ -13,6 +13,7 @@ import { useDictation } from "../../state/dictation";
 import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
+import { toast } from "../../state/toast";
 import { useVoice } from "../../state/voice";
 import { preloadDashboard } from "../dashboard/load";
 import { busy } from "./busy";
@@ -175,6 +176,13 @@ export function Notch() {
         open();
       }),
       h.onHold(onHold),
+      h.onScheduledRan((r) =>
+        toast(
+          r.outcome === "done" ? r.message : `Couldn't run "${r.description}": ${r.message}`,
+          r.outcome === "done" ? "success" : "warning",
+          4000,
+        ),
+      ),
       h.onShortcut((action: ShortcutAction) => {
         if (action === "selectToAsk") return void h.startCapture();
         open();

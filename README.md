@@ -34,6 +34,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2.4: notch opens again; real end-to-end UI test in CI                                 | ✅    |
 | v0.2.5: seamless screen select, notch on/off, custom hold keys, clear history on exit    | ✅    |
 | v0.2.6: Google Lens and one-click actions on circled areas, fold on leave, floating ball |
+| v0.2.8: Windows control centre, folder wallpapers, instant voice, delayed actions        | ✅    |
 | v0.2.7: free-model routing (Gemini → Gemma → OpenRouter)                                 | ✅    | ✅  |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
@@ -223,6 +224,32 @@ question (e.g. "Use British spelling"), an accent colour (Cyan, Lavender, Ember,
 pick), whether Wisp is a notch (left, centre, right) or a floating ball (any corner), how the notch looks at rest
 (glow, subtle, invisible), whether clicking elsewhere or moving the mouse away folds the bar, and which dashboard
 tabs show in what order.
+
+## Control centre and Windows settings
+
+The **Controls** tab is a control centre of one-tap buttons: Wi-Fi, Bluetooth, dark mode, night light, Do Not
+Disturb, microphone mute, power mode (efficiency → balanced → performance), transparency, taskbar auto-hide,
+desktop icons, next wallpaper, circle to ask and lock. Below them: volume and brightness sliders, sound output
+(speakers ↔ headphones), now playing, and Appearance (accent colour or "match wallpaper", taskbar icons left or
+centre, accent on Start & taskbar, recent items in Start, dark apps / dark taskbar separately).
+
+Type it in the bar instead: `night light on`, `dnd`, `taskbar left`, `hide taskbar`, `brightness 40`,
+`best performance`, `use headphones`, `mute mic`, `accent blue`, `hide desktop icons`, `next wallpaper`,
+`shuffle wallpaper`. Or just ask ("move the taskbar to the left"): Wisp asks before changing anything.
+
+**Wallpapers:** add folders (e.g. Pictures\\Wallpapers) on the Wallpaper tab and flip through them in a
+carousel: click one to set it, or use Next and Shuffle (also on the control centre and in the bar).
+
+**Later:** "open Chrome in 20 seconds", "switch to Spotify in 5 minutes", "turn on night light in an hour":
+you approve it now and it runs then. Waiting actions show on the Today tab with a cancel button.
+
+## Instant voice
+
+Voice and dictation use Windows' built-in speech recognition by default: the words appear while you talk and
+the answer starts the moment you stop, with nothing to upload first. If Windows isn't sure what it heard (or
+isn't set up), the recording goes to Gemini instead. Windows dictation uses Microsoft's online speech service
+(turn on **Settings → Privacy & security → Speech → Online speech recognition**); choose **Gemini** under
+**Settings → Voice & dictation → Speech to text** to avoid it.
 
 ## Free models and routing
 

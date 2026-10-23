@@ -43,6 +43,17 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Control centre, wallpapers, instant voice, delayed actions (v0.2.8)
+
+- [ ] Controls tab: each tile changes Windows at once and its state is right after reopening — Wi-Fi, Bluetooth, dark mode, night light, Do Not Disturb (no toast banners), mic mute, power mode cycles, transparency, taskbar auto-hide, desktop icons, next wallpaper, circle to ask, lock.
+- [ ] Brightness slider changes a laptop screen and (if it supports DDC/CI) an external monitor; on a PC where neither works the slider isn't shown.
+- [ ] Sound output chips switch between speakers and headphones (also `use headphones` in the bar).
+- [ ] Appearance: each accent swatch recolours Start/taskbar accents and the Settings app; Match wallpaper works; taskbar Left/Centre moves the icons; Accent on taskbar, Recent in Start, Dark apps and Dark taskbar each apply.
+- [ ] Bar: `night light on`, `taskbar left`, `brightness 40`, `best performance`, `dnd`, `next wallpaper` each work; asking "move the taskbar to the left" asks first, then does it.
+- [ ] Wallpaper: Add folder shows its images in the carousel; click sets; Next/Shuffle step; the wheel scrolls sideways; removing the folder empties it.
+- [ ] Voice (Windows engine, online speech recognition on): words appear while speaking; the answer starts immediately after release. Turn online speech recognition off: Voice settings explain it, and voice still works through Gemini. Dictation inserts text the same way.
+- [ ] "Open Chrome in 20 seconds": the confirmation says so; Today shows a countdown with a cancel button; Chrome opens after 20 s with a notice. Cancelling stops it.
+
 ### Free-model routing (v0.2.7)
 
 - [ ] With a free Gemini key, ask until Gemini Flash says its daily quota is used up: the next answer comes from Flash-Lite with a short notice, and "Answered by Gemini … Flash Lite" shows under it. Settings → Model → Free models lists Flash as "used up until <time>".

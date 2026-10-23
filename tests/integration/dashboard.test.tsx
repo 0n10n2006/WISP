@@ -125,6 +125,61 @@ describe("dashboard tabs", () => {
     }
   });
 
+  it("control centre toggles Windows settings at once and rolls back if Windows refuses", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const set = vi.spyOn(h, "winSettingSet");
+    const user = await openBar();
+    await user.click(await screen.findByRole("tab", { name: "Controls" }));
+    const night = await screen.findByRole("button", { name: /night light/i });
+    expect(night).toHaveAttribute("aria-pressed", "false");
+    await user.click(night);
+    expect(night).toHaveAttribute("aria-pressed", "true");
+    expect(set).toHaveBeenCalledWith({ setting: "nightLight", value: true });
+
+    set.mockRejectedValueOnce({ code: "unsupported", message: "Not on this PC", retryable: false });
+    const dnd = screen.getByRole("button", { name: /do not disturb/i });
+    await user.click(dnd);
+    await waitFor(() => expect(dnd).toHaveAttribute("aria-pressed", "false"));
+    expect(await screen.findByText("Not on this PC")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /headphones/i }));
+    expect(set).toHaveBeenCalledWith({ setting: "outputDevice", value: "hp" });
+    await user.click(screen.getByRole("radio", { name: "Left" }));
+    expect(set).toHaveBeenCalledWith({ setting: "taskbarAlign", value: "left" });
+    await user.click(screen.getByRole("radio", { name: "Red" }));
+    expect(set).toHaveBeenCalledWith({ setting: "accentColor", value: "#e81123" });
+    await user.click(screen.getByRole("button", { name: /power mode/i }));
+    expect(set).toHaveBeenCalledWith({ setting: "powerMode", value: "performance" });
+  });
+
+  it("flips through wallpaper folders", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const setWall = vi.spyOn(h, "wallpaperSet");
+    const next = vi.spyOn(h, "wallpaperNext");
+    const user = await openBar();
+    await user.click(await screen.findByRole("tab", { name: "Wallpaper" }));
+    await user.click(await screen.findByRole("button", { name: /add folder/i }));
+    const strip = await screen.findByRole("list", { name: "Wallpapers" });
+    await waitFor(() => expect(within(strip).getAllByRole("button")).toHaveLength(6));
+    await user.click(within(strip).getAllByRole("button")[2]!);
+    expect(setWall).toHaveBeenCalledWith(expect.stringMatching(/wallpaper-3\.jpg$/));
+    await waitFor(() =>
+      expect(within(strip).getAllByRole("button")[2]).toHaveAttribute("aria-pressed", "true"),
+    );
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+    expect(next).toHaveBeenCalledWith(false);
+    await waitFor(() =>
+      expect(within(strip).getAllByRole("button")[3]).toHaveAttribute("aria-pressed", "true"),
+    );
+    await user.click(screen.getByRole("button", { name: /remove folder/i }));
+    // Without folders the strip falls back to recently used wallpapers.
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("list", { name: "Wallpapers" })).getAllByRole("button"),
+      ).toHaveLength(1),
+    );
+  });
+
   it("turns on clipboard history and copies an item again", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const copy = vi.spyOn(h, "clipCopy");

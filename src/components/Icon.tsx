@@ -63,7 +63,17 @@ export type IconName =
   | "snow"
   | "storm"
   | "fog"
-  | "partly";
+  | "partly"
+  | "nightlight"
+  | "bell-off"
+  | "layers"
+  | "taskbar"
+  | "desktop"
+  | "shuffle"
+  | "gauge"
+  | "mic-off"
+  | "brightness"
+  | "headphones";
 
 const PATHS: Record<IconName, string> = {
   send: "M4 10h10M10 5l5 5-5 5",
@@ -134,6 +144,19 @@ const PATHS: Record<IconName, string> = {
   snow: "M6 12.5h8.5a3.5 3.5 0 0 0 .3-7A5 5 0 0 0 5.2 6.6 3 3 0 0 0 6 12.5zM7 15.5v.01M10 17v.01M13 15.5v.01",
   storm: "M6 12.5h8.5a3.5 3.5 0 0 0 .3-7A5 5 0 0 0 5.2 6.6 3 3 0 0 0 6 12.5zM10.5 13l-2 3h3l-2 3",
   fog: "M4 8h12M3 11h14M5 14h10",
+  nightlight: "M14.5 12A5.5 5.5 0 0 1 8 5.5a5.5 5.5 0 1 0 6.5 6.5zM14.5 3v3M13 4.5h3",
+  "bell-off":
+    "M3 3l14 14M7.5 5A4 4 0 0 1 14 8.5v3l1.5 2.5H6M5.2 8.2c-.1.1-.2.2-.2.3v3L3.5 14H11M8.5 16.5a1.6 1.6 0 0 0 3 0",
+  layers: "M10 3l7 3.5-7 3.5-7-3.5zM3 10l7 3.5 7-3.5M3 13.5L10 17l7-3.5",
+  taskbar: "M3 4h14v12H3zM3 13h14M8 14.5h4",
+  desktop: "M3 4h14v9H3zM7 16.5h6M10 13v3.5M6 7h2M6 9.5h2",
+  shuffle: "M3 6h3l7 8h4M15 12l2 2-2 2M3 14h3l2-2.3M11 8.3L13 6h4M15 4l2 2-2 2",
+  gauge: "M3.5 13.5a6.5 6.5 0 1 1 13 0M10 13.5l3-4.5M3.5 13.5h13",
+  "mic-off":
+    "M3 3l14 14M12.5 9.5v-4a2.5 2.5 0 0 0-4.8-1M7.5 7.5v2a2.5 2.5 0 0 0 4 2M5.5 9.5a4.5 4.5 0 0 0 7.3 3.5M14.4 11a4.5 4.5 0 0 0 .1-1.5M10 14v3",
+  brightness:
+    "M10 6.5a3.5 3.5 0 1 1 0 7zM10 6.5a3.5 3.5 0 0 0 0 7M10 2v1.5M10 16.5V18M2 10h1.5M16.5 10H18M4.3 4.3l1.1 1.1M14.6 14.6l1.1 1.1M4.3 15.7l1.1-1.1M14.6 5.4l1.1-1.1",
+  headphones: "M4 13v-2.5a6 6 0 0 1 12 0V13M4 12h2.5v4.5H4zM13.5 12H16v4.5h-2.5z",
   partly:
     "M8 4.5a3 3 0 0 1 3 1.4M3.5 8.5a3 3 0 0 1 1.8-2.7M7 16h7.5a3 3 0 0 0 .3-6A4.3 4.3 0 0 0 6.5 11 2.5 2.5 0 0 0 7 16z",
 };

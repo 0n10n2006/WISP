@@ -41,9 +41,15 @@ export function VoiceCard() {
           <p className="dictation-title" aria-live="assertive">
             Listening…
           </p>
-          <p className="dictation-note">
-            Press the voice shortcut again or Done when you've finished.
-          </p>
+          {v.live ? (
+            <p className="live-words" aria-live="polite">
+              {v.live}
+            </p>
+          ) : (
+            <p className="dictation-note">
+              Press the voice shortcut again or Done when you've finished.
+            </p>
+          )}
           <div className="row-center">
             <button ref={primary} className="btn btn-primary" onClick={() => void v.finish()}>
               Done

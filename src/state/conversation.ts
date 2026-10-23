@@ -13,7 +13,7 @@ export interface ActionNote {
   confirmId?: string;
   kind: string;
   description: string;
-  status: "pending" | "done" | "declined" | "rejected" | "failed";
+  status: "pending" | "done" | "scheduled" | "declined" | "rejected" | "failed";
   message?: string;
 }
 

@@ -32,6 +32,8 @@ import {
   type NotchMode,
   type FreeModel,
   type ModelUsage,
+  type Heard,
+  type WinSettingsState,
 } from "./types";
 
 const STORAGE_KEY = "wisp.mock.settings";
@@ -175,6 +177,8 @@ export interface MockHostOptions {
   tokenDelay?: number;
   windowKind?: WindowKind;
   persist?: boolean;
+  /** Simulate Windows speech recognition hearing this (else it's unavailable). */
+  speech?: Heard;
 }
 
 export function createMockHost(opts: MockHostOptions = {}): Host {
@@ -195,6 +199,41 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
   }
   let hasKey = persist && safeGet(KEY_FLAG) === "1";
   let hasOpenrouter = false;
+  const speech: Heard | null =
+    opts.speech ??
+    (params.get("speech") === "1"
+      ? { text: "What's the weather like tomorrow", confidence: "high" }
+      : null);
+  let speechTimer: ReturnType<typeof setInterval> | null = null;
+  const speechListeners = new Set<(t: string) => void>();
+  const scheduledListeners = new Set<
+    (r: { description: string; outcome: string; message: string }) => void
+  >();
+  let win: WinSettingsState = {
+    supported: true,
+    appsDark: true,
+    systemDark: true,
+    transparency: true,
+    accentColor: "#0078d4",
+    accentFromWallpaper: false,
+    accentOnTaskbar: false,
+    taskbarAlign: "center",
+    taskbarAutoHide: false,
+    desktopIcons: true,
+    startRecent: true,
+    brightness: 70,
+    nightLight: false,
+    doNotDisturb: false,
+    powerMode: "balanced",
+    outputs: [
+      { id: "spk", name: "Speakers (Realtek Audio)", default: true },
+      { id: "hp", name: "Headphones (WH-1000XM5)", default: false },
+    ],
+    micMuted: false,
+  };
+  const folderImages = (folders: string[]) =>
+    folders.flatMap((f) => [1, 2, 3, 4, 5, 6].map((n) => `${f}\\wallpaper-${n}.jpg`));
+  let currentWall: string | null = null;
   const modelUse: ModelUsage[] = [];
   const listeners = {
     settings: new Set<(s: SettingsSnapshot) => void>(),
@@ -587,6 +626,19 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
             description,
             outcome: ok ? "done" : "declined",
             message: ok ? "Opened the link in the default browser." : "You chose not to do this.",
+          });
+        }
+        if (p.includes("/later")) {
+          // "Open Chrome in 20 seconds": approved now, runs later.
+          const description = "Open Chrome in 20 seconds";
+          const ok = await propose("open_app", description);
+          audit("open_app", "app=chrome", ok ? "done" : "declined", ok);
+          onAction?.({
+            type: "actionResult",
+            kind: "open_app",
+            description,
+            outcome: ok ? "scheduled" : "declined",
+            message: ok ? "Scheduled: it will run in 20 seconds." : "You chose not to do this.",
           });
         }
         if (p.includes("/remember")) {
@@ -1060,7 +1112,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       ];
     },
     powerAction: async () => {},
-    wallpaperInfo: async () => ({ current: null, recent: settings.recentWallpapers }),
+    wallpaperInfo: async () => ({ current: currentWall, recent: settings.recentWallpapers }),
     wallpaperThumb: async () => `data:image/svg+xml;base64,${btoa(sampleCaptureSvg(320, 180))}`,
     wallpaperPick: async () => {
       const path = `C:\\Users\\you\\Pictures\\wallpaper-${settings.recentWallpapers.length + 1}.jpg`;
@@ -1071,7 +1123,87 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       save();
       return path;
     },
+    wallpaperList: async () => folderImages(settings.wallpaperFolders),
+    wallpaperFolderAdd: async () => {
+      const f = `C:\\Users\\you\\Pictures\\Wallpapers${settings.wallpaperFolders.length || ""}`;
+      settings = { ...settings, wallpaperFolders: [...settings.wallpaperFolders, f] };
+      save();
+      return settings.wallpaperFolders;
+    },
+    wallpaperFolderRemove: async (folder) => {
+      settings = {
+        ...settings,
+        wallpaperFolders: settings.wallpaperFolders.filter((f) => f !== folder),
+      };
+      save();
+      return settings.wallpaperFolders;
+    },
+    wallpaperNext: async (shuffle) => {
+      const list = folderImages(settings.wallpaperFolders);
+      if (!list.length)
+        throw err("invalid", "Add a wallpaper folder first (Wallpaper → Add folder).");
+      const at = currentWall ? list.indexOf(currentWall) : -1;
+      const i = shuffle ? (at + 3) % list.length : (at + 1) % list.length;
+      currentWall = list[i] ?? null;
+      return currentWall;
+    },
+    winSettings: async () => win,
+    winSettingSet: async (change) => {
+      switch (change.setting) {
+        case "darkMode":
+          win = { ...win, appsDark: change.value, systemDark: change.value };
+          controls = { ...controls, darkMode: change.value };
+          break;
+        case "outputDevice": {
+          const q = change.value.toLowerCase();
+          const d = win.outputs.find(
+            (o) => o.id === change.value || o.name.toLowerCase().includes(q),
+          );
+          if (!d) throw err("invalid", `No sound output matches "${change.value}".`);
+          win = { ...win, outputs: win.outputs.map((o) => ({ ...o, default: o.id === d.id })) };
+          return { message: `Sound now plays through ${d.name}.` };
+        }
+        case "micMute":
+          win = { ...win, micMuted: change.value };
+          break;
+        default:
+          win = { ...win, [change.setting]: change.value };
+      }
+      return { message: "Done." };
+    },
+    winSettingsPage: async () => "ms-settings:",
+    speechStatus: async () =>
+      speech
+        ? { available: true, reason: null, fixUri: null }
+        : {
+            available: false,
+            reason: "Instant voice uses Windows speech recognition.",
+            fixUri: null,
+          },
+    speechStart: async () => {
+      if (!speech) throw err("unsupported", "Instant voice uses Windows speech recognition.");
+      const words = speech.text.split(" ");
+      let n = 0;
+      if (speechTimer) clearInterval(speechTimer);
+      speechTimer = setInterval(() => {
+        n = Math.min(words.length, n + 1);
+        speechListeners.forEach((cb) => cb(words.slice(0, n).join(" ")));
+        if (n >= words.length && speechTimer) clearInterval(speechTimer);
+      }, 60);
+    },
+    speechStop: async () => {
+      if (speechTimer) clearInterval(speechTimer);
+      return speech ?? { text: "", confidence: "rejected" };
+    },
+    speechCancel: async () => {
+      if (speechTimer) clearInterval(speechTimer);
+    },
+    onSpeech: (cb) => on(speechListeners, cb),
+    scheduledList: async () => [],
+    scheduledCancel: async () => false,
+    onScheduledRan: (cb) => on(scheduledListeners, cb),
     wallpaperSet: async (path) => {
+      currentWall = path;
       settings = {
         ...settings,
         recentWallpapers: [path, ...settings.recentWallpapers.filter((p) => p !== path)],

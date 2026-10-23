@@ -42,6 +42,12 @@ pub const BUILTIN: &[(&str, &str)] = &[
     ("Battery & power", "ms-settings:powersleep"),
     ("Focus", "ms-settings:quiethours"),
     ("Notifications", "ms-settings:notifications"),
+    ("Colours", "ms-settings:colors"),
+    ("Taskbar settings", "ms-settings:taskbar"),
+    ("Themes & desktop icons", "ms-settings:themes"),
+    ("Start settings", "ms-settings:personalization-start"),
+    ("Speech", "ms-settings:speech"),
+    ("Privacy: speech", "ms-settings:privacy-speech"),
 ];
 
 pub fn builtin_items() -> Vec<LaunchItem> {
