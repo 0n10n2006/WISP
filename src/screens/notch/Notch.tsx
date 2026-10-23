@@ -15,7 +15,7 @@ import { useSettings } from "../../state/settings";
 import { useVoice } from "../../state/voice";
 import { preloadDashboard } from "../dashboard/load";
 import { useConfirm } from "./confirm";
-import { closeBar as close, openBar as open } from "./control";
+import { changeMode, closeBar as close, openBar as open } from "./control";
 import { Peek } from "./Peek";
 
 /** The open bar is a separate chunk, fetched while idle so opening is instant. */
@@ -47,18 +47,12 @@ function Idle() {
 
   const peek = useCallback(() => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
-    if (useNotch.getState().mode === "sliver") {
-      useNotch.getState().setMode("peek");
-      void host().setIslandMode("peek");
-    }
+    if (useNotch.getState().mode === "sliver") void changeMode("peek");
   }, []);
   const unpeek = useCallback(() => {
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     leaveTimer.current = setTimeout(() => {
-      if (useNotch.getState().mode === "peek" && !sticky) {
-        useNotch.getState().setMode("sliver");
-        void host().setIslandMode("sliver");
-      }
+      if (useNotch.getState().mode === "peek" && !sticky) void changeMode("sliver");
     }, 450);
   }, [sticky]);
   useEffect(() => () => void (leaveTimer.current && clearTimeout(leaveTimer.current)), []);

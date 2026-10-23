@@ -48,7 +48,7 @@ jobs:
         run: |
           cargo build -p wisp --features tauri/custom-protocol
           for run in 1 2; do
-            WISP_SELFTEST_OUT=selftest-$run.json timeout 90 xvfb-run -a dbus-run-session -- ./target/debug/wisp --self-test || [ $run -eq 1 ]
+            WISP_SELFTEST_OUT=selftest-$run.json timeout 240 xvfb-run -a dbus-run-session -- ./target/debug/wisp --self-test || [ $run -eq 1 ]
           done
           cat selftest-2.json
 
@@ -69,15 +69,40 @@ jobs:
       - run: npm ci
       - run: cargo test --workspace
       - run: npm run tauri build
-      - name: Launch self-test (packaged app)
+      - name: Launch self-test (packaged app, UI scenario + real mouse)
         shell: pwsh
         run: |
+          Add-Type @"
+          using System; using System.Runtime.InteropServices;
+          public static class Mouse {
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
+            [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+          }
+          "@
+          [Mouse]::SetProcessDPIAware() | Out-Null
           # PRD §13 targets startup after first-run setup, so the first launch is a warm-up.
           foreach ($run in 1, 2) {
             $out = Join-Path $env:RUNNER_TEMP "selftest-$run.json"
+            $notch = Join-Path $env:RUNNER_TEMP "selftest-$run.notch.json"
             $env:WISP_SELFTEST_OUT = $out
+            # The second run also waits for a real hover and click on the notch.
+            $env:WISP_SELFTEST_MOUSE = if ($run -eq 2) { "1" } else { "0" }
             $p = Start-Process -FilePath "target\release\wisp.exe" -ArgumentList "--self-test" -PassThru
-            if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "Self-test run $run timed out" }
+            if ($run -eq 2) {
+              $deadline = (Get-Date).AddSeconds(200)
+              while (-not (Test-Path $notch) -and -not $p.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+              if (Test-Path $notch) {
+                $n = Get-Content $notch | ConvertFrom-Json
+                Write-Host "Notch on screen at $($n.x),$($n.y) size $($n.width)x$($n.height), visible: $($n.visible)"
+                $x = [int]($n.x + $n.width / 2); $y = [int]($n.y + [Math]::Max(2, $n.height / 2))
+                [Mouse]::SetCursorPos($x - 60, $y + 80) | Out-Null; Start-Sleep -Milliseconds 300
+                [Mouse]::SetCursorPos($x, $y) | Out-Null; Start-Sleep -Milliseconds 1500
+                [Mouse]::mouse_event(0x02, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 60
+                [Mouse]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
+              }
+            }
+            if (-not $p.WaitForExit(240000)) { $p.Kill(); throw "Self-test run $run timed out" }
             if (Test-Path $out) { Get-Content $out } else { throw "Self-test run $run wrote no report" }
             if ($run -eq 2 -and $p.ExitCode -ne 0) { throw "Self-test failed (exit $($p.ExitCode))" }
           }

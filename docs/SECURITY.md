@@ -109,6 +109,13 @@ code; if you change one of the boundaries below, update this file in the same ch
 - Wallpaper paths must be on a local drive (no network or device paths, checked before the file is touched, and
   again after resolving links), and the UI can't change the list of wallpapers Wisp trusts.
 
+## Error log
+
+- Script errors, failed host calls and failed window changes are written to `logs\errors.log` in Wisp's data
+  folder: redacted (keys and tokens stripped), one line each, at most 200 lines and 30 per minute. It never
+  leaves the PC; the diagnostics preview shows the newest 20 so the user can choose to share them.
+- `selftest_*` commands only act while `--self-test` is running.
+
 ## Build & release
 
 - CI runs with a read-only token and doesn't keep Git credentials on disk. Third-party actions are pinned to

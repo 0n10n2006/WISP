@@ -29,6 +29,9 @@ interface VoiceState {
 let recorder: AudioRecorder | null = null;
 let limit: ReturnType<typeof setTimeout> | null = null;
 let generation = 0;
+/** True while the microphone is opening; a finish then waits for it. */
+let starting = false;
+let finishWhenReady = false;
 
 export const useVoice = create<VoiceState>((set, get) => ({
   phase: "idle",
@@ -54,9 +57,14 @@ export const useVoice = create<VoiceState>((set, get) => ({
       });
       return;
     }
+    if (starting || get().phase === "listening" || get().phase === "transcribing") return;
     generation += 1;
+    const gen = generation;
+    starting = true;
+    finishWhenReady = false;
     set({ phase: "listening", error: null, level: 0 });
-    recorder = host().createRecorder();
+    const rec = host().createRecorder();
+    recorder = rec;
     try {
       const options = recorderOptions(
         !hold,
@@ -67,17 +75,33 @@ export const useVoice = create<VoiceState>((set, get) => ({
         },
       );
       set({ handsFree: !!options.vad });
-      await recorder.start((level) => set({ level }), options);
+      await rec.start((level) => set({ level }), options);
     } catch (e) {
-      recorder = null;
-      set({ phase: "error", error: toWispError(e) });
+      starting = false;
+      if (recorder === rec) recorder = null;
+      // Cancelled while the microphone was opening: nothing to report.
+      if (gen === generation) set({ phase: "error", error: toWispError(e) });
+      return;
+    }
+    starting = false;
+    if (gen !== generation || recorder !== rec) {
+      rec.cancel();
       return;
     }
     useActivity.getState().setListening(true);
     limit = setTimeout(() => void get().finish(), MAX_VOICE_MS);
+    if (finishWhenReady) {
+      finishWhenReady = false;
+      await get().finish();
+    }
   },
 
   async finish() {
+    if (starting) {
+      // Released before the microphone was ready: finish as soon as it is.
+      finishWhenReady = true;
+      return;
+    }
     if (get().phase !== "listening" || !recorder) return;
     if (limit) clearTimeout(limit);
     const rec = recorder;
@@ -111,6 +135,8 @@ export const useVoice = create<VoiceState>((set, get) => ({
 
   cancel() {
     generation += 1;
+    starting = false;
+    finishWhenReady = false;
     if (limit) clearTimeout(limit);
     recorder?.cancel();
     recorder = null;

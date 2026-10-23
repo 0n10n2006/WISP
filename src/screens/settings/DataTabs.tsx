@@ -340,7 +340,10 @@ export function DataTab() {
               setStats(await host().dataDelete(scope));
               ok("Deleted.");
             } catch (e) {
-              fail(toWispError(e));
+              const err = toWispError(e);
+              // Declining Windows' own confirmation isn't an error.
+              if (err.code === "cancelled") ok("Nothing was deleted.");
+              else fail(err);
             }
           }}
         >

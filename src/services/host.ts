@@ -209,6 +209,34 @@ export interface Host {
   switchWindow(id: number): Promise<void>;
   /** Why the notch is hidden right now. */
   screenStatus(): Promise<Cover>;
+
+  /** Keep a redacted note of a script error or failed call in the local log. */
+  reportError(message: string): void;
+  /** `--self-test`: the host asks this window to run its UI scenario. */
+  onSelfTestRun(cb: (section: string) => void): Unsubscribe;
+  selfTestProbe(): Promise<SelfTestProbe>;
+  selfTestAction(action: "summon" | "close" | "capture" | "capture-cancel"): Promise<void>;
+  selfTestReport(section: string, steps: SelfTestStep[]): Promise<void>;
+}
+
+/** The island's real window, as the host sees it (self-test only). */
+export interface SelfTestProbe {
+  mode: "sliver" | "peek" | "open";
+  visible: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  settingsOpen: boolean;
+  overlays: number;
+  focused: boolean;
+}
+
+export interface SelfTestStep {
+  name: string;
+  ok: boolean;
+  detail?: string;
+  optional?: boolean;
 }
 
 let current: Host | null = null;

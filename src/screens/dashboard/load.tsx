@@ -22,7 +22,8 @@ export const Dashboard = lazyWithPreload(() => import("./Dashboard"));
 /** Fetch the dashboard and the tab it will open on. */
 export function preloadDashboard(tab: DashboardTab): void {
   void Dashboard.preload();
-  void TABS[tab].preload();
+  // A tab saved by an older version may not exist any more.
+  void TABS[tab]?.preload();
 }
 
 /** Fetch every tab (after the bar has opened once). */

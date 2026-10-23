@@ -120,6 +120,7 @@ fn report(app: &AppHandle, state: &AppState) -> CmdResult<String> {
             .collect(),
         requests: &requests,
         actions: &actions,
+        recent_errors: crate::errlog::recent(20),
     });
     serde_json::to_string_pretty(&r).map_err(|e| WispError::internal(e.to_string()))
 }

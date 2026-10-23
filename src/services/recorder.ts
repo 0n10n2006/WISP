@@ -99,8 +99,12 @@ async function toWav(
   try {
     const raw = await blob.arrayBuffer();
     const decoder = new AudioContext();
-    const decoded = await decoder.decodeAudioData(raw);
-    void decoder.close().catch(() => {});
+    let decoded: AudioBuffer;
+    try {
+      decoded = await decoder.decodeAudioData(raw);
+    } finally {
+      void decoder.close().catch(() => {});
+    }
     const frames = Math.ceil(decoded.duration * WAV_RATE);
     const offline = new OfflineAudioContext(1, frames, WAV_RATE);
     const src = offline.createBufferSource();
@@ -132,6 +136,8 @@ export function createMediaRecorder(): AudioRecorder {
   let chunks: Blob[] = [];
   let started = 0;
   let vad: VoiceActivity | null = null;
+  /** Set by cancel(): a start still waiting for the microphone must give up. */
+  let cancelled = false;
 
   const teardown = () => {
     if (meter) clearInterval(meter);
@@ -144,6 +150,7 @@ export function createMediaRecorder(): AudioRecorder {
 
   return {
     async start(onLevel, options = {}) {
+      cancelled = false;
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
         throw micError(null);
       }
@@ -167,14 +174,25 @@ export function createMediaRecorder(): AudioRecorder {
           }
         } else throw micError(e);
       }
+      if (cancelled) {
+        // Cancelled while the microphone was opening: release it right away.
+        teardown();
+        throw { code: "cancelled", message: "Cancelled", retryable: false };
+      }
       vad = options.vad ? new VoiceActivity(options.vad) : null;
       const mime = pickMime();
-      recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      chunks = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size) chunks.push(e.data);
-      };
-      recorder.start(250);
+      try {
+        recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+        chunks = [];
+        recorder.ondataavailable = (e) => {
+          if (e.data.size) chunks.push(e.data);
+        };
+        recorder.start(250);
+      } catch (e) {
+        recorder = null;
+        teardown();
+        throw micError(e);
+      }
       started = performance.now();
       try {
         ctx = new AudioContext();
@@ -201,7 +219,7 @@ export function createMediaRecorder(): AudioRecorder {
       return new Promise<Recording>((resolve, reject) => {
         const r = recorder;
         if (!r) return reject({ code: "invalid", message: "Not recording", retryable: false });
-        r.onstop = async () => {
+        const finish = async () => {
           const durationMs = performance.now() - started;
           const mimeType = (r.mimeType || "audio/webm").split(";")[0]!;
           const blob = new Blob(chunks, { type: mimeType });
@@ -219,11 +237,18 @@ export function createMediaRecorder(): AudioRecorder {
                 },
           );
         };
-        r.stop();
         recorder = null;
+        // A recorder that already ended (e.g. the microphone was unplugged)
+        // won't fire onstop again: finish with what was recorded.
+        if (r.state === "inactive") void finish();
+        else {
+          r.onstop = () => void finish();
+          r.stop();
+        }
       });
     },
     cancel() {
+      cancelled = true;
       if (recorder && recorder.state !== "inactive") {
         recorder.onstop = null;
         recorder.stop();

@@ -31,6 +31,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | Text-to-speech removed                                                     | ✅    |
 | v0.2.2: game-safe, app-aware, hands-free voice, deeper customisation       | ✅    |
 | v0.2.3: security hardening (see docs/SECURITY.md)                          | ✅    |
+| v0.2.4: notch opens again; real end-to-end UI test in CI                   | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -220,17 +221,18 @@ clicking elsewhere closes the bar, and which dashboard tabs show in what order.
 
 ## Troubleshooting
 
-| Problem                    | Fix                                                                                          |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| "API key rejected"         | Create a new key in AI Studio and paste it in **Settings → Model → Replace key**.            |
-| "Model unavailable"        | Your key can't use that model. Pick another in **Settings → Model**.                         |
-| "Quota used up"            | Wait for the daily reset, switch to another model (quotas are per model), or enable billing. |
-| "Slow down a moment"       | Per-minute limit hit. Wait a few seconds and press **Try again**.                            |
-| Shortcut doesn't work      | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.      |
-| The notch is gone          | It's tucked or a fullscreen app is in front. Press `Ctrl+Alt+H` or use the tray icon.        |
-| Hold-to-talk does nothing  | Check **Settings → Voice & dictation**. Some security tools block keyboard hooks.            |
-| "Wisp closed unexpectedly" | A redacted crash report is in `%APPDATA%\app.wisp.desktop\logs`. Attach it to an issue.      |
-| Microphone blocked         | Windows Settings → Privacy & security → Microphone → allow desktop apps.                     |
+| Problem                    | Fix                                                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| "API key rejected"         | Create a new key in AI Studio and paste it in **Settings → Model → Replace key**.                                |
+| "Model unavailable"        | Your key can't use that model. Pick another in **Settings → Model**.                                             |
+| "Quota used up"            | Wait for the daily reset, switch to another model (quotas are per model), or enable billing.                     |
+| "Slow down a moment"       | Per-minute limit hit. Wait a few seconds and press **Try again**.                                                |
+| Shortcut doesn't work      | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.                          |
+| The notch is gone          | It's tucked or a fullscreen app is in front. Press `Ctrl+Alt+H` or use the tray icon.                            |
+| Hold-to-talk does nothing  | Check **Settings → Voice & dictation**. Some security tools block keyboard hooks.                                |
+| "Wisp closed unexpectedly" | A redacted crash report is in `%APPDATA%\app.wisp.desktop\logs`. Attach it to an issue.                          |
+| Something doesn't react    | **Settings → Data → Preview diagnostics** lists recent errors (also in `logs\errors.log`, kept on this PC only). |
+| Microphone blocked         | Windows Settings → Privacy & security → Microphone → allow desktop apps.                                         |
 
 ## Known limitations
 

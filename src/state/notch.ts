@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DashboardTab } from "../lib/commands";
+import { DASHBOARD_TABS, type DashboardTab } from "../lib/commands";
 import { host } from "../services/host";
 import type { NotchMode } from "../services/types";
 import { toast } from "./toast";
@@ -23,6 +23,11 @@ function store(key: string, value: unknown): void {
   } catch {
     /* storage unavailable */
   }
+}
+
+/** A saved tab, if it still exists. */
+function knownTab(t: string): DashboardTab {
+  return DASHBOARD_TABS.find((x) => x.id === t)?.id ?? "today";
 }
 
 export interface FocusTimer {
@@ -55,7 +60,7 @@ interface NotchState {
 
 export const useNotch = create<NotchState>((set, get) => ({
   mode: "sliver",
-  tab: load<DashboardTab>(TAB_KEY, "today"),
+  tab: knownTab(load<string>(TAB_KEY, "today")),
   query: "",
   web: false,
   think: false,

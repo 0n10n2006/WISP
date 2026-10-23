@@ -24,7 +24,12 @@ pub fn set_island_expanded(app: AppHandle, expanded: bool) -> IslandLayout {
 #[tauri::command]
 pub fn set_island_mode(app: AppHandle, mode: NotchMode, height: Option<f64>) -> IslandLayout {
     if mode == NotchMode::Open {
-        windows::set_mode(&app, mode, height)
+        let layout = windows::set_mode(&app, mode, height);
+        // An open bar is always on screen, whatever hid the sliver before.
+        if windows::island(&app).is_some_and(|w| !w.is_visible().unwrap_or(true)) {
+            windows::set_island_visible(&app, true);
+        }
+        layout
     } else {
         let layout = windows::set_mode(&app, mode, None);
         if mode == NotchMode::Sliver {
@@ -89,6 +94,14 @@ const RELEASES_REPO: &str = "0n10n2006/WISP";
 pub async fn check_for_updates(app: AppHandle) -> CmdResult<wisp_core::updates::UpdateInfo> {
     let version = app.package_info().version.to_string();
     wisp_core::updates::check(RELEASES_API, RELEASES_REPO, &version).await
+}
+
+/// A script error or failed call in one of Wisp's windows, kept in the local
+/// error log (redacted, rate-limited, never sent anywhere).
+#[tauri::command]
+pub fn report_ui_error(window: tauri::WebviewWindow, message: String) {
+    let message: String = message.chars().take(2000).collect();
+    crate::errlog::log(window.label(), &message);
 }
 
 /// The webview finished booting (used by `--self-test`).

@@ -85,8 +85,19 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
         }
         let _ = app.emit("wisp://tucked", new.tucked);
     }
-    if old.global_shortcuts != new.global_shortcuts {
+    let game = app
+        .state::<AppState>()
+        .game_active
+        .load(std::sync::atomic::Ordering::SeqCst);
+    if old.global_shortcuts != new.global_shortcuts && !game {
         shortcuts::register_all(app, &new.global_shortcuts);
+    }
+    // In a game, shortcuts follow the "keep shortcuts in games" choice.
+    if game
+        && (old.global_shortcuts != new.global_shortcuts
+            || old.shortcuts_in_games != new.shortcuts_in_games)
+    {
+        shortcuts::set_game_mode(app, true);
     }
     if old.launch_at_login != new.launch_at_login {
         let al = app.autolaunch();

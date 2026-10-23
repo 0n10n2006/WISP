@@ -11,6 +11,7 @@ mod com_worker;
 mod commands;
 mod crash;
 mod desktop;
+mod errlog;
 mod foreground;
 mod hotkeys;
 mod power;
@@ -63,6 +64,7 @@ pub fn run() {
             selftest::mark("settings");
             let log_dir = data_dir.join("logs");
             crash::install(log_dir.clone(), app.package_info().version.to_string());
+            errlog::init(&log_dir);
             let mut warnings: Vec<String> = crash::unseen_crashes(&log_dir).into_iter().collect();
             let db = match Db::open(&data_dir.join("wisp.db")) {
                 Ok(db) => db,
@@ -118,8 +120,14 @@ pub fn run() {
                 let h = handle.clone();
                 win.on_window_event(move |e| {
                     // Clicking elsewhere lets the UI decide whether to fold away.
-                    if let WindowEvent::Focused(false) = e {
-                        let _ = h.emit_to(windows::ISLAND, "wisp://blur", ());
+                    match e {
+                        WindowEvent::Focused(false) => {
+                            let _ = h.emit_to(windows::ISLAND, "wisp://blur", ());
+                        }
+                        // Windows rescaled the notch (another monitor's DPI):
+                        // the next layout must be applied in full.
+                        WindowEvent::ScaleFactorChanged { .. } => windows::forget_rect(),
+                        _ => {}
                     }
                 });
             }
@@ -162,6 +170,18 @@ pub fn run() {
                 if win.label() == windows::ISLAND {
                     api.prevent_close();
                     windows::close_bar(win.app_handle());
+                }
+            }
+            // A capture overlay closed outside the normal flow (Alt+F4, a
+            // crash) ends the capture, so the next one can start and the
+            // notch comes back.
+            if let WindowEvent::Destroyed = e {
+                if win.label().starts_with("overlay-") {
+                    let app = win.app_handle();
+                    let active = app.state::<AppState>().capture.lock().expect("capture").is_some();
+                    if active {
+                        capture::cancel(app);
+                    }
                 }
             }
         })
@@ -210,6 +230,10 @@ pub fn run() {
             commands::system::installed_apps,
             commands::system::check_for_updates,
             commands::system::ui_ready,
+            commands::system::report_ui_error,
+            selftest::selftest_probe,
+            selftest::selftest_action,
+            selftest::selftest_report,
             commands::system::set_island_expanded,
             commands::system::hide_island,
             commands::system::set_island_mode,
@@ -298,6 +322,19 @@ fn is_app_url(url: &tauri::Url) -> bool {
 
 #[cfg(test)]
 mod acl_tests {
+    /// Tauri's `freezePrototype` freezes `Object.prototype`, which breaks
+    /// every Preact re-render after the first frame (Preact copies vnodes
+    /// with `obj[key] = value`, and `constructor` is then read-only): the
+    /// notch shows but never reacts. It must stay off.
+    #[test]
+    fn prototype_is_not_frozen() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert!(conf["app"]["security"]
+            .get("freezePrototype")
+            .is_none_or(|v| v == false));
+    }
+
     #[test]
     fn webviews_stay_on_wisp_pages() {
         let ok = |u: &str| super::is_app_url(&tauri::Url::parse(u).unwrap());
