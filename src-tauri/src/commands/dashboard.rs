@@ -287,15 +287,12 @@ pub async fn wallpaper_info(state: State<'_, AppState>) -> CmdResult<WallpaperIn
 /// Preview of a recent wallpaper (only paths Wisp itself set are readable).
 #[tauri::command]
 pub async fn wallpaper_thumb(state: State<'_, AppState>, path: String) -> CmdResult<String> {
-    let s = state.settings();
-    let known = s.recent_wallpapers.iter().any(|p| p == &path)
-        || crate::wallpaper::current().as_deref() == Some(path.as_str());
-    if !known {
+    if !super::personalize::known_wallpaper(&state, &path) {
         return Err(WispError::invalid("Unknown wallpaper"));
     }
     blocking(move || {
         crate::wallpaper::validate(&path)?;
-        crate::wallpaper::thumbnail(&path)
+        crate::wallpaper::cached_thumbnail(&path)
     })
     .await
 }
@@ -336,12 +333,7 @@ pub async fn wallpaper_pick(app: AppHandle) -> CmdResult<Option<String>> {
 #[tauri::command]
 pub async fn wallpaper_set(app: AppHandle, path: String) -> CmdResult<()> {
     use tauri::Manager;
-    if !app
-        .state::<AppState>()
-        .settings()
-        .recent_wallpapers
-        .contains(&path)
-    {
+    if !super::personalize::known_wallpaper(&app.state::<AppState>(), &path) {
         return Err(WispError::invalid("Choose the image again with Browse"));
     }
     let p = path.clone();

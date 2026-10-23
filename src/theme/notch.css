@@ -1711,3 +1711,192 @@ html[data-notch="ball"][data-corner="bottom-right"] :is(.peek, .bar-wrap) {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
+
+/* ---------- Live words while speaking ---------- */
+.live-words {
+  margin: 4px 16px 10px;
+  max-height: 4.5em;
+  overflow: hidden;
+  font-size: var(--text-md, 15px);
+  line-height: 1.5;
+  color: var(--color-text);
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* ---------- Control centre ----------
+   One-tap tiles on an even grid; the accent marks what's on. Everything
+   moves only with transform/opacity, and state changes are instant. */
+.cc .qtiles {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+}
+.qtile {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  justify-items: start;
+  align-content: start;
+  gap: 2px;
+  min-height: 74px;
+  padding: 10px 10px 9px;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.055);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease),
+    transform var(--duration-fast) var(--ease);
+}
+.qtile:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.09);
+  transform: translateY(-1px);
+}
+.qtile:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.qtile:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.qtile-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.08);
+  transition: background var(--duration-fast) var(--ease);
+}
+.qtile-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.2;
+}
+.qtile-state {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.qtile.on {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+.qtile.on .qtile-icon {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.qtile.on .qtile-state {
+  color: var(--color-accent);
+}
+.qtile:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cc .cc-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.cc-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cc-outputs,
+.cc-chips,
+.cc-accents {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.chip.chip-on {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+.cc-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+  transition: transform var(--duration-fast) var(--ease);
+}
+.cc-swatch:hover {
+  transform: scale(1.1);
+}
+.cc-swatch[aria-checked="true"] {
+  box-shadow:
+    0 0 0 2px var(--notch-bg),
+    0 0 0 4px var(--color-text);
+}
+.cc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-sm);
+}
+.cc-row.cc-chips {
+  justify-content: flex-start;
+}
+
+/* ---------- Wallpaper carousel ---------- */
+.wall-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.wall-folders {
+  margin-top: 8px;
+}
+.walls.wall-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 0 6px;
+  padding: 2px 2px 8px;
+  scrollbar-width: thin;
+}
+.wall-strip > li {
+  flex: 0 0 196px;
+  scroll-snap-align: center;
+}
+.wall-strip .wall {
+  transition: transform var(--duration-fast) var(--ease);
+}
+.wall-strip .wall:hover {
+  transform: translateY(-2px);
+}
+.wall-strip .wall.current {
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+/* ---------- Scheduled actions ---------- */
+.scheduled {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.scheduled-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  font-size: var(--text-sm);
+}

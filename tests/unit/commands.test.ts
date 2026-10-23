@@ -6,6 +6,7 @@ import {
   parseCommand,
   parseDuration,
   rankApps,
+  windowsCommands,
 } from "../../src/lib/commands";
 import { chipsFor } from "../../src/lib/chips";
 import type { LaunchItem } from "../../src/services/types";
@@ -150,5 +151,46 @@ describe("settings shortcuts in the bar", () => {
   it("opens the shortcut settings", () => {
     expect(parseCommand("shortcuts")[0]?.command).toEqual({ type: "settings", tab: "shortcuts" });
     expect(parseCommand("hotkeys")[0]?.command).toEqual({ type: "settings", tab: "shortcuts" });
+  });
+});
+
+describe("windows settings from the bar", () => {
+  const first = (l: string) => windowsCommands(l)[0]?.command;
+  it("understands what people type", () => {
+    expect(first("night light on")).toMatchObject({
+      type: "winSetting",
+      change: { setting: "nightLight", value: true },
+    });
+    expect(first("nightlight off")).toMatchObject({ change: { value: false } });
+    expect(first("taskbar left")).toMatchObject({
+      change: { setting: "taskbarAlign", value: "left" },
+    });
+    expect(first("brightness 40")).toMatchObject({
+      change: { setting: "brightness", value: 40 },
+    });
+    expect(windowsCommands("brightness 140")).toHaveLength(0);
+    expect(first("best performance")).toMatchObject({
+      change: { setting: "powerMode", value: "performance" },
+    });
+    expect(first("battery saver")).toMatchObject({ change: { value: "efficiency" } });
+    expect(first("dnd")).toMatchObject({ change: { setting: "doNotDisturb", value: true } });
+    expect(first("hide desktop icons")).toMatchObject({
+      change: { setting: "desktopIcons", value: false },
+    });
+    expect(first("use headphones")).toMatchObject({
+      change: { setting: "outputDevice", value: "headphones" },
+    });
+    expect(first("accent red")).toMatchObject({
+      change: { setting: "accentColor", value: "#e81123" },
+    });
+    expect(windowsCommands("accent banana")).toHaveLength(0);
+    expect(first("next wallpaper")).toEqual({ type: "wallpaper", shuffle: false });
+    expect(first("shuffle wallpaper")).toEqual({ type: "wallpaper", shuffle: true });
+    expect(windowsCommands("what is night light")).toHaveLength(0);
+  });
+
+  it("puts them in the bar's results", () => {
+    const r = barResults("night light on", items, [], []);
+    expect(r[0]).toMatchObject({ kind: "command", title: "Turn night light on" });
   });
 });

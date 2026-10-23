@@ -191,3 +191,54 @@ pub async fn insert_text(
     }
     Ok(())
 }
+
+// ---- Instant voice (Windows speech recognition) ---------------------------
+
+/// Whether Windows can recognise speech right now (and why not).
+#[tauri::command]
+pub async fn speech_status(language: String) -> crate::speech::SpeechStatus {
+    let language = clean_language(&language);
+    tauri::async_runtime::spawn_blocking(move || crate::speech::status(&language))
+        .await
+        .unwrap_or(crate::speech::SpeechStatus {
+            available: false,
+            reason: Some("Speech recognition stopped unexpectedly.".into()),
+            fix_uri: None,
+        })
+}
+
+/// Start recognising; the words so far arrive as `wisp://speech` events.
+#[tauri::command]
+pub async fn speech_start(app: AppHandle, language: String) -> CmdResult<()> {
+    use tauri::Emitter;
+    let language = clean_language(&language);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::speech::start(&language, move |text| {
+            let _ = app.emit("wisp://speech", text);
+        })
+    })
+    .await
+    .map_err(|e| WispError::internal(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn speech_stop() -> CmdResult<crate::speech::Heard> {
+    tauri::async_runtime::spawn_blocking(crate::speech::stop)
+        .await
+        .map_err(|e| WispError::internal(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn speech_cancel() {
+    let _ = tauri::async_runtime::spawn_blocking(crate::speech::cancel).await;
+}
+
+/// "en-GB"-style tags only.
+fn clean_language(language: &str) -> String {
+    let l = language.trim();
+    if l.len() <= 20 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        l.to_string()
+    } else {
+        String::new()
+    }
+}

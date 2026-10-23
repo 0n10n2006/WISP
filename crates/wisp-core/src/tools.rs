@@ -50,6 +50,58 @@ pub enum ValidatedAction {
         id: i64,
         app: String,
     },
+    /// Change a Windows setting (night light, taskbar, accent…).
+    ChangeSetting {
+        change: crate::winsettings::WinChange,
+    },
+}
+
+/// Longest an action may be put off ("open Chrome in 20 seconds").
+pub const MAX_DELAY_SECS: u32 = 24 * 3600;
+
+/// Tools that may be asked to run later.
+const DELAYABLE: &[&str] = &["open_app", "switch_to_app", "open_url", "change_setting"];
+
+/// Take an optional `delay_seconds` off a call's arguments.
+pub fn split_delay(name: &str, args: &Value) -> Result<(Value, Option<u32>)> {
+    let mut args = args.clone();
+    let Some(raw) = args.as_object_mut().and_then(|o| o.remove("delay_seconds")) else {
+        return Ok((args, None));
+    };
+    if raw.is_null() {
+        return Ok((args, None));
+    }
+    if !DELAYABLE.contains(&name) {
+        return Err(WispError::invalid("That action can't be delayed"));
+    }
+    let secs = raw
+        .as_f64()
+        .filter(|s| s.is_finite() && *s >= 0.0)
+        .ok_or_else(|| WispError::invalid("The delay must be a number of seconds"))?
+        .round() as u64;
+    if secs > MAX_DELAY_SECS as u64 {
+        return Err(WispError::invalid(
+            "Actions can be put off by at most a day. Use a reminder for later.",
+        ));
+    }
+    Ok((args, (secs > 0).then_some(secs as u32)))
+}
+
+/// "in 20 seconds", "in 5 minutes", "in 1 hour 30 minutes".
+pub fn delay_phrase(secs: u32) -> String {
+    let plural = |n: u32, unit: &str| format!("{n} {unit}{}", if n == 1 { "" } else { "s" });
+    let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
+    let mut parts = Vec::new();
+    if h > 0 {
+        parts.push(plural(h, "hour"));
+    }
+    if m > 0 {
+        parts.push(plural(m, "minute"));
+    }
+    if s > 0 && h == 0 {
+        parts.push(plural(s, "second"));
+    }
+    format!("in {}", parts.join(" "))
 }
 
 /// A top-level window the user has open (from the host).
@@ -117,6 +169,7 @@ impl ValidatedAction {
             Self::Remember { .. } => "remember",
             Self::Launch { .. } => "open_app",
             Self::SwitchTo { .. } => "switch_to_app",
+            Self::ChangeSetting { .. } => "change_setting",
         }
     }
 
@@ -149,6 +202,7 @@ impl ValidatedAction {
             Self::Remember { content, .. } => format!("chars={}", content.chars().count()),
             Self::Launch { item } => format!("app={}", summarize_text(&item.name, 40)),
             Self::SwitchTo { app, .. } => format!("app={}", summarize_text(app, 40)),
+            Self::ChangeSetting { change } => format!("setting={}", change.key()),
         }
     }
 
@@ -171,6 +225,7 @@ impl ValidatedAction {
             Self::Remember { content, .. } => format!("Remember: \"{content}\""),
             Self::Launch { item } => format!("Open {}", item.name),
             Self::SwitchTo { app, .. } => format!("Switch to {app}"),
+            Self::ChangeSetting { change } => change.describe(),
         }
     }
 }
@@ -187,6 +242,13 @@ pub const MAX_MEMORY_CHARS: usize = 500;
 
 /// Actions considered from a single model reply.
 pub const MAX_CALLS_PER_TURN: usize = 3;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChangeSettingArgs {
+    setting: String,
+    value: Value,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -337,6 +399,18 @@ pub fn validate_call_in(
             Ok(ValidatedAction::Remember {
                 content,
                 category: a.category.unwrap_or_else(|| "other".into()),
+            })
+        }
+        "change_setting" => {
+            let a: ChangeSettingArgs = parse_args(name, args)?;
+            let value = match &a.value {
+                Value::String(s) => s.clone(),
+                Value::Bool(b) => if *b { "on" } else { "off" }.to_string(),
+                Value::Number(n) => n.to_string(),
+                _ => return Err(WispError::invalid("Give the setting a value")),
+            };
+            Ok(ValidatedAction::ChangeSetting {
+                change: crate::winsettings::WinChange::parse(&a.setting, &value)?,
             })
         }
         other => Err(WispError::invalid(format!(
@@ -584,13 +658,34 @@ pub fn validate_app_target(target: &str) -> Result<()> {
 
 /// Gemini `functionDeclarations` for the tools above.
 pub fn function_declarations() -> Value {
+    let settings: Vec<&str> = crate::winsettings::SETTINGS
+        .iter()
+        .map(|(n, _)| *n)
+        .collect();
+    let hints: Vec<String> = crate::winsettings::SETTINGS
+        .iter()
+        .map(|(n, v)| format!("{n} ({v})"))
+        .collect();
     json!([
+        {
+            "name": "change_setting",
+            "description": format!("Change a Windows setting. Available: {}.", hints.join(", ")),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "setting": { "type": "string", "enum": settings },
+                    "value": { "type": "string", "description": "on/off, a number, left/center, a colour, a power mode or a device name" },
+                    "delay_seconds": { "type": "number", "description": "Optional: run this many seconds from now (max 86400)." }
+                },
+                "required": ["setting", "value"]
+            }
+        },
         {
             "name": "open_app",
             "description": "Open an installed app or game by name (use a name from the installed apps listed in your instructions).",
             "parameters": {
                 "type": "object",
-                "properties": { "name": { "type": "string", "description": "App name, e.g. Spotify" } },
+                "properties": { "name": { "type": "string", "description": "App name, e.g. Spotify" }, "delay_seconds": { "type": "number", "description": "Optional: run this many seconds from now (max 86400), e.g. 20 for \"in 20 seconds\". The user still confirms first." } },
                 "required": ["name"]
             }
         },
@@ -599,7 +694,7 @@ pub fn function_declarations() -> Value {
             "description": "Bring one of the user's open windows to the front, by app name or a word from its title.",
             "parameters": {
                 "type": "object",
-                "properties": { "name": { "type": "string", "description": "e.g. chrome, spotify, or a document name" } },
+                "properties": { "name": { "type": "string", "description": "e.g. chrome, spotify, or a document name" }, "delay_seconds": { "type": "number", "description": "Optional: run this many seconds from now (max 86400), e.g. 20 for \"in 20 seconds\". The user still confirms first." } },
                 "required": ["name"]
             }
         },
@@ -608,7 +703,7 @@ pub fn function_declarations() -> Value {
             "description": "Open an http or https URL in the default browser.",
             "parameters": {
                 "type": "object",
-                "properties": { "url": { "type": "string" } },
+                "properties": { "url": { "type": "string" }, "delay_seconds": { "type": "number", "description": "Optional: run this many seconds from now (max 86400), e.g. 20 for \"in 20 seconds\". The user still confirms first." } },
                 "required": ["url"]
             }
         },
@@ -652,6 +747,47 @@ pub fn function_declarations() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_and_delays() {
+        let env = ToolEnv::default();
+        let a = validate_call_in(
+            "change_setting",
+            &json!({"setting": "night_light", "value": "on"}),
+            &env,
+            Utc::now(),
+        )
+        .unwrap();
+        assert_eq!(a.describe(), "Turn night light on");
+        assert_eq!(a.kind(), "change_setting");
+        assert!(validate_call_in(
+            "change_setting",
+            &json!({"setting": "registry", "value": "x"}),
+            &env,
+            Utc::now()
+        )
+        .is_err());
+        let (rest, d) = split_delay(
+            "open_url",
+            &json!({"url": "https://x.org", "delay_seconds": 20}),
+        )
+        .unwrap();
+        assert_eq!(d, Some(20));
+        assert!(rest.get("delay_seconds").is_none());
+        assert!(validate_call_in("open_url", &rest, &env, Utc::now()).is_ok());
+        assert_eq!(
+            split_delay("open_url", &json!({"url": "u"})).unwrap().1,
+            None
+        );
+        assert!(split_delay("copy_text", &json!({"text": "t", "delay_seconds": 5})).is_err());
+        assert!(split_delay("open_app", &json!({"name": "x", "delay_seconds": 90000})).is_err());
+        assert!(split_delay("open_app", &json!({"name": "x", "delay_seconds": -3})).is_err());
+        assert_eq!(delay_phrase(20), "in 20 seconds");
+        assert_eq!(delay_phrase(60), "in 1 minute");
+        assert_eq!(delay_phrase(5430), "in 1 hour 30 minutes");
+        let decl = function_declarations();
+        assert!(decl.to_string().contains("night_light"));
+    }
 
     #[test]
     fn inserted_text_is_defanged() {
@@ -897,6 +1033,7 @@ mod tests {
         assert_eq!(
             names,
             [
+                "change_setting",
                 "open_app",
                 "switch_to_app",
                 "open_url",

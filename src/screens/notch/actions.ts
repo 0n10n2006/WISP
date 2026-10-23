@@ -60,6 +60,10 @@ export async function runCommand(cmd: Command): Promise<void> {
       return guarded(() => h.mediaCommand(cmd.command));
     case "darkMode":
       return guarded(() => h.setDarkMode(cmd.dark), cmd.dark ? "Dark mode on" : "Light mode on");
+    case "winSetting":
+      return guarded(() => h.winSettingSet(cmd.change), cmd.done);
+    case "wallpaper":
+      return guarded(() => h.wallpaperNext(cmd.shuffle), "Wallpaper changed");
     case "radio":
       return guarded(
         () => h.setRadio(cmd.kind, cmd.on),

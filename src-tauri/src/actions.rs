@@ -67,6 +67,7 @@ pub fn execute(app: &AppHandle, action: &ValidatedAction) -> Result<String> {
             let _ = state.db.record_launch(&item.id);
             Ok(format!("Opened {}.", item.name))
         }
+        ValidatedAction::ChangeSetting { change } => crate::winsettings::apply(change),
         ValidatedAction::SwitchTo { id, app: name } => {
             if crate::desktop::focus_window(*id) {
                 Ok(format!("Switched to {name}."))
@@ -75,6 +76,16 @@ pub fn execute(app: &AppHandle, action: &ValidatedAction) -> Result<String> {
             }
         }
     }
+}
+
+/// Run an action from async code: Windows settings go to the COM worker
+/// (audio devices, brightness); everything else runs here.
+pub async fn run(app: &AppHandle, action: &ValidatedAction) -> Result<String> {
+    if let ValidatedAction::ChangeSetting { change } = action {
+        let change = change.clone();
+        return crate::com_worker::run(move || crate::winsettings::apply(&change)).await?;
+    }
+    execute(app, action)
 }
 
 fn failed(msg: String) -> WispError {

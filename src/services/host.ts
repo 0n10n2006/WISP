@@ -20,6 +20,11 @@ import type {
   StorageStats,
   AskResult,
   ConnectionReport,
+  Heard,
+  ScheduledAction,
+  SpeechStatus,
+  WinChange,
+  WinSettingsState,
   FreeModel,
   ModelUsage,
   DeepPartial,
@@ -211,6 +216,32 @@ export interface Host {
   wallpaperThumb(path: string): Promise<string>;
   wallpaperPick(): Promise<string | null>;
   wallpaperSet(path: string): Promise<void>;
+  /** Images in the user's wallpaper folders. */
+  wallpaperList(): Promise<string[]>;
+  /** Pick a folder in a native dialog and add it; returns the folders. */
+  wallpaperFolderAdd(): Promise<string[]>;
+  wallpaperFolderRemove(folder: string): Promise<string[]>;
+  /** Set the next (or a random) wallpaper; returns its path. */
+  wallpaperNext(shuffle: boolean): Promise<string | null>;
+  /** Windows settings for the control centre. */
+  winSettings(): Promise<WinSettingsState>;
+  winSettingSet(change: WinChange): Promise<{ message: string }>;
+  /** The Windows Settings page that covers `change`. */
+  winSettingsPage(change: WinChange): Promise<string>;
+  /** Instant voice through Windows speech recognition. */
+  speechStatus(language: string): Promise<SpeechStatus>;
+  speechStart(language: string): Promise<void>;
+  speechStop(): Promise<Heard>;
+  speechCancel(): Promise<void>;
+  /** The words heard so far, while the user speaks. */
+  onSpeech(cb: (text: string) => void): Unsubscribe;
+  /** Confirmed actions waiting for their time. */
+  scheduledList(): Promise<ScheduledAction[]>;
+  scheduledCancel(id: string): Promise<boolean>;
+  /** A delayed action ran. */
+  onScheduledRan(
+    cb: (r: { description: string; outcome: string; message: string }) => void,
+  ): Unsubscribe;
   /** Agents. */
   agentStart(kind: AgentKind): Promise<AgentJob>;
   agentCancel(id: string): Promise<void>;

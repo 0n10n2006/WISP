@@ -59,9 +59,17 @@ export function DictationCard() {
             {d.phase === "starting" ? "Starting microphone…" : "Listening…"}
           </p>
           {d.phase === "listening" && <p className="dictation-time">{elapsed}</p>}
-          <p className="dictation-note">
-            Your audio is sent to Gemini for transcription, then discarded.
-          </p>
+          {d.live ? (
+            <p className="live-words" aria-live="polite">
+              {d.live}
+            </p>
+          ) : (
+            <p className="dictation-note">
+              {d.instant
+                ? "Words appear as Windows recognises them; Gemini steps in if it can't."
+                : "Your audio is sent to Gemini for transcription, then discarded."}
+            </p>
+          )}
           <div className="row-center">
             <button
               ref={primary}

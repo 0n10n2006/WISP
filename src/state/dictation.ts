@@ -3,6 +3,7 @@ import { toWispError, type WispError } from "../services/errors";
 import { host } from "../services/host";
 import type { AudioRecorder } from "../services/recorder";
 import { useActivity } from "./activity";
+import { startLiveSpeech, type LiveSpeech } from "./liveSpeech";
 import { useSettings } from "./settings";
 import { NOTHING_HEARD, recorderOptions } from "./voiceOptions";
 import { toast } from "./toast";
@@ -21,6 +22,10 @@ interface DictationState {
   /** Whether transcription produced any speech (the text may later be edited to empty). */
   heard: boolean;
   error: WispError | null;
+  /** Words heard so far (Windows speech recognition), shown while listening. */
+  live: string;
+  /** Windows is recognising this recording (else it goes to Gemini). */
+  instant: boolean;
   target: { available: boolean; title: string | null };
   /** Listening stops by itself when the user pauses. */
   handsFree: boolean;
@@ -38,6 +43,7 @@ interface DictationState {
 }
 
 let recorder: AudioRecorder | null = null;
+let liveSpeech: LiveSpeech | null = null;
 let autoStop: ReturnType<typeof setTimeout> | null = null;
 /** Incremented on cancel so late transcription results are ignored. */
 let generation = 0;
@@ -53,6 +59,8 @@ export const useDictation = create<DictationState>((set, get) => ({
   transcript: "",
   heard: false,
   error: null,
+  live: "",
+  instant: false,
   handsFree: false,
   target: { available: false, title: null },
 
@@ -61,13 +69,16 @@ export const useDictation = create<DictationState>((set, get) => ({
     generation += 1;
     const gen = generation;
     stopWhenReady = null;
-    set({ phase: "starting", transcript: "", error: null, level: 0 });
+    set({ phase: "starting", transcript: "", error: null, level: 0, live: "", instant: false });
     host()
       .dictationTarget()
       .then((target) => set({ target }))
       .catch(() => set({ target: { available: false, title: null } }));
     const rec = host().createRecorder();
     recorder = rec;
+    const livePromise = startLiveSpeech((text) => {
+      if (gen === generation) set({ live: text });
+    });
     try {
       const options = recorderOptions(
         !hold,
@@ -81,15 +92,20 @@ export const useDictation = create<DictationState>((set, get) => ({
       await rec.start((level) => set({ level }), options);
     } catch (e) {
       if (recorder === rec) recorder = null;
+      void livePromise.then((l) => l?.cancel());
       // Cancelled while the microphone was opening: nothing to report.
       if (gen === generation) set({ phase: "error", error: toWispError(e) });
       return;
     }
+    const live = await livePromise;
     if (gen !== generation || recorder !== rec) {
       // Cancelled (or restarted) while the microphone was opening.
       rec.cancel();
+      live?.cancel();
       return;
     }
+    liveSpeech = live;
+    set({ instant: !!live });
     setListening(true);
     set({ phase: "listening", startedAt: Date.now() });
     autoStop = setTimeout(() => {
@@ -116,13 +132,20 @@ export const useDictation = create<DictationState>((set, get) => ({
     setListening(false);
     const gen = generation;
     set({ phase: "transcribing", level: 0 });
+    const live = liveSpeech;
+    liveSpeech = null;
     try {
-      const recording = await rec.stop();
-      if (recording.durationMs < 400) {
-        set({ phase: "review", transcript: "", heard: false });
-        return;
+      // Windows already has the words: no upload, no wait. Otherwise Gemini.
+      let text = live ? await live.stop() : null;
+      if (text !== null) rec.cancel();
+      else {
+        const recording = await rec.stop();
+        if (recording.durationMs < 400) {
+          set({ phase: "review", transcript: "", heard: false });
+          return;
+        }
+        text = await host().transcribe(recording);
       }
-      const text = await host().transcribe(recording);
       if (gen !== generation) return;
       set({ phase: "review", transcript: text, heard: !!text.trim() });
       const auto =
@@ -146,8 +169,10 @@ export const useDictation = create<DictationState>((set, get) => ({
     if (autoStop) clearTimeout(autoStop);
     recorder?.cancel();
     recorder = null;
+    liveSpeech?.cancel();
+    liveSpeech = null;
     setListening(false);
-    set({ phase: "idle", level: 0, transcript: "", error: null });
+    set({ phase: "idle", level: 0, transcript: "", error: null, live: "" });
   },
 
   setTranscript: (transcript) => set({ transcript }),

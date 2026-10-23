@@ -4,6 +4,7 @@ import { host } from "../services/host";
 import type { AudioRecorder } from "../services/recorder";
 import { useActivity } from "./activity";
 import { useConversation } from "./conversation";
+import { startLiveSpeech, type LiveSpeech } from "./liveSpeech";
 import { useSettings } from "./settings";
 import { NOTHING_HEARD, recorderOptions } from "./voiceOptions";
 
@@ -16,6 +17,8 @@ interface VoiceState {
   phase: VoicePhase;
   level: number;
   error: WispError | null;
+  /** Words heard so far (Windows speech recognition), shown while listening. */
+  live: string;
   /** Start listening, or finish the turn if already listening. */
   toggle(): Promise<void>;
   /** Listening stops by itself when the user pauses. */
@@ -27,6 +30,7 @@ interface VoiceState {
 }
 
 let recorder: AudioRecorder | null = null;
+let liveSpeech: LiveSpeech | null = null;
 let limit: ReturnType<typeof setTimeout> | null = null;
 let generation = 0;
 /** True while the microphone is opening; a finish then waits for it. */
@@ -37,6 +41,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   phase: "idle",
   level: 0,
   error: null,
+  live: "",
   handsFree: false,
 
   async toggle() {
@@ -62,9 +67,13 @@ export const useVoice = create<VoiceState>((set, get) => ({
     const gen = generation;
     starting = true;
     finishWhenReady = false;
-    set({ phase: "listening", error: null, level: 0 });
+    set({ phase: "listening", error: null, level: 0, live: "" });
     const rec = host().createRecorder();
     recorder = rec;
+    // Windows recognition starts alongside the recorder (which stays as the backup).
+    const livePromise = startLiveSpeech((text) => {
+      if (gen === generation) set({ live: text });
+    });
     try {
       const options = recorderOptions(
         !hold,
@@ -79,15 +88,19 @@ export const useVoice = create<VoiceState>((set, get) => ({
     } catch (e) {
       starting = false;
       if (recorder === rec) recorder = null;
+      void livePromise.then((l) => l?.cancel());
       // Cancelled while the microphone was opening: nothing to report.
       if (gen === generation) set({ phase: "error", error: toWispError(e) });
       return;
     }
+    const live = await livePromise;
     starting = false;
     if (gen !== generation || recorder !== rec) {
       rec.cancel();
+      live?.cancel();
       return;
     }
+    liveSpeech = live;
     useActivity.getState().setListening(true);
     limit = setTimeout(() => void get().finish(), MAX_VOICE_MS);
     if (finishWhenReady) {
@@ -109,9 +122,16 @@ export const useVoice = create<VoiceState>((set, get) => ({
     useActivity.getState().setListening(false);
     const gen = generation;
     set({ phase: "transcribing", level: 0 });
+    const live = liveSpeech;
+    liveSpeech = null;
     try {
-      const recording = await rec.stop();
-      const text = recording.durationMs < 400 ? "" : await host().transcribe(recording);
+      // Windows already has the words: no upload, no wait. Otherwise Gemini.
+      let text = live ? await live.stop() : null;
+      if (text !== null) rec.cancel();
+      else {
+        const recording = await rec.stop();
+        text = recording.durationMs < 400 ? "" : await host().transcribe(recording);
+      }
       if (gen !== generation) return;
       if (!text.trim()) {
         set({
@@ -140,7 +160,9 @@ export const useVoice = create<VoiceState>((set, get) => ({
     if (limit) clearTimeout(limit);
     recorder?.cancel();
     recorder = null;
+    liveSpeech?.cancel();
+    liveSpeech = null;
     useActivity.getState().setListening(false);
-    set({ phase: "idle", level: 0, error: null });
+    set({ phase: "idle", level: 0, error: null, live: "" });
   },
 }));

@@ -5,13 +5,13 @@ code; if you change one of the boundaries below, update this file in the same ch
 
 ## Trust boundaries
 
-| Boundary          | Rule                                                                                                                                                                                                                                                                                                               | Where enforced                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| Webview → Rust    | The UI can only call typed Tauri commands. Each window gets only the commands it needs: the Select-to-Ask overlays only capture commands, the Show me window only its highlights. No shell, filesystem, window, plugin or generic HTTP access from JavaScript. Webviews can't navigate away from Wisp's own pages. | `src-tauri/build.rs` (app manifest), `src-tauri/capabilities/*.json`, `lib.rs::navigation_guard` |
-| Model output → OS | Model output is untrusted. Proposed actions must name a known tool, match a strict schema (unknown fields rejected), and pass value checks. Only `ValidatedAction`s execute.                                                                                                                                       | `crates/wisp-core/src/tools.rs`                                                                  |
-| App → Google      | Only the Gemini REST API is called, with the key in the `x-goog-api-key` header (never in URLs). Redirects are never followed (the header would go with them). Request bodies are capped at 15 MB, responses at 8 MB, error bodies at 64 KB; non-streamed bodies must arrive within 3 minutes.                     | `crates/wisp-core/src/gemini/mod.rs`                                                             |
-| App → other hosts | Optional OpenRouter (`openrouter.ai`, text questions only, when a key is added). Only on an explicit user action: Google Lens (the circled area, when you press "Google Lens"), Open-Meteo (weather for the chosen place), `speed.cloudflare.com` (speed test button), GitHub Releases API (update check button).  | `crates/wisp-core/src/net.rs`, `updates.rs`                                                      |
-| UI → launcher     | The UI sends only a catalogue id; the target always comes from the host's own catalogue (Start-menu shortcuts, numeric Steam ids, built-in URIs) and is validated again. `.appref-ms` is not accepted.                                                                                                             | `crates/wisp-core/src/launcher.rs`, `commands/dashboard.rs`                                      |
+| Boundary          | Rule                                                                                                                                                                                                                                                                                                                                                                                                                            | Where enforced                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Webview → Rust    | The UI can only call typed Tauri commands. Each window gets only the commands it needs: the Select-to-Ask overlays only capture commands, the Show me window only its highlights. No shell, filesystem, window, plugin or generic HTTP access from JavaScript. Webviews can't navigate away from Wisp's own pages.                                                                                                              | `src-tauri/build.rs` (app manifest), `src-tauri/capabilities/*.json`, `lib.rs::navigation_guard` |
+| Model output → OS | Model output is untrusted. Proposed actions must name a known tool, match a strict schema (unknown fields rejected), and pass value checks. Only `ValidatedAction`s execute.                                                                                                                                                                                                                                                    | `crates/wisp-core/src/tools.rs`                                                                  |
+| App → Google      | Only the Gemini REST API is called, with the key in the `x-goog-api-key` header (never in URLs). Redirects are never followed (the header would go with them). Request bodies are capped at 15 MB, responses at 8 MB, error bodies at 64 KB; non-streamed bodies must arrive within 3 minutes.                                                                                                                                  | `crates/wisp-core/src/gemini/mod.rs`                                                             |
+| App → other hosts | Optional OpenRouter (`openrouter.ai`, text questions only, when a key is added). Windows speech recognition (Microsoft's online speech service, only while you speak with the Windows engine). Only on an explicit user action: Google Lens (the circled area, when you press "Google Lens"), Open-Meteo (weather for the chosen place), `speed.cloudflare.com` (speed test button), GitHub Releases API (update check button). | `crates/wisp-core/src/net.rs`, `updates.rs`                                                      |
+| UI → launcher     | The UI sends only a catalogue id; the target always comes from the host's own catalogue (Start-menu shortcuts, numeric Steam ids, built-in URIs) and is validated again. `.appref-ms` is not accepted.                                                                                                                                                                                                                          | `crates/wisp-core/src/launcher.rs`, `commands/dashboard.rs`                                      |
 
 ## API key
 
@@ -23,6 +23,34 @@ code; if you change one of the boundaries below, update this file in the same ch
 - The optional OpenRouter key is stored the same way (`openrouter-api-key`), must start with `sk-or-`, is never
   returned to the webview (`hasOpenrouterKey` only), travels only in the `Authorization` header with redirects
   off, and `sk-…` keys are redacted from every message. "Delete everything" removes both keys.
+
+## Windows settings and delayed actions
+
+- Wisp changes Windows settings only through the typed `WinChange` set (`wisp_core::winsettings`): light/dark,
+  transparency, accent colour, taskbar alignment and auto-hide, desktop icons, recent items in Start,
+  brightness, night light, Do Not Disturb, power mode, sound output and microphone mute. Each uses a documented
+  API (`SHAppBarMessage`, display brightness IOCTLs, DDC/CI, `IAudioEndpointVolume`, power overlay schemes) or
+  one named per-user (HKCU) registry value plus the standard `WM_SETTINGCHANGE` broadcast. No shell, no HKLM.
+- Night light's CloudStore blob is only changed when it matches the known layout; anything else is left alone
+  and Wisp points to Settings instead. The default sound device is set with the `IPolicyConfig` interface
+  Windows' own settings use.
+- When the model proposes a setting change it is confirmed like every other action. The control centre and
+  typed bar commands change settings directly, as the user's own clicks; every change is in the action log.
+- Delayed actions (`delay_seconds`, at most 24 h) are confirmed up front with the delay in the description,
+  kept in memory only, listed on the Today tab with a cancel button, and dropped when Wisp quits. Only opening
+  apps/links, switching windows and Windows settings can be delayed.
+- Wallpaper folders are chosen in a native folder picker and kept host-side (the UI can't set them); only
+  images directly inside them, on local drives, are listed or read.
+
+## Voice recognition
+
+- With the Windows speech engine (the default), Windows' `SpeechRecognizer` (dictation topic) recognises speech
+  while the user talks; Windows dictation is handled by Microsoft's online speech service, which the Voice
+  settings and Privacy text state. The webview records the same audio as a backup; it goes to Gemini only if
+  Windows is unavailable or unsure, and is discarded otherwise. Choosing the Gemini engine never uses Windows
+  recognition.
+- Recognition runs only between press and release (or Wisp's own pause detection); the recognizer is kept
+  compiled but receives no audio until started.
 
 ## Model routing
 

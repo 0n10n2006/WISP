@@ -16,7 +16,18 @@ pub struct ShortcutIssue {
     pub message: String,
 }
 
+/// A confirmed action waiting to run ("open Chrome in 20 seconds").
+pub struct ScheduledAction {
+    pub id: String,
+    pub description: String,
+    /// Unix milliseconds.
+    pub run_at: i64,
+    pub cancel: CancellationToken,
+}
+
 pub struct AppState {
+    /// Confirmed actions waiting for their time (in memory only).
+    pub scheduled: Mutex<Vec<ScheduledAction>>,
     /// Pending action confirmations, by id.
     pub confirmations: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
     /// The app that was in front before Wisp was summoned (for Insert).

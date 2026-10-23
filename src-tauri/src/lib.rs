@@ -20,6 +20,7 @@ mod routing;
 mod secrets;
 mod selftest;
 mod shortcuts;
+mod speech;
 mod state;
 mod stats;
 mod system_controls;
@@ -28,6 +29,7 @@ mod tray;
 mod wallpaper;
 mod watch;
 mod windows;
+mod winsettings;
 
 use state::AppState;
 use std::collections::HashMap;
@@ -81,6 +83,7 @@ pub fn run() {
             selftest::mark("database");
             app.manage(AppState {
                 capture: Mutex::new(None),
+                scheduled: Mutex::new(Vec::new()),
                 confirmations: Mutex::new(HashMap::new()),
                 insert_target: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
@@ -218,6 +221,19 @@ pub fn run() {
             commands::settings::remove_api_key,
             commands::settings::list_models,
             commands::settings::test_connection,
+            commands::personalize::win_settings_get,
+            commands::personalize::win_setting_set,
+            commands::personalize::win_settings_page,
+            commands::personalize::wallpaper_list,
+            commands::personalize::wallpaper_folder_add,
+            commands::personalize::wallpaper_folder_remove,
+            commands::personalize::wallpaper_next,
+            commands::dictation::speech_status,
+            commands::dictation::speech_start,
+            commands::dictation::speech_stop,
+            commands::dictation::speech_cancel,
+            commands::ask::scheduled_list,
+            commands::ask::scheduled_cancel,
             commands::settings::test_openrouter_key,
             commands::settings::set_openrouter_key,
             commands::settings::remove_openrouter_key,

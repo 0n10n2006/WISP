@@ -7,6 +7,7 @@ import type {
   MediaCommand,
   OpenWindow,
   PowerAction,
+  WinChange,
 } from "../services/types";
 
 export type DashboardTab =
@@ -33,6 +34,8 @@ export type Command =
   | { type: "mute"; muted: boolean }
   | { type: "media"; command: MediaCommand }
   | { type: "darkMode"; dark: boolean }
+  | { type: "winSetting"; change: WinChange; done: string }
+  | { type: "wallpaper"; shuffle: boolean }
   | { type: "radio"; kind: "wifi" | "bluetooth"; on: boolean }
   | { type: "tab"; tab: DashboardTab }
   | { type: "settings"; tab?: string }
@@ -216,6 +219,8 @@ export function parseCommand(input: string): CommandResult[] {
     add("dark", "Switch Windows to dark mode", "Appearance", { type: "darkMode", dark: true });
   if (/^(light mode|light theme|go light)$/.test(l))
     add("light", "Switch Windows to light mode", "Appearance", { type: "darkMode", dark: false });
+
+  for (const r of windowsCommands(l)) add(r.id, r.title, r.hint, r.command);
 
   m = l.match(/^(wi-?fi|bluetooth|bt) (on|off)$/);
   if (m) {
@@ -413,4 +418,98 @@ export function barResults(
   if (commands.length) return [...commands, ...apps, ask];
   if (strongApp) return [...apps, ask];
   return [ask, ...apps];
+}
+
+const ACCENT_NAMES: Record<string, string> = {
+  blue: "#0078d4",
+  teal: "#00b7c3",
+  green: "#107c10",
+  gold: "#ffb900",
+  yellow: "#ffb900",
+  orange: "#f7630c",
+  red: "#e81123",
+  pink: "#e3008c",
+  purple: "#744da9",
+};
+
+/** "night light on", "taskbar left", "brightness 40", "next wallpaper"… */
+export function windowsCommands(
+  l: string,
+): { id: string; title: string; hint: string; command: Command }[] {
+  const out: { id: string; title: string; hint: string; command: Command }[] = [];
+  const set = (id: string, title: string, change: WinChange, hint = "Windows") =>
+    out.push({ id, title, hint, command: { type: "winSetting", change, done: title } });
+  let m: RegExpMatchArray | null;
+
+  if ((m = l.match(/^night ?light( on| off)?$/))) {
+    const on = m[1]?.trim() !== "off";
+    set("nightlight", `Turn night light ${on ? "on" : "off"}`, {
+      setting: "nightLight",
+      value: on,
+    });
+  }
+  if ((m = l.match(/^(do not disturb|dnd|focus mode|quiet mode)( on| off)?$/))) {
+    const on = m[2]?.trim() !== "off";
+    set("dnd", `Turn Do Not Disturb ${on ? "on" : "off"}`, { setting: "doNotDisturb", value: on });
+  }
+  if ((m = l.match(/^taskbar (left|center|centre)$/)))
+    set("taskbar-align", `Move taskbar icons to the ${m[1] === "left" ? "left" : "centre"}`, {
+      setting: "taskbarAlign",
+      value: m[1] === "left" ? "left" : "center",
+    });
+  if (/^(auto-?hide( the)? taskbar|hide( the)? taskbar)$/.test(l))
+    set("taskbar-hide", "Auto-hide the taskbar", { setting: "taskbarAutoHide", value: true });
+  if (/^(show( the)? taskbar|stop hiding( the)? taskbar)$/.test(l))
+    set("taskbar-show", "Always show the taskbar", { setting: "taskbarAutoHide", value: false });
+  if ((m = l.match(/^brightness (\d{1,3})%?$/)) && Number(m[1]) <= 100)
+    set("brightness", `Set brightness to ${m[1]}%`, { setting: "brightness", value: Number(m[1]) });
+  if (
+    (m = l.match(
+      /^(?:power mode )?(best performance|performance|balanced|efficiency|battery saver|power saver)(?: mode)?$/,
+    ))
+  ) {
+    const value = m[1]!.includes("perf")
+      ? "performance"
+      : m[1] === "balanced"
+        ? "balanced"
+        : "efficiency";
+    set("power-mode", `Power mode: ${value}`, { setting: "powerMode", value });
+  }
+  if ((m = l.match(/^transparency (on|off)$/)))
+    set("transparency", `Turn transparency ${m[1]}`, {
+      setting: "transparency",
+      value: m[1] === "on",
+    });
+  if ((m = l.match(/^(show|hide) desktop icons$/)))
+    set("desktop-icons", `${m[1] === "show" ? "Show" : "Hide"} desktop icons`, {
+      setting: "desktopIcons",
+      value: m[1] === "show",
+    });
+  if ((m = l.match(/^(mute|unmute) (the )?(mic|microphone)$/)))
+    set("mic", `${m[1] === "mute" ? "Mute" : "Unmute"} the microphone`, {
+      setting: "micMute",
+      value: m[1] === "mute",
+    });
+  if ((m = l.match(/^(?:(?:switch to|use|play on|play through) )?(headphones|headset|speakers)$/)))
+    set("output", `Play sound through ${m[1]}`, { setting: "outputDevice", value: m[1]! });
+  if ((m = l.match(/^accent( colou?r)? (#[0-9a-f]{6}|[a-z]+)$/))) {
+    const hex = m[2]!.startsWith("#") ? m[2]! : ACCENT_NAMES[m[2]!];
+    if (hex)
+      set("accent", `Set the accent colour to ${m[2]}`, { setting: "accentColor", value: hex });
+  }
+  if (/^(next|change|new) wallpaper$/.test(l))
+    out.push({
+      id: "wallpaper-next",
+      title: "Next wallpaper",
+      hint: "Wallpaper",
+      command: { type: "wallpaper", shuffle: false },
+    });
+  if (/^(shuffle|random) wallpaper$/.test(l))
+    out.push({
+      id: "wallpaper-shuffle",
+      title: "Random wallpaper",
+      hint: "Wallpaper",
+      command: { type: "wallpaper", shuffle: true },
+    });
+  return out;
 }

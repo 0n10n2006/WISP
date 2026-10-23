@@ -6625,7 +6625,7 @@ dependencies = [
 
 [[package]]
 name = "wisp"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -6648,13 +6648,14 @@ dependencies = [
  "tokio-util",
  "uuid",
  "windows",
+ "windows-core",
  "wisp-core",
  "xcap",
 ]
 
 [[package]]
 name = "wisp-core"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "base64 0.23.1",
  "bytes",

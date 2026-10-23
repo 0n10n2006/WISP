@@ -4,7 +4,7 @@ import { formatMinutes } from "../../lib/commands";
 import { fromLocalInput, sameDay, toLocalInput, weekFrom } from "../../lib/time";
 import { toWispError } from "../../services/errors";
 import { host } from "../../services/host";
-import type { Repeat, Task, Weather, WeatherPlace } from "../../services/types";
+import type { Repeat, ScheduledAction, Task, Weather, WeatherPlace } from "../../services/types";
 import { formatCountdown, useNotch } from "../../state/notch";
 import { useSettings } from "../../state/settings";
 import { toast } from "../../state/toast";
@@ -319,6 +319,47 @@ function Reminders({ day }: { day: Date | null }) {
   );
 }
 
+/** Actions the user approved for later ("open Chrome in 20 seconds"). */
+function Scheduled() {
+  const [items, setItems] = useState<ScheduledAction[]>([]);
+  useEffect(() => {
+    const load = () =>
+      void host()
+        .scheduledList()
+        .then(setItems)
+        .catch(() => {});
+    load();
+    return host().onDataChanged((s) => s === "scheduled" && load());
+  }, []);
+  // The countdown only ticks while something is waiting.
+  return items.length ? <ScheduledRows items={items} /> : null;
+}
+
+function ScheduledRows({ items }: { items: ScheduledAction[] }) {
+  const now = useClock(1000);
+  return (
+    <ul className="scheduled" aria-label="Scheduled actions">
+      {items.map((it) => {
+        const secs = Math.max(0, Math.round((it.runAt - now.getTime()) / 1000));
+        return (
+          <li key={it.id} className="scheduled-row">
+            <Icon name="timer" size={14} />
+            <span className="grow">{it.description}</span>
+            <span className="muted">{secs < 90 ? `${secs}s` : `${Math.round(secs / 60)} min`}</span>
+            <button
+              className="icon-btn icon-btn-small"
+              aria-label={`Cancel: ${it.description}`}
+              onClick={() => void host().scheduledCancel(it.id)}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export default function TodayTab() {
   const now = useClock(15_000);
   const [day, setDay] = useState<Date | null>(null);
@@ -335,6 +376,7 @@ export default function TodayTab() {
   const week = useMemo(() => weekFrom(now), [now]);
   return (
     <div className="today">
+      <Scheduled />
       <div className="today-top">
         <div className="clock">
           <span className="clock-time">

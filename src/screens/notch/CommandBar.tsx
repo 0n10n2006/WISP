@@ -55,6 +55,31 @@ function resultIcon(r: BarResult): IconName {
       return r.command.dark ? "moon" : "sun";
     case "radio":
       return r.command.kind === "wifi" ? "wifi" : "bluetooth";
+    case "wallpaper":
+      return "shuffle";
+    case "winSetting":
+      switch (r.command.change.setting) {
+        case "nightLight":
+          return "nightlight";
+        case "doNotDisturb":
+          return "bell-off";
+        case "brightness":
+          return "brightness";
+        case "powerMode":
+          return "gauge";
+        case "micMute":
+          return "mic-off";
+        case "outputDevice":
+          return "headphones";
+        case "desktopIcons":
+          return "desktop";
+        case "transparency":
+          return "layers";
+        case "accentColor":
+          return "sun";
+        default:
+          return "taskbar";
+      }
     case "showMe":
       return "target";
     case "research":

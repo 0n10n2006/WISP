@@ -1,7 +1,74 @@
 import { useEffect, useState } from "react";
-import { chordLabel, type DictationStyle } from "../../services/types";
+import { host } from "../../services/host";
+import { chordLabel, type DictationStyle, type SpeechStatus } from "../../services/types";
+import { resetSpeechStatus, speechStatus } from "../../state/liveSpeech";
 import { useSettings } from "../../state/settings";
 import { Choice, Toggle } from "./common";
+
+/** Speech engine choice, with what Windows says about its recognizer. */
+function SpeechEngine() {
+  const s = useSettings((st) => st.snapshot?.settings);
+  const update = useSettings((st) => st.update);
+  const [status, setStatus] = useState<SpeechStatus | null>(null);
+  const lang = s?.voiceLanguage ?? "";
+  const engine = s?.speechEngine ?? "windows";
+  useEffect(() => {
+    if (engine !== "windows") return;
+    let live = true;
+    resetSpeechStatus();
+    void speechStatus(lang).then((v) => live && setStatus(v));
+    return () => {
+      live = false;
+    };
+  }, [engine, lang]);
+  if (!s) return null;
+  return (
+    <section className="group">
+      <h3>Speech to text</h3>
+      <Choice<"windows" | "gemini">
+        name="speech-engine"
+        label="Recognise speech with"
+        value={engine}
+        options={[
+          { value: "windows", label: "Windows (instant)" },
+          { value: "gemini", label: "Gemini (most accurate)" },
+        ]}
+        onChange={(speechEngine) => void update({ speechEngine })}
+      />
+      <p className="setting-desc">
+        {engine === "windows"
+          ? "Words appear while you speak and the answer starts the moment you stop. Windows dictation is handled by Microsoft's online speech service; if it isn't sure what it heard, Wisp sends the recording to Gemini instead."
+          : "Your recording is sent to Gemini after you stop. A little slower, best for accents, names and mixed languages."}
+      </p>
+      {engine === "windows" && status && !status.available && (
+        <div className="banner banner-warning" role="status">
+          <div className="banner-body">
+            <p>
+              {status.reason} Until then, Wisp uses Gemini.{" "}
+              {status.fixUri && (
+                <button
+                  className="btn btn-small"
+                  onClick={() =>
+                    void host()
+                      .launchItem({
+                        id: `uri:${status.fixUri}`,
+                        name: "Speech settings",
+                        kind: "system",
+                        target: status.fixUri!,
+                      })
+                      .catch(() => {})
+                  }
+                >
+                  Open Windows settings
+                </button>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 const LANGUAGES: { value: string; label: string }[] = [
   { value: "", label: "Detect automatically" },
@@ -74,8 +141,8 @@ export function VoiceTab() {
     <div className="tab">
       <h2>Voice &amp; dictation</h2>
       <p className="setting-desc">
-        Wisp listens only while you hold a key or press a button, never in the background. Speech is
-        transcribed by Gemini. Wisp answers in text and never talks back.
+        Wisp listens only while you hold a key or press a button, never in the background. Wisp
+        answers in text and never talks back.
       </p>
       <section className="group">
         <Toggle
@@ -109,6 +176,7 @@ export function VoiceTab() {
           onChange={(holdToTalk) => void update({ holdToTalk })}
         />
       </section>
+      <SpeechEngine />
       <section className="group">
         <h3>Listening</h3>
         <Toggle

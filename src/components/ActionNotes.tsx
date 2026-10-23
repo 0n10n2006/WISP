@@ -4,6 +4,7 @@ import { Icon } from "./Icon";
 const LABEL: Record<ActionNote["status"], string> = {
   pending: "Working…",
   done: "Done",
+  scheduled: "Scheduled",
   declined: "Not done",
   rejected: "Blocked",
   failed: "Failed",
@@ -40,7 +41,15 @@ export function ActionNotes({ notes }: { notes: ActionNote[] }) {
         ) : (
           <p key={i} className={`action-note action-${n.status}`}>
             <Icon
-              name={n.status === "done" ? "check" : n.status === "pending" ? "info" : "warning"}
+              name={
+                n.status === "done"
+                  ? "check"
+                  : n.status === "scheduled"
+                    ? "timer"
+                    : n.status === "pending"
+                      ? "info"
+                      : "warning"
+              }
               size={14}
             />
             <span>

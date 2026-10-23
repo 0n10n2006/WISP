@@ -364,7 +364,14 @@ async fn handle_call(
         launchable: &launchable,
         windows: &windows,
     };
-    let action = match validate_call_in(&call.name, &call.args, &env, Utc::now()) {
+    let validated =
+        wisp_core::tools::split_delay(&call.name, &call.args).and_then(|(args, delay)| {
+            Ok((
+                validate_call_in(&call.name, &args, &env, Utc::now())?,
+                delay,
+            ))
+        });
+    let (action, delay) = match validated {
         Ok(a) => a,
         Err(e) => {
             let kind = summarize_text(&call.name, 40);
@@ -373,7 +380,14 @@ async fn handle_call(
         }
     };
     let kind = action.kind();
-    let description = action.describe();
+    let description = match delay {
+        Some(secs) => format!(
+            "{} {}",
+            action.describe(),
+            wisp_core::tools::delay_phrase(secs)
+        ),
+        None => action.describe(),
+    };
     let summary = action.audit_summary();
 
     let mut confirmed = false;
@@ -413,7 +427,20 @@ async fn handle_call(
         confirmed = true;
     }
 
-    match actions::execute(app, &action) {
+    if let Some(secs) = delay {
+        let message = schedule(app, action, description.clone(), secs);
+        report(
+            kind,
+            &summary,
+            &description,
+            "scheduled",
+            &message,
+            confirmed,
+        );
+        return json!({ "ok": true, "result": message });
+    }
+
+    match actions::run(app, &action).await {
         Ok(message) => {
             report(kind, &summary, &description, "done", &message, confirmed);
             json!({ "ok": true, "result": message })
@@ -429,6 +456,115 @@ async fn handle_call(
             );
             json!({ "ok": false, "error": e.message })
         }
+    }
+}
+
+/// Run a confirmed action after `secs`; it can be cancelled until then.
+fn schedule(
+    app: &AppHandle,
+    action: wisp_core::tools::ValidatedAction,
+    description: String,
+    secs: u32,
+) -> String {
+    use tauri::{Emitter, Manager};
+    let id = uuid::Uuid::new_v4().to_string();
+    let token = CancellationToken::new();
+    let run_at = Utc::now().timestamp_millis() + secs as i64 * 1000;
+    let state = app.state::<AppState>();
+    state
+        .scheduled
+        .lock()
+        .expect("scheduled")
+        .push(crate::state::ScheduledAction {
+            id: id.clone(),
+            description: description.clone(),
+            run_at,
+            cancel: token.clone(),
+        });
+    let _ = app.emit("wisp://data-changed", "scheduled");
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let fire = tokio::select! {
+            _ = token.cancelled() => false,
+            _ = tokio::time::sleep(Duration::from_secs(secs as u64)) => true,
+        };
+        let state = app.state::<AppState>();
+        state
+            .scheduled
+            .lock()
+            .expect("scheduled")
+            .retain(|s| s.id != id);
+        let _ = app.emit("wisp://data-changed", "scheduled");
+        if !fire {
+            return;
+        }
+        let result = actions::run(&app, &action).await;
+        let (outcome, message) = match &result {
+            Ok(m) => ("done", m.clone()),
+            Err(e) => ("failed", e.message.clone()),
+        };
+        let mut audit = ActionAudit::new(action.kind(), &action.audit_summary(), outcome, true);
+        if outcome != "done" {
+            audit.detail = Some(message.clone());
+        }
+        let _ = state.db.log_action(&audit);
+        let _ = app.emit(
+            "wisp://scheduled-ran",
+            json!({ "description": description, "outcome": outcome, "message": message }),
+        );
+    });
+    format!("Scheduled: {}.", lower_first(&description_after(secs)))
+}
+
+fn description_after(secs: u32) -> String {
+    format!("it will run {}", wisp_core::tools::delay_phrase(secs))
+}
+
+fn lower_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_lowercase().chain(c).collect(),
+        None => String::new(),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledInfo {
+    pub id: String,
+    pub description: String,
+    pub run_at: i64,
+}
+
+#[tauri::command]
+pub fn scheduled_list(state: State<'_, AppState>) -> Vec<ScheduledInfo> {
+    state
+        .scheduled
+        .lock()
+        .expect("scheduled")
+        .iter()
+        .map(|s| ScheduledInfo {
+            id: s.id.clone(),
+            description: s.description.clone(),
+            run_at: s.run_at,
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn scheduled_cancel(state: State<'_, AppState>, id: String) -> bool {
+    match state
+        .scheduled
+        .lock()
+        .expect("scheduled")
+        .iter()
+        .find(|s| s.id == id)
+    {
+        Some(s) => {
+            s.cancel.cancel();
+            true
+        }
+        None => false,
     }
 }
 

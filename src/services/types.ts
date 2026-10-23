@@ -50,6 +50,8 @@ export interface Settings {
   starredApps: string[];
   focusMinutes: number;
   recentWallpapers: string[];
+  /** Folders the wallpaper carousel shows (chosen in a folder picker). */
+  wallpaperFolders: string[];
   /** `#rrggbb`, used when `accent` is "custom". */
   accentColor: string;
   notchPosition: NotchPosition;
@@ -72,6 +74,8 @@ export interface Settings {
   autoStopVoice: boolean;
   /** Pause that counts as "done talking", in ms. */
   silenceMs: number;
+  /** What turns speech into text: Windows (instant, Gemini backup) or Gemini. */
+  speechEngine: "windows" | "gemini";
   /** Language hint such as "en-GB"; empty = detect. */
   voiceLanguage: string;
   /** Microphone device id; empty = default. */
@@ -288,6 +292,7 @@ export const DEFAULT_SETTINGS: Settings = {
   starredApps: [],
   focusMinutes: 25,
   recentWallpapers: [],
+  wallpaperFolders: [],
   accentColor: "#78e4f2",
   notchPosition: "center",
   sliverStyle: "glow",
@@ -309,7 +314,8 @@ export const DEFAULT_SETTINGS: Settings = {
   simpleViaOpenrouter: true,
   openrouterModel: "",
   autoStopVoice: true,
-  silenceMs: 1200,
+  silenceMs: 800,
+  speechEngine: "windows",
   voiceLanguage: "",
   micDevice: "",
   vocabulary: [],
@@ -354,7 +360,7 @@ export interface ActionAudit {
   timestamp: string;
   actionType: string;
   summary: string;
-  outcome: "done" | "rejected" | "declined" | "failed";
+  outcome: "done" | "scheduled" | "rejected" | "declined" | "failed";
   userConfirmed: boolean;
   detail: string | null;
 }
@@ -428,7 +434,7 @@ export type ActionEvent =
       type: "actionResult";
       kind: string;
       description: string;
-      outcome: "done" | "declined" | "rejected" | "failed";
+      outcome: "done" | "scheduled" | "declined" | "rejected" | "failed";
       message: string;
     };
 
@@ -469,6 +475,67 @@ export interface ControlsState {
 }
 
 export type MediaCommand = "playPause" | "next" | "previous";
+
+export type TaskbarAlign = "left" | "center";
+export type PowerMode = "efficiency" | "balanced" | "performance";
+
+export interface AudioDevice {
+  id: string;
+  name: string;
+  default: boolean;
+}
+
+/** Windows settings for the control centre; null = unknown or unsupported. */
+export interface WinSettingsState {
+  supported: boolean;
+  appsDark: boolean | null;
+  systemDark: boolean | null;
+  transparency: boolean | null;
+  accentColor: string | null;
+  accentFromWallpaper: boolean | null;
+  accentOnTaskbar: boolean | null;
+  taskbarAlign: TaskbarAlign | null;
+  taskbarAutoHide: boolean | null;
+  desktopIcons: boolean | null;
+  startRecent: boolean | null;
+  brightness: number | null;
+  nightLight: boolean | null;
+  doNotDisturb: boolean | null;
+  powerMode: PowerMode | null;
+  outputs: AudioDevice[];
+  micMuted: boolean | null;
+}
+
+/** One change to a Windows setting (mirrors the host's `WinChange`). */
+export type WinChange =
+  | { setting: "darkMode" | "appsDark" | "systemDark" | "transparency"; value: boolean }
+  | { setting: "accentFromWallpaper" | "accentOnTaskbar" | "taskbarAutoHide"; value: boolean }
+  | { setting: "desktopIcons" | "startRecent" | "nightLight" | "doNotDisturb"; value: boolean }
+  | { setting: "micMute"; value: boolean }
+  | { setting: "accentColor"; value: string }
+  | { setting: "taskbarAlign"; value: TaskbarAlign }
+  | { setting: "brightness"; value: number }
+  | { setting: "powerMode"; value: PowerMode }
+  | { setting: "outputDevice"; value: string };
+
+export interface SpeechStatus {
+  available: boolean;
+  reason: string | null;
+  fixUri: string | null;
+}
+
+export interface Heard {
+  text: string;
+  confidence: "high" | "medium" | "low" | "rejected";
+}
+
+/** A confirmed action waiting to run ("open Chrome in 20 seconds"). */
+export interface ScheduledAction {
+  id: string;
+  description: string;
+  /** Unix ms. */
+  runAt: number;
+}
 
 export interface ProcessStat {
   name: string;

@@ -7,6 +7,7 @@ pub mod dashboard;
 pub mod data;
 pub mod dictation;
 pub mod local;
+pub mod personalize;
 pub mod settings;
 pub mod system;
 
