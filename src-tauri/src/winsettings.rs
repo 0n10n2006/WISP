@@ -28,6 +28,7 @@ pub fn settings_page(change: &WinChange) -> &'static str {
     }
 }
 
+#[cfg(not(windows))]
 fn unsupported() -> WispError {
     WispError::new(
         ErrorCode::Unsupported,
@@ -403,10 +404,26 @@ mod imp {
 
     // ---- Power mode ---------------------------------------------------------
 
-    #[link(name = "powrprof")]
-    extern "system" {
-        fn PowerGetEffectiveOverlayScheme(id: *mut GUID) -> u32;
-        fn PowerSetActiveOverlayScheme(id: *const GUID) -> u32;
+    // Undocumented exports of powrprof.dll (they aren't in its import
+    // library), so they're looked up at run time; if a Windows build lacks
+    // them, the power-mode control is simply hidden.
+    type GetOverlay = unsafe extern "system" fn(*mut GUID) -> u32;
+    type SetOverlay = unsafe extern "system" fn(*const GUID) -> u32;
+
+    fn overlay_fns() -> Option<(GetOverlay, SetOverlay)> {
+        use std::sync::OnceLock;
+        use windows::core::s;
+        use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+        static FNS: OnceLock<Option<(GetOverlay, SetOverlay)>> = OnceLock::new();
+        *FNS.get_or_init(|| unsafe {
+            let lib = LoadLibraryW(w!("powrprof.dll")).ok()?;
+            let get = GetProcAddress(lib, s!("PowerGetEffectiveOverlayScheme"))?;
+            let set = GetProcAddress(lib, s!("PowerSetActiveOverlayScheme"))?;
+            Some((
+                std::mem::transmute::<unsafe extern "system" fn() -> isize, GetOverlay>(get),
+                std::mem::transmute::<unsafe extern "system" fn() -> isize, SetOverlay>(set),
+            ))
+        })
     }
 
     const EFFICIENCY: GUID = GUID::from_u128(0x961cc777_2547_4f9d_8174_7d86181b8a7a);
@@ -415,8 +432,9 @@ mod imp {
 
     fn power_mode() -> Option<wisp_core::winsettings::PowerMode> {
         use wisp_core::winsettings::PowerMode;
+        let (get, _) = overlay_fns()?;
         let mut g = GUID::zeroed();
-        if unsafe { PowerGetEffectiveOverlayScheme(&mut g) } != 0 {
+        if unsafe { get(&mut g) } != 0 {
             return None;
         }
         Some(if g == EFFICIENCY {
@@ -435,7 +453,13 @@ mod imp {
             PowerMode::Balanced => BALANCED,
             PowerMode::Performance => PERFORMANCE,
         };
-        match unsafe { PowerSetActiveOverlayScheme(&g) } {
+        let (_, set) = overlay_fns().ok_or_else(|| {
+            WispError::new(
+                ErrorCode::Unsupported,
+                "This version of Windows doesn't let apps change the power mode. Use Settings → System → Power.",
+            )
+        })?;
+        match unsafe { set(&g) } {
             0 => Ok(()),
             rc => Err(WispError::new(
                 ErrorCode::Unsupported,
