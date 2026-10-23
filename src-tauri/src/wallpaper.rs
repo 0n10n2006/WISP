@@ -7,17 +7,43 @@ use wisp_core::{ErrorCode, Result, WispError};
 pub const MAX_RECENT: usize = 12;
 const EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "bmp"];
 
-pub fn validate(path: &str) -> Result<()> {
-    let p = Path::new(path);
-    let ext_ok = p
+/// `C:\...\image.png` on a local drive: no network (UNC) or device paths,
+/// no `..`, and an image extension. Checked before touching the file, so a
+/// path can never make Windows contact a remote server.
+pub fn is_local_image_path(path: &str) -> bool {
+    let b = path.as_bytes();
+    let drive =
+        b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'\\' | b'/');
+    // Elsewhere (tests, the preview build) a plain absolute path is local.
+    #[cfg(not(windows))]
+    let drive = drive || (path.starts_with('/') && !path.starts_with("//"));
+    let ext_ok = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| EXTENSIONS.iter().any(|x| x.eq_ignore_ascii_case(e)));
-    if !ext_ok || !p.is_absolute() {
+    drive && ext_ok && !path.contains("..") && !path.chars().any(|c| c.is_control())
+}
+
+pub fn validate(path: &str) -> Result<()> {
+    if !is_local_image_path(path) {
         return Err(WispError::invalid("Choose a JPG, PNG or BMP image."));
     }
+    let p = Path::new(path);
     if !p.is_file() {
         return Err(WispError::invalid("That image no longer exists."));
+    }
+    // Follow links/junctions and check where the file really is.
+    #[cfg(windows)]
+    {
+        let real = std::fs::canonicalize(p)
+            .map_err(|_| WispError::invalid("That image no longer exists."))?;
+        let real = real.to_string_lossy();
+        let local = real
+            .strip_prefix("\\\\?\\")
+            .is_some_and(is_local_image_path);
+        if !local {
+            return Err(WispError::invalid("Choose an image on this PC."));
+        }
     }
     Ok(())
 }
@@ -111,6 +137,23 @@ pub fn current() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_local_image_paths() {
+        assert!(is_local_image_path("C:\\Users\\me\\Pictures\\a.JPG"));
+        assert!(is_local_image_path("d:/pics/b.png"));
+        for bad in [
+            "\\\\attacker\\share\\x.png",
+            "\\\\?\\UNC\\attacker\\x.png",
+            "//attacker/share/x.png",
+            "C:\\a\\..\\..\\x.png",
+            "C:\\a\\x.exe",
+            "relative\\x.png",
+            "C:x.png",
+        ] {
+            assert!(!is_local_image_path(bad), "{bad}");
+        }
+    }
 
     #[test]
     fn validates_and_tracks_recent() {

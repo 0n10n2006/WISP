@@ -79,11 +79,11 @@ pub fn find_launchable<'a>(
     if wanted.is_empty() {
         return Err(WispError::invalid("Which app?"));
     }
-    if let Some(i) = items.iter().find(|i| i.name.to_lowercase() == wanted) {
+    let safe = || items.iter().filter(|i| !crate::launcher::is_shell(i));
+    if let Some(i) = safe().find(|i| i.name.to_lowercase() == wanted) {
         return Ok(i);
     }
-    let matches: Vec<_> = items
-        .iter()
+    let matches: Vec<_> = safe()
         .filter(|i| {
             let n = i.name.to_lowercase();
             n.starts_with(&wanted) || n.split_whitespace().any(|w| w == wanted)
@@ -120,15 +120,11 @@ impl ValidatedAction {
         }
     }
 
-    /// Actions that leave Wisp's own sandbox need the user's confirmation.
+    /// Every model-proposed action needs the user's confirmation: the model
+    /// may be following instructions hidden in a page, screenshot or the
+    /// clipboard, so nothing it asks for happens silently.
     pub fn requires_confirmation(&self) -> bool {
-        matches!(
-            self,
-            Self::OpenApp { .. }
-                | Self::OpenUrl { .. }
-                | Self::Remember { .. }
-                | Self::Launch { .. }
-        )
+        true
     }
 
     /// Short description safe for the audit log (no long free text).
@@ -162,7 +158,8 @@ impl ValidatedAction {
             Self::OpenApp { name, .. } => format!("Open {name}"),
             Self::OpenUrl { url } => format!("Open {url} in your browser"),
             Self::CopyText { text } => {
-                format!("Copy {} characters to the clipboard", text.chars().count())
+                let preview = summarize_text(&text.replace(['\r', '\n', '\t'], " "), 200);
+                format!("Copy to the clipboard: \"{preview}\"")
             }
             Self::CreateReminder { title, due_at, .. } => {
                 let local = due_at.with_timezone(&chrono::Local);
@@ -187,6 +184,9 @@ struct RememberArgs {
 }
 
 pub const MAX_MEMORY_CHARS: usize = 500;
+
+/// Actions considered from a single model reply.
+pub const MAX_CALLS_PER_TURN: usize = 3;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -303,7 +303,7 @@ pub fn validate_call_in(
         "open_url" => {
             let a: OpenUrlArgs = parse_args(name, args)?;
             Ok(ValidatedAction::OpenUrl {
-                url: validate_url(&a.url)?,
+                url: validate_public_url(&a.url)?,
             })
         }
         "copy_text" => {
@@ -408,6 +408,144 @@ pub fn validate_url(raw: &str) -> Result<String> {
     Ok(u.to_string())
 }
 
+/// Whether `host` is this PC or the local network (routers, printers, dev
+/// servers): links there are a classic way to make a browser attack them.
+pub fn is_local_host(host: &url::Host<&str>) -> bool {
+    match host {
+        url::Host::Ipv4(ip) => {
+            ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_broadcast()
+                || ip.octets()[0] == 100 && (64..128).contains(&ip.octets()[1])
+        }
+        url::Host::Ipv6(ip) => {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || (ip.segments()[0] & 0xfe00) == 0xfc00
+                || (ip.segments()[0] & 0xffc0) == 0xfe80
+                || ip
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| is_local_host(&url::Host::<&str>::Ipv4(v4)))
+        }
+        url::Host::Domain(d) => {
+            let d = d.trim_end_matches('.').to_ascii_lowercase();
+            d == "localhost"
+                || !d.contains('.')
+                || [
+                    ".localhost",
+                    ".local",
+                    ".internal",
+                    ".lan",
+                    ".home.arpa",
+                    ".corp",
+                ]
+                .iter()
+                .any(|s| d.ends_with(s))
+        }
+    }
+}
+
+/// A web address that may be opened from model output or an answer's link:
+/// `validate_url`, and not on this PC or the local network.
+pub fn validate_public_url(raw: &str) -> Result<String> {
+    let url = validate_url(raw)?;
+    let parsed = url::Url::parse(&url).map_err(|_| WispError::invalid("Invalid address"))?;
+    if parsed.host().is_some_and(|h| is_local_host(&h)) {
+        return Err(WispError::invalid(
+            "Wisp doesn't open links to this PC or your local network",
+        ));
+    }
+    Ok(url)
+}
+
+/// Terminal apps where a pasted newline runs a command.
+const CONSOLE_PROCESSES: &[&str] = &[
+    "cmd",
+    "powershell",
+    "powershell_ise",
+    "pwsh",
+    "windowsterminal",
+    "wt",
+    "conhost",
+    "openconsole",
+    "bash",
+    "wsl",
+    "mintty",
+    "alacritty",
+    "wezterm-gui",
+    "putty",
+    "kitty",
+    "tabby",
+    "hyper",
+];
+
+/// Whether `process` (name without `.exe`) is a terminal.
+pub fn is_console_process(process: &str) -> bool {
+    CONSOLE_PROCESSES.contains(&process.trim().to_ascii_lowercase().as_str())
+}
+
+/// Text that is safe to paste into another app: no control characters
+/// (other than line breaks and tabs), and in a terminal no line breaks at
+/// all, so pasting can never run a command by itself.
+pub fn text_for_insert(text: &str, into_console: bool) -> String {
+    let cleaned: String = text
+        .replace("\r\n", "\n")
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .filter(|c| !matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'))
+        .collect();
+    if into_console {
+        cleaned
+            .split(['\n', '\t'])
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        cleaned
+    }
+}
+
+/// Shells, consoles and script hosts (lower-case names without extension).
+const BLOCKED_PROGRAMS: &[&str] = &[
+    "cmd",
+    "powershell",
+    "powershell_ise",
+    "pwsh",
+    "wt",
+    "windowsterminal",
+    "conhost",
+    "wscript",
+    "cscript",
+    "mshta",
+    "rundll32",
+    "regsvr32",
+    "reg",
+    "regedit",
+    "bash",
+    "sh",
+    "wsl",
+    "msiexec",
+    "python",
+    "pythonw",
+    "py",
+    "pyw",
+    "node",
+    "certutil",
+    "bitsadmin",
+    "schtasks",
+    "forfiles",
+    "msbuild",
+    "installutil",
+];
+
+/// Whether `stem` (a file name without extension) is a shell or script host.
+pub fn is_blocked_program(stem: &str) -> bool {
+    BLOCKED_PROGRAMS.contains(&stem.trim().to_ascii_lowercase().as_str())
+}
+
 /// App targets come from the user's own allowlist, but are still checked so
 /// that nothing resembling a command line slips through.
 pub fn validate_app_target(target: &str) -> Result<()> {
@@ -421,28 +559,15 @@ pub fn validate_app_target(target: &str) -> Result<()> {
         ));
     }
     let lower = t.to_ascii_lowercase();
-    let allowed_ext = [".exe", ".lnk", ".appref-ms"];
+    let allowed_ext = [".exe", ".lnk"];
     if !allowed_ext.iter().any(|e| lower.ends_with(e)) {
         return Err(WispError::invalid(
             "App target must be an .exe or shortcut (.lnk)",
         ));
     }
-    let blocked = [
-        "cmd.exe",
-        "powershell.exe",
-        "pwsh.exe",
-        "wscript.exe",
-        "cscript.exe",
-        "mshta.exe",
-        "rundll32.exe",
-        "regsvr32.exe",
-        "reg.exe",
-        "bash.exe",
-        "wsl.exe",
-        "msiexec.exe",
-    ];
     let file = lower.rsplit(['\\', '/']).next().unwrap_or(&lower);
-    if blocked.contains(&file) {
+    let stem = file.trim_end_matches(".exe").trim_end_matches(".lnk");
+    if is_blocked_program(stem) {
         return Err(WispError::invalid(
             "Shells and script hosts cannot be allowlisted",
         ));
@@ -527,6 +652,18 @@ pub fn function_declarations() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inserted_text_is_defanged() {
+        assert_eq!(text_for_insert("a\u{7}b\r\nc\u{202E}d", false), "ab\ncd");
+        assert_eq!(
+            text_for_insert("del *\r\nshutdown /s\n", true),
+            "del * shutdown /s"
+        );
+        assert!(is_console_process("WindowsTerminal"));
+        assert!(is_console_process("pwsh"));
+        assert!(!is_console_process("notepad"));
+    }
     use crate::launcher::LaunchItem;
     use crate::settings::Settings;
 
@@ -575,7 +712,7 @@ mod tests {
                 app: "chrome".into()
             }
         );
-        assert!(!sw.requires_confirmation());
+        assert!(sw.requires_confirmation());
         assert!(validate_call_in("switch_to_app", &json!({"name": "excel"}), &env, now()).is_err());
     }
 
@@ -635,6 +772,24 @@ mod tests {
         assert!(validate_url("https://user:pw@example.com").is_err());
         assert!(validate_url("not a url").is_err());
         assert!(validate_url(&format!("https://a.com/{}", "x".repeat(3000))).is_err());
+        for local in [
+            "http://127.0.0.1:8080/x",
+            "http://localhost/",
+            "http://192.168.1.1/admin",
+            "http://10.0.0.5/",
+            "http://172.16.3.4/",
+            "http://169.254.169.254/latest",
+            "http://[::1]/",
+            "http://[fd00::1]/",
+            "http://[::ffff:192.168.0.1]/",
+            "http://printer.local/",
+            "http://router/",
+            "http://0.0.0.0/",
+        ] {
+            assert!(validate_public_url(local).is_err(), "{local}");
+        }
+        assert!(validate_public_url("https://example.com/").is_ok());
+        assert!(validate_public_url("https://8.8.8.8/").is_ok());
     }
 
     #[test]
@@ -695,7 +850,7 @@ mod tests {
         )
         .is_err());
         let a = validate_call("copy_text", &json!({"text": "hi"}), &apps(), now()).unwrap();
-        assert!(!a.requires_confirmation());
+        assert!(a.requires_confirmation());
         assert_eq!(a.audit_summary(), "chars=2");
     }
 

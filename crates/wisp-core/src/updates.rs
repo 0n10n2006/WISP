@@ -86,7 +86,11 @@ pub async fn check(api_base: &str, repo: &str, current: &str) -> Result<UpdateIn
     if r.draft {
         return Ok(none);
     }
-    let url = crate::tools::validate_url(&r.html_url).ok();
+    // Only ever point at this project's own release pages.
+    let prefix = format!("https://github.com/{repo}/releases/");
+    let url = crate::tools::validate_url(&r.html_url)
+        .ok()
+        .filter(|u| u.starts_with(&prefix));
     Ok(UpdateInfo {
         current: current.to_string(),
         available: is_newer(current, &r.tag_name) && url.is_some(),

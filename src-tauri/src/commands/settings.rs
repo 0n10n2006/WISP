@@ -61,6 +61,16 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             .db
             .prune_history(new.history_retention_days.max(1), false);
     }
+    if old.clipboard_history && !new.clipboard_history {
+        // Turning history off forgets what it kept (pinned clips stay).
+        let _ = app.state::<AppState>().db.clear_clips(false);
+        let _ = app.emit("wisp://data-changed", "clipboard");
+    }
+    if old.retain_audio && !new.retain_audio {
+        if let Ok(dir) = app.path().app_data_dir() {
+            crate::cleanup::prune_recordings(&dir, 0);
+        }
+    }
     crate::hotkeys::set_enabled(new.hold_to_talk && new.voice_enabled);
     if old.theme != new.theme {
         if let Some(win) = app.get_webview_window(windows::SETTINGS) {

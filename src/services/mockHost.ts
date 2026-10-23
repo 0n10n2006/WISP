@@ -383,7 +383,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       const file = target.toLowerCase().split(/[\\/]/).pop() ?? "";
       if (!name || !target) throw err("invalid", "Allowed apps need a name and a target");
       if (names.has(name)) throw err("invalid", `App "${name}" is listed twice`);
-      if (/["'&|<>^%;`$]/.test(target) || !/\.(exe|lnk|appref-ms)$/i.test(target))
+      if (/["'&|<>^%;`$]/.test(target) || !/\.(exe|lnk)$/i.test(target))
         throw err("invalid", "App target must be an .exe or shortcut (.lnk)");
       if (
         [
@@ -583,17 +583,22 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
           });
         }
         if (p.includes("/remind")) {
-          const due = new Date(Date.now() + 3600_000).toISOString();
-          const t = makeTask({ title: "Stretch", dueAt: due });
-          tasks = [...tasks, t];
-          listeners.data.forEach((cb) => cb("tasks"));
-          audit("create_reminder", 'title="Stretch"', "done", false);
+          // Like the real host: every model-proposed action asks first.
+          const description = 'Remind you "Stretch" in an hour';
+          const ok = await propose("create_reminder", description);
+          if (ok) {
+            const due = new Date(Date.now() + 3600_000).toISOString();
+            const t = makeTask({ title: "Stretch", dueAt: due });
+            tasks = [...tasks, t];
+            listeners.data.forEach((cb) => cb("tasks"));
+          }
+          audit("create_reminder", 'title="Stretch"', ok ? "done" : "declined", ok);
           onAction?.({
             type: "actionResult",
             kind: "create_reminder",
-            description: 'Remind you "Stretch" in an hour',
-            outcome: "done",
-            message: "Reminder created.",
+            description,
+            outcome: ok ? "done" : "declined",
+            message: ok ? "Reminder created." : "You chose not to do this.",
           });
         }
         const text = mockAnswer(req.prompt);

@@ -161,9 +161,82 @@ pub fn steam_game(acf: &str) -> Option<LaunchItem> {
     })
 }
 
+/// Start-menu names of shells, consoles and script hosts. The user can
+/// still open these from the bar, but the model may never propose them.
+const SHELL_WORDS: &[&str] = &[
+    "command prompt",
+    "powershell",
+    "terminal",
+    "git bash",
+    "git cmd",
+    "anaconda prompt",
+    "miniconda prompt",
+    "native tools",
+    "developer prompt",
+    "wsl",
+    "ubuntu",
+    "debian",
+    "kali",
+    "python",
+    "node.js",
+    "registry editor",
+    "regedit",
+];
+
+/// Whether this launcher entry opens a shell or script host.
+pub fn is_shell(item: &LaunchItem) -> bool {
+    if item.kind != "app" {
+        return false;
+    }
+    let name = item.name.to_lowercase();
+    if SHELL_WORDS.iter().any(|w| name.contains(w)) {
+        return true;
+    }
+    let file = item
+        .target
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    crate::tools::is_blocked_program(file.trim_end_matches(".lnk"))
+}
+
+/// The catalogue entry with this id. Launch requests from the UI carry only
+/// an id; the target always comes from the host's own catalogue.
+pub fn find_by_id<'a>(id: &str, items: &'a [LaunchItem]) -> Option<&'a LaunchItem> {
+    items.iter().find(|i| i.id == id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shells_are_recognised_and_ids_resolve() {
+        let item = |name: &str, target: &str| LaunchItem {
+            id: format!("lnk:{target}"),
+            name: name.into(),
+            kind: "app".into(),
+            target: target.into(),
+        };
+        let items = vec![
+            item("Spotify", "C:\\Start\\Spotify.lnk"),
+            item("Command Prompt", "C:\\Start\\Command Prompt.lnk"),
+            item(
+                "Windows PowerShell ISE",
+                "C:\\Start\\Windows PowerShell ISE.lnk",
+            ),
+            item("Terminal", "C:\\Start\\wt.lnk"),
+            item("Thing", "C:\\Start\\cmd.lnk"),
+        ];
+        assert!(!is_shell(&items[0]));
+        assert!(items[1..].iter().all(is_shell));
+        assert_eq!(
+            find_by_id("lnk:C:\\Start\\Spotify.lnk", &items).map(|i| i.name.as_str()),
+            Some("Spotify")
+        );
+        assert!(find_by_id("lnk:C:\\Evil\\x.lnk", &items).is_none());
+    }
 
     const LIBRARIES: &str = r#"
 "libraryfolders"

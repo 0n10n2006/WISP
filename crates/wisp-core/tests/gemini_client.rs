@@ -426,6 +426,19 @@ async fn update_check_reads_latest_release() {
         .unwrap();
     assert!(info.available);
     assert_eq!(info.latest.as_deref(), Some("0.3.0"));
+    // A release link anywhere else is never offered.
+    let other = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/o/r/releases/latest"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"tag_name":"v0.3.0","html_url":"https://evil.example/o/r/releases/tag/v0.3.0","draft":false}"#,
+        ))
+        .mount(&other)
+        .await;
+    let phish = wisp_core::updates::check(&other.uri(), "o/r", "0.2.0")
+        .await
+        .unwrap();
+    assert!(!phish.available && phish.url.is_none());
     let same = wisp_core::updates::check(&server.uri(), "o/r", "0.3.0")
         .await
         .unwrap();
@@ -520,4 +533,25 @@ async fn speed_test_measures_download() {
         .unwrap();
     assert_eq!(r.bytes, 2_000_000);
     assert!(r.mbps > 0.0);
+}
+
+#[tokio::test]
+async fn never_follows_redirects_with_the_key() {
+    let server = MockServer::start().await;
+    let elsewhere = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .respond_with(
+            ResponseTemplate::new(307)
+                .insert_header("location", format!("{}/steal", elsewhere.uri()).as_str()),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{\"models\":[]}"))
+        .expect(0)
+        .mount(&elsewhere)
+        .await;
+    assert!(client(&server).list_models(KEY).await.is_err());
+    elsewhere.verify().await;
 }

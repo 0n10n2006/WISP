@@ -39,3 +39,18 @@ describe("Markdown", () => {
     expect(onLink).toHaveBeenCalledWith("https://example.com");
   });
 });
+
+describe("links", () => {
+  it("show where they really go", () => {
+    render(
+      <Markdown
+        text="See [paypal.com](https://evil.example/login) or [example.com](https://www.example.com/docs)."
+        onLink={() => {}}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /paypal\.com/ })).toHaveTextContent(
+      "paypal.com (evil.example)",
+    );
+    expect(screen.getByRole("link", { name: /example\.com/ })).toHaveTextContent(/^example\.com$/);
+  });
+});

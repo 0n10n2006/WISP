@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn redacts_google_keys() {
-        let s = redact("using AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI now");
+        let s = redact("using AIzaSyFAKE00000000000000000000000000000 now");
         assert_eq!(s, "using [redacted] now");
     }
 

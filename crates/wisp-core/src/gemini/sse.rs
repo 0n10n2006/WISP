@@ -26,6 +26,11 @@ impl SseParser {
         out
     }
 
+    /// Bytes buffered while waiting for the end of an event.
+    pub fn pending(&self) -> usize {
+        self.buf.len()
+    }
+
     /// Flush a trailing event that was not terminated by a blank line.
     pub fn finish(&mut self) -> Option<String> {
         let rest = std::mem::take(&mut self.buf);

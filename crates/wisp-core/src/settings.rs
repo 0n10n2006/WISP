@@ -416,8 +416,11 @@ impl Settings {
         let mut base =
             serde_json::to_value(self).map_err(|e| WispError::internal(e.to_string()))?;
         merge(&mut base, patch);
-        let s: Settings = serde_json::from_value(base)
+        let mut s: Settings = serde_json::from_value(base)
             .map_err(|e| WispError::invalid(format!("Invalid setting: {e}")))?;
+        // Kept by the host only: these paths are trusted for reading images,
+        // so the UI must not be able to point them anywhere.
+        s.recent_wallpapers = self.recent_wallpapers.clone();
         s.validated()
     }
 }
@@ -604,7 +607,7 @@ mod tests {
                 "dashboardTabs": ["power", "bogus", "power", "today"],
                 "notchPosition": "right",
                 "sliverStyle": "hidden",
-                "vocabulary": [" Naumaan ", "naumaan", "", "Kubernetes"],
+                "vocabulary": [" Alexandra ", "alexandra", "", "Kubernetes"],
                 "neverOverApps": ["C:\\Tools\\OBS64.EXE", "obs64", "photoshop.exe"],
                 "voiceLanguage": "en-GB",
             }))
@@ -613,7 +616,7 @@ mod tests {
         assert_eq!(s.dashboard_tabs, vec!["power", "today"]);
         assert_eq!(s.notch_position, NotchPosition::Right);
         assert_eq!(s.sliver_style, SliverStyle::Hidden);
-        assert_eq!(s.vocabulary, vec!["Naumaan", "Kubernetes"]);
+        assert_eq!(s.vocabulary, vec!["Alexandra", "Kubernetes"]);
         assert_eq!(s.never_over_apps, vec!["obs64", "photoshop"]);
 
         for bad in [
@@ -626,6 +629,14 @@ mod tests {
         ] {
             assert!(Settings::default().patched(&bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn patches_cannot_set_host_only_paths() {
+        let s = Settings::default()
+            .patched(&json!({"recentWallpapers": ["\\\\attacker\\share\\x.png"]}))
+            .unwrap();
+        assert!(s.recent_wallpapers.is_empty());
     }
 
     #[test]

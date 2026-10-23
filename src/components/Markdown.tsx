@@ -73,6 +73,16 @@ export function parseBlocks(src: string): Block[] {
 
 const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\((https?:\/\/[^\s)]+)\))/g;
 
+/** "https://www.example.com/a" → "example.com", so a link's real
+ * destination is visible next to whatever its label says. */
+export function linkHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 export function renderInline(text: string, onLink: (url: string) => void): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
@@ -87,6 +97,7 @@ export function renderInline(text: string, onLink: (url: string) => void): React
     else if (m[4]) {
       const label = tok.slice(1, tok.indexOf("]("));
       const url = m[5]!;
+      const host = linkHost(url);
       out.push(
         <a
           key={k++}
@@ -95,9 +106,14 @@ export function renderInline(text: string, onLink: (url: string) => void): React
             e.preventDefault();
             onLink(url);
           }}
+          onAuxClick={(e) => e.preventDefault()}
+          onDragStart={(e) => e.preventDefault()}
           title={url}
         >
           {label}
+          {host && !label.toLowerCase().includes(host) && (
+            <span className="md-link-host"> ({host})</span>
+          )}
         </a>,
       );
     }

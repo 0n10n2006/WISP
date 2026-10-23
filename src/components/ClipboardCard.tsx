@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useConversation } from "../state/conversation";
-import { MAX_CLIPBOARD_CHARS, useClipboardAssist } from "../state/assist";
+import { clipboardPrompt, MAX_CLIPBOARD_CHARS, useClipboardAssist } from "../state/assist";
 import { Icon } from "./Icon";
 
 const PRESETS = [
@@ -31,7 +31,7 @@ export function ClipboardCard() {
   const send = (instruction: string, label: string) => {
     if (!clipped) return;
     close();
-    void ask(`${instruction}\n\n---\n${clipped}`, {
+    void ask(clipboardPrompt(instruction, clipped), {
       contextKind: "clipboard",
       displayText: `${label} — clipboard text (${clipped.length.toLocaleString()} characters)`,
     });

@@ -1260,3 +1260,9 @@ html[data-hidden] *::after {
   color: var(--color-text-secondary);
   text-align: left;
 }
+
+/* The real destination of a link in an answer. */
+.md-link-host {
+  color: var(--color-text-secondary);
+  font-size: 0.85em;
+}

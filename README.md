@@ -30,6 +30,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2: web answers with sources, fast mode, personality, agents             | ✅    |
 | Text-to-speech removed                                                     | ✅    |
 | v0.2.2: game-safe, app-aware, hands-free voice, deeper customisation       | ✅    |
+| v0.2.3: security hardening (see docs/SECURITY.md)                          | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 

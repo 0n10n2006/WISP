@@ -151,6 +151,12 @@ pub async fn insert_text(
                 "Wisp doesn't know where to insert. Use Copy, then paste where you want it.",
             )
         })?;
+    let console =
+        foreground::process_name(target).is_some_and(|p| wisp_core::tools::is_console_process(&p));
+    let text = wisp_core::tools::text_for_insert(&text, console);
+    if text.trim().is_empty() {
+        return Err(WispError::invalid("Nothing to insert"));
+    }
     let clipboard = app.clipboard();
     let previous = clipboard.read_text().ok();
     clipboard

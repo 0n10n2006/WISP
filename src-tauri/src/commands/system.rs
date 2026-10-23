@@ -4,7 +4,7 @@ use crate::windows::{self, NotchMode};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
-use wisp_core::tools::{validate_url, MAX_COPY_CHARS};
+use wisp_core::tools::{validate_public_url, MAX_COPY_CHARS};
 use wisp_core::{ErrorCode, WispError};
 
 #[tauri::command]
@@ -57,7 +57,7 @@ pub fn quit_app(app: AppHandle) {
 /// Open a validated http(s) URL in the default browser.
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> CmdResult<()> {
-    let url = validate_url(&url)?;
+    let url = validate_public_url(&url)?;
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| WispError::new(ErrorCode::Internal, format!("Couldn't open the link: {e}")))
