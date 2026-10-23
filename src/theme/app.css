@@ -1287,3 +1287,18 @@ html[data-hidden] *::after {
   color: var(--color-text-secondary);
   font-size: 0.85em;
 }
+
+/* ---------- Free model usage ---------- */
+.usage-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.usage-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--text-sm);
+}

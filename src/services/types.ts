@@ -62,6 +62,12 @@ export interface Settings {
   closeOnBlur: boolean;
   /** Fold the bar away shortly after the mouse leaves it. */
   foldOnLeave: boolean;
+  /** When a model's free quota runs out, answer with the next one. */
+  autoFallback: boolean;
+  /** Send simple jobs to OpenRouter first (with a key). */
+  simpleViaOpenrouter: boolean;
+  /** OpenRouter model; "" picks the biggest free one. */
+  openrouterModel: string;
   /** Stop listening automatically when you finish speaking. */
   autoStopVoice: boolean;
   /** Pause that counts as "done talking", in ms. */
@@ -141,6 +147,8 @@ export interface ShortcutIssue {
 export interface SettingsSnapshot {
   settings: Settings;
   hasApiKey: boolean;
+  /** An OpenRouter key is saved (the key itself never reaches the UI). */
+  hasOpenrouterKey?: boolean;
   shortcutIssues: ShortcutIssue[];
   recoveredFrom: string | null;
   warnings: string[];
@@ -209,6 +217,31 @@ export interface AskResult {
   usage: Usage | null;
   finishReason: string | null;
   sources: Source[];
+  /** Readable name of the model that answered. */
+  modelLabel?: string;
+  /** Another model answered because the first choice was used up or busy. */
+  fellBack?: boolean;
+  /** Models skipped on the way. */
+  skipped?: string[];
+  /** Something to know about this answer (e.g. no web search). */
+  note?: string | null;
+}
+
+/** A free OpenRouter model. */
+export interface FreeModel {
+  id: string;
+  name: string;
+  contextLength: number;
+}
+
+/** Today's use of one model, and whether it's resting after a limit. */
+export interface ModelUsage {
+  model: string;
+  label: string;
+  provider: "gemini" | "openrouter";
+  requestsToday: number;
+  /** Unix seconds when it can be used again. */
+  restingUntil?: number | null;
 }
 
 export type NotchMode = "sliver" | "peek" | "open";
@@ -272,6 +305,9 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   closeOnBlur: true,
   foldOnLeave: true,
+  autoFallback: true,
+  simpleViaOpenrouter: true,
+  openrouterModel: "",
   autoStopVoice: true,
   silenceMs: 1200,
   voiceLanguage: "",

@@ -1,5 +1,6 @@
 use super::CmdResult;
 use crate::actions;
+use crate::routing;
 use crate::state::AppState;
 use chrono::Utc;
 use serde::Serialize;
@@ -16,6 +17,7 @@ use wisp_core::gemini::types::{
     AskRequest, FunctionCall, FunctionResponse, GenerateOutcome, Source, UsageMetadata,
 };
 use wisp_core::redact::summarize_text;
+use wisp_core::router::{self, Route, Task};
 use wisp_core::settings::Settings;
 use wisp_core::storage::{ActionAudit, RequestLog};
 use wisp_core::tools::{validate_call_in, ToolEnv};
@@ -54,6 +56,14 @@ pub struct AskResult {
     pub finish_reason: Option<String>,
     /// Web sources for grounded answers.
     pub sources: Vec<Source>,
+    /// Readable name of the model that answered.
+    pub model_label: String,
+    /// Another model answered because the first choice was used up or busy.
+    pub fell_back: bool,
+    /// Models skipped on the way (readable names).
+    pub skipped: Vec<String>,
+    /// Something the user should know about this answer.
+    pub note: Option<String>,
 }
 
 /// Model ↔ tool round trips allowed per request.
@@ -87,7 +97,10 @@ pub async fn ask(
     if request.prompt.trim().is_empty() && request.attachments.is_empty() {
         return Err(WispError::invalid("Type a question first."));
     }
-    let key = state.secrets.require()?;
+    let keys = routing::Keys::load(&state);
+    if keys.gemini.is_none() && keys.openrouter.is_none() {
+        state.secrets.require()?;
+    }
     let settings = state.settings();
     let cancel = CancellationToken::new();
     state
@@ -116,40 +129,82 @@ pub async fn ask(
     } else {
         None
     };
-    let ctx = PromptContext {
-        now_local: &now_local,
-        memories: &memories,
-        allowed_apps: &apps,
-        model: &settings.selected_model,
-        fast: settings.fast_mode,
-        persona: &settings.persona,
-        desktop: desktop.as_ref(),
+    // The request as one model sees it: no tools or search it can't use.
+    let body_for = |route: &Route| {
+        let mut r = request.clone();
+        r.enable_tools &= route.caps.tools;
+        r.web &= route.caps.search;
+        let ctx = PromptContext {
+            now_local: &now_local,
+            memories: &memories,
+            allowed_apps: &apps,
+            model: &route.model,
+            fast: settings.fast_mode,
+            persona: &settings.persona,
+            desktop: desktop.as_ref(),
+        };
+        build_request(&r, &ctx)
     };
-    let mut body = build_request(&request, &ctx);
 
     let started = Instant::now();
+    let task = router::classify(&request);
+    let first = routing::run(&app, task, &keys, |route| {
+        let body = body_for(&route);
+        let (state, keys, cancel, on_event) = (&state, &keys, &cancel, &on_event);
+        async move {
+            let mut began = false;
+            let res = routing::stream(state, keys, &route, &body, cancel, |delta| {
+                began = true;
+                let _ = on_event.send(AskEvent::Delta {
+                    text: delta.to_string(),
+                });
+            })
+            .await;
+            (res.map(|out| (out, body)), began)
+        }
+    })
+    .await;
+    let model_for_log = first
+        .as_ref()
+        .map(|o| o.route.model.clone())
+        .unwrap_or_else(|_| settings.selected_model.clone());
+    log_request(
+        &state,
+        &settings,
+        &request,
+        first.as_ref().map(|o| &o.value.0),
+        &model_for_log,
+        started,
+    );
+    let routing::Outcome {
+        value: (first_out, mut body),
+        route,
+        skipped,
+    } = first?;
+
     let mut text = String::new();
     let mut usage = None;
     let mut finish_reason = None;
     let mut sources: Vec<Source> = Vec::new();
-    for round in 0..MAX_TOOL_ROUNDS {
-        let mut first_delta = true;
-        let separate = !text.is_empty();
-        let result = state
-            .gemini
-            .stream(&key, &settings.selected_model, &body, &cancel, |delta| {
-                let mut d = delta.to_string();
-                if first_delta && separate {
-                    d.insert_str(0, "\n\n");
-                }
-                first_delta = false;
-                let _ = on_event.send(AskEvent::Delta { text: d });
-            })
-            .await;
-        if round == 0 || result.is_err() {
-            log_request(&state, &settings, &request, &result, started);
-        }
-        let out = result?;
+    let mut next = Some(first_out);
+    for _ in 0..MAX_TOOL_ROUNDS {
+        let out = match next.take() {
+            Some(out) => out,
+            None => {
+                // Later tool rounds stay with the model that started.
+                let mut first_delta = true;
+                let separate = !text.is_empty();
+                routing::stream(&state, &keys, &route, &body, &cancel, |delta| {
+                    let mut d = delta.to_string();
+                    if first_delta && separate {
+                        d.insert_str(0, "\n\n");
+                    }
+                    first_delta = false;
+                    let _ = on_event.send(AskEvent::Delta { text: d });
+                })
+                .await?
+            }
+        };
         if !out.text.is_empty() {
             if !text.is_empty() {
                 text.push_str("\n\n");
@@ -185,9 +240,26 @@ pub async fn ask(
         }
         body = with_function_results(body, out.model_parts, responses);
     }
+    let note = if request.web && !route.caps.search {
+        Some(
+            "Answered without web search: the models that can search are used up for now."
+                .to_string(),
+        )
+    } else if request.enable_tools && !route.caps.tools && task == Task::Actions {
+        Some(format!(
+            "Desktop actions aren't available while Wisp is using {}.",
+            route.label()
+        ))
+    } else {
+        None
+    };
     Ok(AskResult {
         text,
-        model: settings.selected_model,
+        model_label: route.label(),
+        fell_back: !skipped.is_empty(),
+        model: route.model,
+        skipped,
+        note,
         latency_ms: started.elapsed().as_millis() as u64,
         usage,
         finish_reason,
@@ -379,7 +451,8 @@ fn log_request(
     state: &AppState,
     settings: &Settings,
     request: &AskRequest,
-    result: &Result<GenerateOutcome, WispError>,
+    result: Result<&GenerateOutcome, &WispError>,
+    model: &str,
     started: Instant,
 ) {
     if settings.history_retention_days == 0 {
@@ -389,7 +462,7 @@ fn log_request(
         .ok()
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_else(|| "text".into());
-    let mut entry = RequestLog::new("ask", &settings.selected_model, &kind);
+    let mut entry = RequestLog::new("ask", model, &kind);
     entry.latency_ms = started.elapsed().as_millis() as u64;
     match result {
         Ok(out) => {

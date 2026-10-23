@@ -16,6 +16,7 @@ mod foreground;
 mod hotkeys;
 mod power;
 mod reminders;
+mod routing;
 mod secrets;
 mod selftest;
 mod shortcuts;
@@ -90,7 +91,9 @@ pub fn run() {
                 ),
                 gemini: GeminiClient::new(),
                 db,
-                secrets: secrets::SecretStore::default(),
+                secrets: secrets::SecretStore::gemini(),
+                openrouter_key: secrets::SecretStore::openrouter(),
+                routing: routing::Routing::load(Some(data_dir.join("quota.json"))),
                 requests: Mutex::new(HashMap::new()),
                 shortcut_issues: Mutex::new(Vec::new()),
                 island: Mutex::new(Default::default()),
@@ -215,6 +218,10 @@ pub fn run() {
             commands::settings::remove_api_key,
             commands::settings::list_models,
             commands::settings::test_connection,
+            commands::settings::test_openrouter_key,
+            commands::settings::set_openrouter_key,
+            commands::settings::remove_openrouter_key,
+            commands::settings::model_usage,
             commands::settings::register_shortcuts,
             commands::settings::validate_shortcut,
             commands::ask::ask,

@@ -1704,3 +1704,10 @@ html[data-notch="ball"][data-corner="bottom-right"] :is(.peek, .bar-wrap) {
     transition: none;
   }
 }
+
+/* ---------- Which model answered ---------- */
+.answer-meta {
+  margin: 2px 16px 6px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}

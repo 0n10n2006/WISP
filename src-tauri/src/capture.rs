@@ -485,12 +485,22 @@ static HIGHLIGHT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU6
 /// Show me: point at the on-screen element that answers `question`.
 pub async fn show_me(app: &AppHandle, question: &str) -> Result<Vec<Highlight>> {
     let state = app.state::<AppState>();
-    let key = state.secrets.require()?;
-    let model = state.settings().selected_model;
+    state.secrets.require()?;
+    let keys = crate::routing::Keys::load(&state);
     let shot = screenshot_here(app).await?;
-    let req = wisp_core::gemini::prompt::show_me_request(&shot.png_b64, question, &model);
     let cancel = tokio_util::sync::CancellationToken::new();
-    let out = state.gemini.generate(&key, &model, &req, &cancel).await?;
+    let out = crate::routing::run(app, wisp_core::router::Task::Vision, &keys, |route| {
+        let req = wisp_core::gemini::prompt::show_me_request(&shot.png_b64, question, &route.model);
+        let (state, keys, cancel) = (&state, &keys, &cancel);
+        async move {
+            (
+                crate::routing::complete(state, keys, &route, &req, cancel).await,
+                false,
+            )
+        }
+    })
+    .await?
+    .value;
     let found = parse_highlights(&out.text);
     if found.is_empty() {
         return Ok(found);

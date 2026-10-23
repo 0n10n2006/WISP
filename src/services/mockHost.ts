@@ -30,10 +30,17 @@ import {
   type LaunchItem,
   type AppUsage,
   type NotchMode,
+  type FreeModel,
+  type ModelUsage,
 } from "./types";
 
 const STORAGE_KEY = "wisp.mock.settings";
 const KEY_FLAG = "wisp.mock.hasKey";
+
+export const MOCK_FREE_MODELS: FreeModel[] = [
+  { id: "meta-llama/llama-3.3-70b-instruct:free", name: "Llama 3.3 70B", contextLength: 131072 },
+  { id: "mistralai/mistral-7b-instruct:free", name: "Mistral 7B", contextLength: 32768 },
+];
 
 export const MOCK_MODELS: ModelInfo[] = [
   {
@@ -187,6 +194,8 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     }
   }
   let hasKey = persist && safeGet(KEY_FLAG) === "1";
+  let hasOpenrouter = false;
+  const modelUse: ModelUsage[] = [];
   const listeners = {
     settings: new Set<(s: SettingsSnapshot) => void>(),
     layout: new Set<(l: IslandLayout) => void>(),
@@ -343,6 +352,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
   const snapshot = (): SettingsSnapshot => ({
     settings,
     hasApiKey: hasKey,
+    hasOpenrouterKey: hasOpenrouter,
     shortcutIssues: [],
     recoveredFrom: null,
     warnings: [],
@@ -466,6 +476,25 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       if (persist) safeSet(KEY_FLAG, "1");
       return emit();
     },
+    testOpenrouterKey: async (key) => {
+      await new Promise((r) => setTimeout(r, 200));
+      const k = key ?? (hasOpenrouter ? "sk-or-v1-stored-xxxxxxxxxxxx" : "");
+      if (!k) throw err("missing_key", "No OpenRouter key is saved.");
+      if (!k.startsWith("sk-or-"))
+        throw err("invalid", "That doesn't look like an OpenRouter key (it starts with sk-or-).");
+      return MOCK_FREE_MODELS;
+    },
+    setOpenrouterKey: async (key) => {
+      if (!key.trim().startsWith("sk-or-"))
+        throw err("invalid", "That doesn't look like an OpenRouter key (it starts with sk-or-).");
+      hasOpenrouter = true;
+      return emit();
+    },
+    removeOpenrouterKey: async () => {
+      hasOpenrouter = false;
+      return emit();
+    },
+    modelUsage: async () => modelUse,
     removeApiKey: async () => {
       hasKey = false;
       if (persist) safeSet(KEY_FLAG, null);
@@ -615,9 +644,33 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
           streamed += w;
           onDelta(w);
         }
+        // "/fallback" simulates the chosen model being used up for today.
+        const fellBack = p.includes("/fallback");
+        const answered = fellBack ? "gemini-2.5-flash-lite" : settings.selectedModel;
+        const known = modelUse.find((u) => u.model === answered);
+        if (known) known.requestsToday += 1;
+        else
+          modelUse.push({
+            model: answered,
+            label: answered === "gemini-2.5-flash-lite" ? "Gemini 2.5 Flash Lite" : answered,
+            provider: "gemini",
+            requestsToday: 1,
+          });
+        if (fellBack && !modelUse.some((u) => u.model === settings.selectedModel))
+          modelUse.push({
+            model: settings.selectedModel,
+            label: settings.selectedModel,
+            provider: "gemini",
+            requestsToday: 20,
+            restingUntil: Math.floor(Date.now() / 1000) + 6 * 3600,
+          });
         return {
           text: streamed,
-          model: settings.selectedModel,
+          model: answered,
+          modelLabel: fellBack ? "Gemini 2.5 Flash Lite" : answered,
+          fellBack,
+          skipped: fellBack ? ["Gemini 2.5 Flash"] : [],
+          note: null,
           latencyMs: Date.now() - started,
           usage: null,
           finishReason: "STOP",

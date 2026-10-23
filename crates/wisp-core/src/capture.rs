@@ -174,8 +174,16 @@ pub fn parse_highlights(text: &str) -> Vec<Highlight> {
         .map(|b| b.trim_end_matches("```"))
         .unwrap_or(body)
         .trim();
-    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(body)
-    else {
+    // Smaller models wrap the JSON in prose; take the outermost array.
+    let parsed = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .or_else(|| {
+            let (a, b) = (body.find('[')?, body.rfind(']')?);
+            (a < b)
+                .then(|| serde_json::from_str(&body[a..=b]).ok())
+                .flatten()
+        });
+    let Some(serde_json::Value::Array(items)) = parsed else {
         return Vec::new();
     };
     items

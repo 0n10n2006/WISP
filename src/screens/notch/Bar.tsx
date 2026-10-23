@@ -133,6 +133,12 @@ function Conversation() {
         </button>
       </div>
       <MessageList messages={messages} />
+      {last?.role === "model" && last.status === "done" && (last.via || last.note) ? (
+        <p className="answer-meta">
+          {last.via && <>Answered by {last.via}. </>}
+          {last.note}
+        </p>
+      ) : null}
       {last?.role === "model" && last.sources?.length ? <Sources sources={last.sources} /> : null}
     </div>
   );

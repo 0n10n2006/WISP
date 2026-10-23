@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 use wisp_core::gemini::prompt;
+use wisp_core::router::Task;
 use wisp_core::storage::AgentJob;
 use wisp_core::{ErrorCode, Result, WispError};
 
@@ -72,7 +73,7 @@ fn progress(app: &AppHandle, id: &str, p: f32, detail: &str) {
 
 pub async fn start(app: AppHandle, kind: AgentKind) -> Result<AgentJob> {
     let state = app.state::<AppState>();
-    let key = state.secrets.require()?;
+    state.secrets.require()?;
     let title = match &kind {
         AgentKind::Replica => "Recreate this screen as HTML".to_string(),
         AgentKind::Research { topic } => {
@@ -116,7 +117,7 @@ pub async fn start(app: AppHandle, kind: AgentKind) -> Result<AgentJob> {
     let id = job.id.clone();
     let a = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result = run(&a, &id, &key, kind, shot, &token).await;
+        let result = run(&a, &id, kind, shot, &token).await;
         let state = a.state::<AppState>();
         state.requests.lock().expect("requests").remove(&id);
         let _ = match result {
@@ -161,21 +162,30 @@ fn notify_done(app: &AppHandle, path: &str) {
 async fn run(
     app: &AppHandle,
     id: &str,
-    key: &str,
     kind: AgentKind,
     shot: Option<crate::capture::Shot>,
     cancel: &CancellationToken,
 ) -> Result<String> {
     let state = app.state::<AppState>();
-    let model = state.settings().selected_model;
+    let keys = crate::routing::Keys::load(&state);
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M").to_string();
     let dir = output_dir(app)?;
     match kind {
         AgentKind::Replica => {
             let shot = shot.ok_or_else(|| WispError::internal("missing screenshot"))?;
             progress(app, id, 0.2, "Studying the layout…");
-            let req = prompt::replica_request(&shot.png_b64, &model);
-            let out = state.gemini.generate(key, &model, &req, cancel).await?;
+            let out = crate::routing::run(app, Task::Vision, &keys, |route| {
+                let req = prompt::replica_request(&shot.png_b64, &route.model);
+                let (state, keys) = (&state, &keys);
+                async move {
+                    (
+                        crate::routing::complete(state, keys, &route, &req, cancel).await,
+                        false,
+                    )
+                }
+            })
+            .await?
+            .value;
             progress(app, id, 0.85, "Writing the page…");
             let html = prompt::extract_code_block(&out.text, "html");
             if !html.to_ascii_lowercase().contains("<html") && !html.contains("<body") {
@@ -191,8 +201,18 @@ async fn run(
         }
         AgentKind::Research { topic } => {
             progress(app, id, 0.15, "Searching the web…");
-            let req = prompt::research_request(&topic, &model);
-            let out = state.gemini.generate(key, &model, &req, cancel).await?;
+            let out = crate::routing::run(app, Task::Web, &keys, |route| {
+                let req = prompt::research_request(&topic, &route.model);
+                let (state, keys) = (&state, &keys);
+                async move {
+                    (
+                        crate::routing::complete(state, keys, &route, &req, cancel).await,
+                        false,
+                    )
+                }
+            })
+            .await?
+            .value;
             progress(app, id, 0.9, "Writing the brief…");
             let md = prompt::research_markdown(
                 &topic,

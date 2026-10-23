@@ -3,6 +3,8 @@ import { host, type AskHandle } from "../services/host";
 import { toWispError, type WispError } from "../services/errors";
 import type { Attachment, ChatTurn, ContextKind, Source } from "../services/types";
 import { SUCCESS_FLASH_MS } from "./orb";
+import { useSettings } from "./settings";
+import { toast } from "./toast";
 
 export type MessageStatus = "streaming" | "done" | "stopped" | "failed";
 
@@ -31,6 +33,10 @@ export interface Message {
   sources?: Source[];
   /** The question was answered with Google Search. */
   web?: boolean;
+  /** Another model than the chosen one answered (its readable name). */
+  via?: string;
+  /** Something to know about this answer (e.g. answered without web search). */
+  note?: string;
 }
 
 export interface AskOptions {
@@ -204,12 +210,25 @@ export const useConversation = create<ConversationState>((set, get) => ({
       const result = await handle.result;
       cancelFrame(frame);
       flush();
+      const chosen = useSettings.getState().snapshot?.settings.selectedModel;
+      const via =
+        result.model && chosen && result.model !== chosen
+          ? result.modelLabel || result.model
+          : undefined;
       patchModel((m) => ({
         ...m,
         text: result.text || m.text,
         status: "done",
         sources: result.sources?.length ? result.sources : undefined,
+        via,
+        note: result.note || undefined,
       }));
+      if (result.fellBack && result.skipped?.length)
+        toast(
+          `${result.skipped.join(", ")} is used up or busy, so ${result.modelLabel || result.model} answered.`,
+          "neutral",
+          4500,
+        );
       set({ requestActive: false, successFlash: true });
       flashTimer = setTimeout(() => set({ successFlash: false }), SUCCESS_FLASH_MS);
     } catch (e) {

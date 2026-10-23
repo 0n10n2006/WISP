@@ -43,6 +43,15 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Free-model routing (v0.2.7)
+
+- [ ] With a free Gemini key, ask until Gemini Flash says its daily quota is used up: the next answer comes from Flash-Lite with a short notice, and "Answered by Gemini … Flash Lite" shows under it. Settings → Model → Free models lists Flash as "used up until <time>".
+- [ ] Ask "open notepad" while Gemma is answering (Flash and Flash-Lite used up): it answers and says desktop actions aren't available right now.
+- [ ] Add an OpenRouter key (Settings → Model → OpenRouter): "Test & save" lists free models; the key field empties and the key never appears again. Clipboard → Summarise answers "Answered by OpenRouter · …".
+- [ ] Circle an area with an OpenRouter key saved and Gemini used up: Wisp says the screen models are used up; nothing is sent to OpenRouter.
+- [ ] Turn off "Switch models automatically": a used-up model shows the quota error instead of switching.
+- [ ] Settings → Data → Delete everything: both keys are gone from Credential Manager and `quota.json` is removed.
+
 ### Circle actions, folding & floating ball (v0.2.6)
 
 - [ ] Circle a photo of a landmark or product and press **Google Lens**: the browser opens Lens results for that crop. Disconnect the network and repeat: Wisp says the image is on the clipboard; Ctrl+V in the Lens page works.

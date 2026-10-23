@@ -199,6 +199,13 @@ pub struct Settings {
     pub close_on_blur: bool,
     /// Fold the bar away shortly after the mouse leaves it.
     pub fold_on_leave: bool,
+    /// When a model's free quota runs out, answer with the next one
+    /// (Gemini → Flash-Lite → Gemma → OpenRouter).
+    pub auto_fallback: bool,
+    /// Send simple jobs to OpenRouter first (when a key is saved).
+    pub simple_via_openrouter: bool,
+    /// OpenRouter model to use; empty picks the biggest free one.
+    pub openrouter_model: String,
     /// Stop listening automatically when you finish speaking.
     pub auto_stop_voice: bool,
     /// Pause after speech that counts as "done talking" (ms).
@@ -281,6 +288,9 @@ impl Default for Settings {
             dashboard_tabs: DASHBOARD_TABS.iter().map(|t| t.to_string()).collect(),
             close_on_blur: true,
             fold_on_leave: true,
+            auto_fallback: true,
+            simple_via_openrouter: true,
+            openrouter_model: String::new(),
             auto_stop_voice: true,
             silence_ms: 1200,
             voice_language: String::new(),
@@ -388,6 +398,11 @@ impl Settings {
             return Err(WispError::invalid(
                 "The pause must be between 0.5 and 4 seconds",
             ));
+        }
+        s.openrouter_model = s.openrouter_model.trim().to_string();
+        if !s.openrouter_model.is_empty() && !crate::openrouter::valid_model_id(&s.openrouter_model)
+        {
+            return Err(WispError::invalid("That OpenRouter model name isn't valid"));
         }
         s.voice_language = s.voice_language.trim().to_string();
         if s.voice_language.len() > 20
@@ -660,6 +675,7 @@ mod tests {
                 "sliverStyle": "hidden",
                 "notchStyle": "ball",
                 "ballCorner": "top-left",
+                "openrouterModel": " meta-llama/llama-3.3-70b-instruct:free ",
                 "vocabulary": [" Alexandra ", "alexandra", "", "Kubernetes"],
                 "neverOverApps": ["C:\\Tools\\OBS64.EXE", "obs64", "photoshop.exe"],
                 "voiceLanguage": "en-GB",
@@ -671,6 +687,7 @@ mod tests {
         assert_eq!(s.sliver_style, SliverStyle::Hidden);
         assert_eq!(s.notch_style, NotchStyle::Ball);
         assert_eq!(s.ball_corner, BallCorner::TopLeft);
+        assert_eq!(s.openrouter_model, "meta-llama/llama-3.3-70b-instruct:free");
         assert_eq!(s.vocabulary, vec!["Alexandra", "Kubernetes"]);
         assert_eq!(s.never_over_apps, vec!["obs64", "photoshop"]);
 
@@ -685,6 +702,8 @@ mod tests {
             json!({"notchPosition": "bottom"}),
             json!({"notchStyle": "square"}),
             json!({"ballCorner": "middle"}),
+            json!({"openrouterModel": "../../etc"}),
+            json!({"openrouterModel": "Bad Model"}),
         ] {
             assert!(Settings::default().patched(&bad).is_err(), "{bad}");
         }

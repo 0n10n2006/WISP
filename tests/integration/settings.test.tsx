@@ -69,4 +69,44 @@ describe("settings window", () => {
     await user.click(within(dialog).getByRole("button", { name: "Remove key" }));
     await waitFor(() => expect(useSettings.getState().snapshot?.hasApiKey).toBe(false));
   });
+
+  it("saves an OpenRouter key without ever showing it, and picks a free model", async () => {
+    const h = await setupMockHost({ windowKind: "settings", withKey: true, onboarded: true });
+    const save = vi.spyOn(h, "setOpenrouterKey");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("tab", { name: "Model" }));
+    expect(screen.getByRole("switch", { name: /switch models automatically/i })).toBeChecked();
+    const input = screen.getByLabelText(/^openrouter key/i);
+    expect(input).toHaveAttribute("type", "password");
+
+    await user.type(input, "not-a-real-key-000000");
+    const form = input.closest("form")!;
+    await user.click(within(form as HTMLElement).getByRole("button", { name: /test & save/i }));
+    expect(await screen.findByText(/starts with sk-or-/i)).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+
+    await user.clear(input);
+    await user.type(input, "sk-or-v1-0123456789abcdef0123");
+    await user.click(within(form as HTMLElement).getByRole("button", { name: /test & save/i }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith("sk-or-v1-0123456789abcdef0123"));
+    expect(await screen.findByText(/2 free models available/i)).toBeInTheDocument();
+    expect(useSettings.getState().snapshot?.hasOpenrouterKey).toBe(true);
+    expect(screen.getByLabelText(/^replace openrouter key/i)).toHaveValue("");
+    expect(document.body.textContent).not.toContain("sk-or-v1-0123456789abcdef0123");
+
+    await user.selectOptions(
+      screen.getByLabelText(/free model/i),
+      "meta-llama/llama-3.3-70b-instruct:free",
+    );
+    await waitFor(() =>
+      expect(useSettings.getState().snapshot?.settings.openrouterModel).toBe(
+        "meta-llama/llama-3.3-70b-instruct:free",
+      ),
+    );
+    await user.click(screen.getByRole("switch", { name: /use openrouter for simple jobs/i }));
+    await waitFor(() =>
+      expect(useSettings.getState().snapshot?.settings.simpleViaOpenrouter).toBe(false),
+    );
+  });
 });
