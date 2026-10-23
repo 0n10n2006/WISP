@@ -6,6 +6,8 @@ import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
 import { createMediaRecorder } from "./recorder";
 import type { WispError } from "./errors";
 import type {
+  FreeModel,
+  ModelUsage,
   ActionEvent,
   Task,
   AskResult,
@@ -80,6 +82,10 @@ export function createTauriHost(): Host {
 
     setApiKey: (key) => call<SettingsSnapshot>("set_api_key", { key }),
     removeApiKey: () => call<SettingsSnapshot>("remove_api_key"),
+    testOpenrouterKey: (key) => call<FreeModel[]>("test_openrouter_key", { key: key ?? null }),
+    setOpenrouterKey: (key) => call<SettingsSnapshot>("set_openrouter_key", { key }),
+    removeOpenrouterKey: () => call<SettingsSnapshot>("remove_openrouter_key"),
+    modelUsage: () => call<ModelUsage[]>("model_usage"),
     testConnection: (key, model) =>
       call("test_connection", { key: key ?? null, model: model ?? null }),
     listModels: () => call("list_models"),

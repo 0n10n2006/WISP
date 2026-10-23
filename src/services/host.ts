@@ -20,6 +20,8 @@ import type {
   StorageStats,
   AskResult,
   ConnectionReport,
+  FreeModel,
+  ModelUsage,
   DeepPartial,
   IslandLayout,
   ModelInfo,
@@ -72,6 +74,12 @@ export interface Host {
   setApiKey(key: string): Promise<SettingsSnapshot>;
   removeApiKey(): Promise<SettingsSnapshot>;
   testConnection(key?: string, model?: string): Promise<ConnectionReport>;
+  /** Check an OpenRouter key (or the saved one); returns its free models. */
+  testOpenrouterKey(key?: string): Promise<FreeModel[]>;
+  setOpenrouterKey(key: string): Promise<SettingsSnapshot>;
+  removeOpenrouterKey(): Promise<SettingsSnapshot>;
+  /** Today's requests per model, and which are used up until when. */
+  modelUsage(): Promise<ModelUsage[]>;
   listModels(): Promise<ModelInfo[]>;
 
   ask(

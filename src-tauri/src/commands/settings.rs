@@ -12,6 +12,8 @@ use wisp_core::shortcuts::Shortcuts;
 pub struct SettingsSnapshot {
     pub settings: Settings,
     pub has_api_key: bool,
+    /// An OpenRouter key is saved (the key itself never leaves the host).
+    pub has_openrouter_key: bool,
     pub shortcut_issues: Vec<ShortcutIssue>,
     pub recovered_from: Option<String>,
     pub warnings: Vec<String>,
@@ -22,6 +24,7 @@ fn snapshot(app: &AppHandle, state: &AppState) -> SettingsSnapshot {
     SettingsSnapshot {
         settings: state.settings(),
         has_api_key: state.secrets.get().ok().flatten().is_some(),
+        has_openrouter_key: state.openrouter_key.get().ok().flatten().is_some(),
         shortcut_issues: state.shortcut_issues.lock().expect("issues").clone(),
         recovered_from: state
             .settings_recovered_from
@@ -184,7 +187,11 @@ pub async fn list_models(
     state: State<'_, AppState>,
 ) -> CmdResult<Vec<wisp_core::gemini::types::ModelInfo>> {
     let key = state.secrets.require()?;
-    state.gemini.list_models(&key).await
+    let models = state.gemini.list_models(&key).await?;
+    state
+        .routing
+        .set_gemini_models(models.iter().map(|m| m.id.clone()).collect());
+    Ok(models)
 }
 
 /// Test a candidate key (before saving) or the stored one.
@@ -200,6 +207,61 @@ pub async fn test_connection(
     };
     let model = model.unwrap_or_else(|| state.settings().selected_model);
     state.gemini.test_connection(&key, &model).await
+}
+
+/// Check an OpenRouter key (before saving) or the stored one; returns the
+/// free models it can use.
+#[tauri::command]
+pub async fn test_openrouter_key(
+    state: State<'_, AppState>,
+    key: Option<String>,
+) -> CmdResult<Vec<wisp_core::openrouter::FreeModel>> {
+    let key = match key {
+        Some(k) if wisp_core::openrouter::valid_key(&k) => k.trim().to_string(),
+        Some(_) => {
+            return Err(wisp_core::WispError::invalid(
+                "That doesn't look like an OpenRouter key (it starts with sk-or-).",
+            ))
+        }
+        None => state.openrouter_key.get()?.ok_or_else(|| {
+            wisp_core::WispError::new(
+                wisp_core::ErrorCode::MissingKey,
+                "No OpenRouter key is saved.",
+            )
+        })?,
+    };
+    let models = state.routing.openrouter.list_free_models(&key).await?;
+    state.routing.set_openrouter_models(models.clone());
+    Ok(models)
+}
+
+#[tauri::command]
+pub fn set_openrouter_key(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> CmdResult<SettingsSnapshot> {
+    state.openrouter_key.set(&key)?;
+    let snap = snapshot(&app, &state);
+    let _ = app.emit("wisp://settings", &snap);
+    Ok(snap)
+}
+
+#[tauri::command]
+pub fn remove_openrouter_key(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<SettingsSnapshot> {
+    state.openrouter_key.delete()?;
+    let snap = snapshot(&app, &state);
+    let _ = app.emit("wisp://settings", &snap);
+    Ok(snap)
+}
+
+/// Today's requests per model and which are used up until when.
+#[tauri::command]
+pub fn model_usage(state: State<'_, AppState>) -> Vec<crate::routing::ModelUsage> {
+    crate::routing::usage(&state)
 }
 
 #[tauri::command]

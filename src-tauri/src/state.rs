@@ -30,6 +30,10 @@ pub struct AppState {
     pub gemini: GeminiClient,
     pub db: Db,
     pub secrets: SecretStore,
+    /// Optional OpenRouter key (free text models).
+    pub openrouter_key: SecretStore,
+    /// Which model answers what, and which are used up for today.
+    pub routing: crate::routing::Routing,
     pub requests: Mutex<HashMap<String, CancellationToken>>,
     pub shortcut_issues: Mutex<Vec<ShortcutIssue>>,
     pub island: Mutex<IslandLayout>,

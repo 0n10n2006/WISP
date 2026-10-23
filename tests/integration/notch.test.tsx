@@ -139,4 +139,17 @@ describe("notch", () => {
     await user.click(btn);
     expect(await screen.findByRole("combobox", { name: /ask wisp/i })).toBeInTheDocument();
   });
+
+  it("says when another free model answered because the first was used up", async () => {
+    await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    const box = await screen.findByRole("combobox", { name: /ask wisp/i });
+    await user.type(box, "hello /fallback{Enter}");
+    expect(
+      await screen.findByText(/answered by gemini 2\.5 flash lite/i, undefined, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/gemini 2\.5 flash is used up or busy/i)).toBeInTheDocument();
+  });
 });

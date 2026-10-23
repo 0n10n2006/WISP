@@ -33,7 +33,8 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2.3: security hardening (see docs/SECURITY.md)                                        | ✅    |
 | v0.2.4: notch opens again; real end-to-end UI test in CI                                 | ✅    |
 | v0.2.5: seamless screen select, notch on/off, custom hold keys, clear history on exit    | ✅    |
-| v0.2.6: Google Lens and one-click actions on circled areas, fold on leave, floating ball | ✅    |
+| v0.2.6: Google Lens and one-click actions on circled areas, fold on leave, floating ball |
+| v0.2.7: free-model routing (Gemini → Gemma → OpenRouter)                                 | ✅    | ✅  |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -223,6 +224,29 @@ pick), whether Wisp is a notch (left, centre, right) or a floating ball (any cor
 (glow, subtle, invisible), whether clicking elsewhere or moving the mouse away folds the bar, and which dashboard
 tabs show in what order.
 
+## Free models and routing
+
+Google's free tier gives its best Flash models only a few requests a day. Wisp makes the most of it by
+picking a model per job and switching when one runs out (**Settings → Model → Free models**):
+
+| Job                                                     | Tried in this order                                            |
+| ------------------------------------------------------- | -------------------------------------------------------------- |
+| Questions and desktop actions                           | Your chosen model → Flash → Flash-Lite → Gemma → OpenRouter    |
+| Simple jobs (clipboard help, rewrites, quick questions) | OpenRouter (if added) → Flash-Lite → Gemma → your chosen model |
+| Circled areas, screenshots, Show me                     | Your chosen model → Flash → Flash-Lite → Gemma                 |
+| Voice and dictation                                     | Your chosen model → Flash → Flash-Lite                         |
+| Web answers and research                                | Gemini models that can search, then answered without search    |
+
+- Gemini, Flash-Lite and Gemma all use **your one Gemini key**. Gemma can't run desktop actions or search;
+  Wisp says so under the answer when that happens.
+- A model that hits its daily limit rests until midnight Pacific time (Gemini's reset) and isn't asked
+  again until then; a per-minute limit rests it for about a minute. Settings shows today's requests per model.
+- **OpenRouter (optional):** add a free key from [openrouter.ai/keys](https://openrouter.ai/keys) and Wisp
+  uses its free models for simple jobs and as a last resort. Free OpenRouter models allow 50 requests a day
+  (1,000 after a one-time $10 top-up) and may log prompts. OpenRouter only ever gets text: never screenshots
+  or audio. Its key is stored in Windows Credential Manager like the Gemini key.
+- Under an answer, "Answered by …" shows when a model other than your chosen one replied.
+
 ## Gemini, quotas and your data
 
 - You need your own Gemini API key. Free-tier models, quotas (requests per minute/day) and data-use terms are
@@ -243,7 +267,7 @@ tabs show in what order.
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | "API key rejected"         | Create a new key in AI Studio and paste it in **Settings → Model → Replace key**.                                |
 | "Model unavailable"        | Your key can't use that model. Pick another in **Settings → Model**.                                             |
-| "Quota used up"            | Wait for the daily reset, switch to another model (quotas are per model), or enable billing.                     |
+| "Quota used up"            | Every free model is used up: wait for the reset (midnight Pacific), add an OpenRouter key, or enable billing.    |
 | "Slow down a moment"       | Per-minute limit hit. Wait a few seconds and press **Try again**.                                                |
 | Shortcut doesn't work      | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.                          |
 | The notch is gone          | It's tucked or a fullscreen app is in front. Press `Ctrl+Alt+H` or use the tray icon.                            |

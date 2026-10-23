@@ -15,6 +15,7 @@ import {
 } from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { Choice, ExternalLink, LINKS, StatusLine, Toggle, useStatus } from "./common";
+import { OpenRouterSection, RoutingSection } from "./FreeModels";
 
 function useSettingsValue(): Settings | null {
   return useSettings((s) => s.snapshot?.settings ?? null);
@@ -231,6 +232,9 @@ export function ModelTab() {
           <ExternalLink href={LINKS.billing}>Billing</ExternalLink>
         </p>
       </section>
+
+      <RoutingSection />
+      <OpenRouterSection />
 
       {confirmRemove && (
         <ConfirmDialog

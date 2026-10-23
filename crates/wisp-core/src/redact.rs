@@ -10,6 +10,9 @@ static KEY_PARAM: LazyLock<Regex> =
 static BEARER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)bearer\s+[A-Za-z0-9._\-]+").expect("valid regex"));
 
+static OPENAI_STYLE_KEY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"sk-(?:or-)?[A-Za-z0-9_\-]{16,}").expect("valid regex"));
+
 pub const REDACTED: &str = "[redacted]";
 
 /// Remove anything that looks like an API key or credential from `input`.
@@ -17,6 +20,7 @@ pub fn redact(input: &str) -> String {
     let s = GOOGLE_KEY.replace_all(input, REDACTED);
     let s = KEY_PARAM.replace_all(&s, format!("${{1}}{REDACTED}"));
     let s = BEARER.replace_all(&s, format!("Bearer {REDACTED}"));
+    let s = OPENAI_STYLE_KEY.replace_all(&s, REDACTED);
     s.into_owned()
 }
 
@@ -45,6 +49,14 @@ pub fn summarize_text(input: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redacts_openrouter_keys() {
+        assert_eq!(
+            redact("key sk-or-v1-0123456789abcdef0123456789 failed"),
+            "key [redacted] failed"
+        );
+    }
 
     #[test]
     fn redacts_google_keys() {

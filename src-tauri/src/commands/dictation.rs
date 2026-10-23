@@ -53,7 +53,8 @@ pub async fn transcribe(
             "That recording is too long. Keep dictation under 2 minutes.",
         ));
     }
-    let key = state.secrets.require()?;
+    state.secrets.require()?;
+    let keys = crate::routing::Keys::load(&state);
     let settings = state.settings();
     if settings.retain_audio {
         if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&audio_base64) {
@@ -83,29 +84,36 @@ pub async fn transcribe(
     } else {
         Vec::new()
     };
-    let req = transcription_request(
-        &base_mime,
-        &audio_base64,
-        settings.dictation_style,
-        &settings.selected_model,
-        &TranscriptionHints {
-            language: &settings.voice_language,
-            vocabulary: &settings.vocabulary,
-            apps: &apps,
-        },
-    );
+    let cancel = CancellationToken::new();
+    let result = crate::routing::run(&app, wisp_core::router::Task::Audio, &keys, |route| {
+        let req = transcription_request(
+            &base_mime,
+            &audio_base64,
+            settings.dictation_style,
+            &route.model,
+            &TranscriptionHints {
+                language: &settings.voice_language,
+                vocabulary: &settings.vocabulary,
+                apps: &apps,
+            },
+        );
+        let (state, keys, cancel) = (&state, &keys, &cancel);
+        async move {
+            (
+                crate::routing::complete(state, keys, &route, &req, cancel).await,
+                false,
+            )
+        }
+    })
+    .await;
     drop(audio_base64);
-    let result = state
-        .gemini
-        .generate(
-            &key,
-            &settings.selected_model,
-            &req,
-            &CancellationToken::new(),
-        )
-        .await;
+    let model = result
+        .as_ref()
+        .map(|o| o.route.model.clone())
+        .unwrap_or_else(|_| settings.selected_model.clone());
+    let result = result.map(|o| o.value);
     if settings.history_retention_days > 0 {
-        let mut log = RequestLog::new("dictation", &settings.selected_model, "dictation");
+        let mut log = RequestLog::new("dictation", &model, "dictation");
         log.latency_ms = started.elapsed().as_millis() as u64;
         if let Err(e) = &result {
             log.status = "error".into();

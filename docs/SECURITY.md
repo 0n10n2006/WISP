@@ -10,7 +10,7 @@ code; if you change one of the boundaries below, update this file in the same ch
 | Webview → Rust    | The UI can only call typed Tauri commands. Each window gets only the commands it needs: the Select-to-Ask overlays only capture commands, the Show me window only its highlights. No shell, filesystem, window, plugin or generic HTTP access from JavaScript. Webviews can't navigate away from Wisp's own pages. | `src-tauri/build.rs` (app manifest), `src-tauri/capabilities/*.json`, `lib.rs::navigation_guard` |
 | Model output → OS | Model output is untrusted. Proposed actions must name a known tool, match a strict schema (unknown fields rejected), and pass value checks. Only `ValidatedAction`s execute.                                                                                                                                       | `crates/wisp-core/src/tools.rs`                                                                  |
 | App → Google      | Only the Gemini REST API is called, with the key in the `x-goog-api-key` header (never in URLs). Redirects are never followed (the header would go with them). Request bodies are capped at 15 MB, responses at 8 MB, error bodies at 64 KB; non-streamed bodies must arrive within 3 minutes.                     | `crates/wisp-core/src/gemini/mod.rs`                                                             |
-| App → other hosts | Only on an explicit user action: Google Lens (the circled area, when you press "Google Lens"), Open-Meteo (weather for the chosen place), `speed.cloudflare.com` (speed test button), GitHub Releases API (update check button).                                                                                   | `crates/wisp-core/src/net.rs`, `updates.rs`                                                      |
+| App → other hosts | Optional OpenRouter (`openrouter.ai`, text questions only, when a key is added). Only on an explicit user action: Google Lens (the circled area, when you press "Google Lens"), Open-Meteo (weather for the chosen place), `speed.cloudflare.com` (speed test button), GitHub Releases API (update check button).  | `crates/wisp-core/src/net.rs`, `updates.rs`                                                      |
 | UI → launcher     | The UI sends only a catalogue id; the target always comes from the host's own catalogue (Start-menu shortcuts, numeric Steam ids, built-in URIs) and is validated again. `.appref-ms` is not accepted.                                                                                                             | `crates/wisp-core/src/launcher.rs`, `commands/dashboard.rs`                                      |
 
 ## API key
@@ -20,6 +20,20 @@ code; if you change one of the boundaries below, update this file in the same ch
 - Never logged: every error message passes through `redact()` which strips `AIza…` keys, `key=` query
   parameters, `x-goog-api-key` headers and bearer tokens.
 - If the credential vault fails, Wisp reports the error and does **not** fall back to plaintext.
+- The optional OpenRouter key is stored the same way (`openrouter-api-key`), must start with `sk-or-`, is never
+  returned to the webview (`hasOpenrouterKey` only), travels only in the `Authorization` header with redirects
+  off, and `sk-…` keys are redacted from every message. "Delete everything" removes both keys.
+
+## Model routing
+
+- `wisp_core::router` picks a model per job and falls back on quota, rate-limit, availability or server
+  errors only, and only before any text has streamed (an answer is never sent twice). Cancels, safety blocks
+  and bad requests never move to another model.
+- OpenRouter is text only: `openrouter::to_chat_request` refuses any request with an image or audio part,
+  and the router never offers OpenRouter for screen, Show-me, replica or voice jobs.
+- Models without function calling (Gemma, OpenRouter) get requests without tools, so they can't propose
+  desktop actions; the system prompt adapts so they don't claim to.
+- `quota.json` (app data) holds only model names, request counts and reset times.
 
 ## Desktop actions
 

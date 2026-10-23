@@ -163,7 +163,7 @@ impl GeminiClient {
                     .iter()
                     .any(|g| g == "generateContent");
                 (usable
-                    && id.starts_with("gemini")
+                    && (id.starts_with("gemini") || id.starts_with("gemma"))
                     && !id.contains("embedding")
                     && !id.contains("tts")
                     && !id.contains("image"))
