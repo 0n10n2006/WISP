@@ -1,7 +1,8 @@
 use super::CmdResult;
+use crate::state::AppState;
 use crate::state::IslandLayout;
 use crate::windows::{self, NotchMode};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
 use wisp_core::tools::{validate_public_url, MAX_COPY_CHARS};
@@ -23,6 +24,13 @@ pub fn set_island_expanded(app: AppHandle, expanded: bool) -> IslandLayout {
 /// Switch notch mode; `height` sizes the open bar to its content.
 #[tauri::command]
 pub fn set_island_mode(app: AppHandle, mode: NotchMode, height: Option<f64>) -> IslandLayout {
+    let current = *app.state::<AppState>().island.lock().expect("island");
+    if windows::resolve_request(current.mode, mode) != mode {
+        // The page asked for a peek while the bar is open (a hover racing the
+        // shortcut): keep the bar, and tell the page what's really on screen.
+        let _ = app.emit_to(windows::ISLAND, "wisp://layout", current);
+        return current;
+    }
     if mode == NotchMode::Open {
         let layout = windows::set_mode(&app, mode, height);
         // An open bar is always on screen, whatever hid the sliver before.

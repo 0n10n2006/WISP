@@ -642,7 +642,9 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       return { result, cancel: () => ctl.abort() };
     },
 
-    setIslandMode: async (mode, height) => setLayout(mode, height),
+    // Like the host: a peek request never shrinks an open bar.
+    setIslandMode: async (mode, height) =>
+      mode === "peek" && layout.mode === "open" ? layout : setLayout(mode, height),
     onIslandLayout: (cb) => on(listeners.layout, cb),
     hideIsland: async () => {
       setLayout("sliver");

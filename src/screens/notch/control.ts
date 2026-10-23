@@ -41,15 +41,17 @@ export async function changeMode(mode: NotchMode, height?: number): Promise<bool
   notch.setMode(mode);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await Promise.race([
+    const layout = await Promise.race([
       height === undefined ? host().setIslandMode(mode) : host().setIslandMode(mode, height),
-      new Promise((_, reject) => {
+      new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error(`The window didn't respond within ${MODE_TIMEOUT_MS} ms`)),
           MODE_TIMEOUT_MS,
         );
       }),
     ]);
+    // The host may keep a different mode (e.g. the bar is already open).
+    if (layout && layout.mode !== mode) useNotch.getState().setMode(layout.mode);
     return true;
   } catch (e) {
     const err = toWispError(e);

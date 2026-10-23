@@ -197,3 +197,17 @@ describe("hold to talk", () => {
     expect(transcribe).not.toHaveBeenCalled();
   });
 });
+
+describe("racing hover and shortcut", () => {
+  it("keeps the bar open when a hover arrives just after the shortcut opened it", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const { changeMode } = await import("../../src/screens/notch/control");
+    // The shortcut opened the bar on the host, but the page hasn't heard yet.
+    await h.setIslandMode("open");
+    act(() => useNotch.setState({ mode: "sliver" }));
+    await act(async () => {
+      await changeMode("peek");
+    });
+    expect(useNotch.getState().mode).toBe("open");
+  });
+});
