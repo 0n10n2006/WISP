@@ -37,6 +37,7 @@ describe("the --self-test UI scenario", () => {
       "shortcut-opens-focused",
       "capture-overlay",
       "back-to-sliver",
+      "focus-losses",
     ]);
   }, 60_000);
 

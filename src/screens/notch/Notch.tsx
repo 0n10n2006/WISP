@@ -15,7 +15,7 @@ import { useSettings } from "../../state/settings";
 import { useVoice } from "../../state/voice";
 import { preloadDashboard } from "../dashboard/load";
 import { useConfirm } from "./confirm";
-import { changeMode, closeBar as close, openBar as open } from "./control";
+import { blurCloseAllowed, changeMode, closeBar as close, openBar as open } from "./control";
 import { Peek } from "./Peek";
 
 /** The open bar is a separate chunk, fetched while idle so opening is instant. */
@@ -152,7 +152,8 @@ export function Notch() {
       }),
       h.onBlur(() => {
         const closeOnBlur = useSettings.getState().snapshot?.settings.closeOnBlur ?? true;
-        if (closeOnBlur && useNotch.getState().mode === "open" && !busy()) close();
+        if (closeOnBlur && blurCloseAllowed() && useNotch.getState().mode === "open" && !busy())
+          close();
       }),
       h.onReminderDue((t) => {
         useDueReminders.getState().push(t);
