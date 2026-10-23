@@ -106,6 +106,16 @@ pub fn rect_changes(old: Option<(i32, i32, u32, u32)>, new: (i32, i32, u32, u32)
     }
 }
 
+/// The mode a request from the page really leads to. A hover that arrives
+/// just after the shortcut opened the bar must not shrink it into the peek.
+pub fn resolve_request(current: NotchMode, requested: NotchMode) -> NotchMode {
+    if requested == NotchMode::Peek && current == NotchMode::Open {
+        NotchMode::Open
+    } else {
+        requested
+    }
+}
+
 /// Switch the island's mode. `height` (logical) is used for the open bar.
 pub fn set_mode(app: &AppHandle, mode: NotchMode, height: Option<f64>) -> IslandLayout {
     let state = app.state::<AppState>();
@@ -304,6 +314,15 @@ pub fn open_settings(app: &AppHandle, tab: Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_late_hover_never_shrinks_the_open_bar() {
+        use NotchMode::*;
+        assert_eq!(resolve_request(Sliver, Peek), Peek);
+        assert_eq!(resolve_request(Open, Peek), Open);
+        assert_eq!(resolve_request(Open, Sliver), Sliver);
+        assert_eq!(resolve_request(Peek, Open), Open);
+    }
 
     #[test]
     fn centres_on_the_monitor_top() {
