@@ -2,6 +2,7 @@
 // own event handlers and real host calls, and checks the real window after
 // each step (via the host's probe). Loaded only when the host asks for it.
 
+import { suspendBlurClose } from "../screens/notch/control";
 import { host, type SelfTestProbe, type SelfTestStep } from "../services/host";
 
 const STEP_TIMEOUT = 6000;
@@ -88,6 +89,11 @@ function fail(msg: string): never {
 async function island(): Promise<SelfTestStep[]> {
   const run = new Run();
   const h = host();
+  // Count focus losses (reported in details) and keep them from folding the
+  // bar away mid-script; headless displays move focus unpredictably.
+  let blurs = 0;
+  const offBlur = h.onBlur(() => (blurs += 1));
+  suspendBlurClose(true);
   let sliver: SelfTestProbe | null = null;
   const notch = () => $<HTMLButtonElement>(".notch-idle");
 
@@ -163,7 +169,13 @@ async function island(): Promise<SelfTestStep[]> {
         }),
         (s) => s.selected && !s.loading && s.filled,
       );
-      if (!shown.ok) fail(`tab "${tab.textContent}" didn't render`);
+      if (!shown.ok) {
+        const v = shown.value;
+        fail(
+          `tab "${tab.textContent}" didn't render (selected: ${v.selected}, loading: ${v.loading}, ` +
+            `panel text: ${v.filled}, bar open: ${!!$("input[role=combobox]")}, focus losses: ${blurs})`,
+        );
+      }
       names.push(tab.textContent ?? "");
     }
     return names.join(", ");
@@ -210,6 +222,9 @@ async function island(): Promise<SelfTestStep[]> {
     const r = await until(probe, (p) => p.mode === "sliver" && p.visible);
     if (!r.ok) fail(`expected the sliver, got ${describe(r.value)}`);
   });
+  suspendBlurClose(false);
+  offBlur();
+  run.steps.push({ name: "focus-losses", ok: true, detail: String(blurs), optional: true });
   return run.finish();
 }
 

@@ -63,6 +63,21 @@ export async function changeMode(mode: NotchMode, height?: number): Promise<bool
   }
 }
 
+let blurCloseSuspended = false;
+
+/**
+ * While on, losing focus doesn't fold the bar away. Only the self-test uses
+ * it: headless test displays move focus around unpredictably, and the
+ * scripted steps aren't about focus.
+ */
+export function suspendBlurClose(on: boolean): void {
+  blurCloseSuspended = on;
+}
+
+export function blurCloseAllowed(): boolean {
+  return !blurCloseSuspended;
+}
+
 export function openBar(): void {
   if (useNotch.getState().mode !== "open") void changeMode("open", lastHeight());
   host().prewarm();

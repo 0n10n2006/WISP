@@ -55,7 +55,8 @@ jobs:
   windows:
     name: Windows build (installer)
     runs-on: windows-latest
-    needs: checks
+    # Runs alongside the Linux checks, so a Linux-only failure never hides
+    # the Windows result.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
