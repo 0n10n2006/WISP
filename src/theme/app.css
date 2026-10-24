@@ -1302,3 +1302,22 @@ html[data-hidden] *::after {
   gap: 12px;
   font-size: var(--text-sm);
 }
+
+/* ---------- 0.2.10 polish ---------- */
+.tab > .row-start {
+  margin-bottom: var(--space-4);
+}
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-4);
+}
+.banner-reminder .banner-eyebrow {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}

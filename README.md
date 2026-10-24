@@ -37,6 +37,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2.8: Windows control centre, folder wallpapers, instant voice, delayed actions        | ✅    |
 | v0.2.7: free-model routing (Gemini → Gemma → OpenRouter)                                 | ✅    | ✅  |
 | v0.2.9: offline Whisper voice, fewer prompts, no keyboard hook, findable in Start search | ✅    |
+| v0.2.10: notifications with Wisp's logo, reminders pop down from the notch, UI polish    | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 

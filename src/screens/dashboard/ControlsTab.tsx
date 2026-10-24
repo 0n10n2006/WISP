@@ -323,11 +323,6 @@ export default function ControlsTab() {
           label="Circle to ask"
           onClick={() => void attempt(() => host().startCapture())}
         />
-        <Tile
-          icon="lock"
-          label="Lock"
-          onClick={() => void attempt(() => host().powerAction("lock"))}
-        />
       </div>
 
       <Card title="Sound & display">

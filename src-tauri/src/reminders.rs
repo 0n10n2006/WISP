@@ -27,6 +27,14 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
+/// The notification's second line: the notes, or what it is.
+fn reminder_body(notes: Option<&str>) -> String {
+    match notes.map(str::trim) {
+        Some(n) if !n.is_empty() => n.to_string(),
+        _ => "Reminder".into(),
+    }
+}
+
 fn deliver_due(app: &AppHandle) {
     let state = app.state::<AppState>();
     let notify = state.settings().notifications_enabled;
@@ -41,10 +49,20 @@ fn deliver_due(app: &AppHandle) {
             let _ = app
                 .notification()
                 .builder()
-                .title(format!("Reminder: {}", task.title))
-                .body(task.notes.clone().unwrap_or_else(|| "From Wisp".into()))
+                .title(&task.title)
+                .body(reminder_body(task.notes.as_deref()))
                 .show();
         }
         let _ = app.emit_to(windows::ISLAND, "wisp://reminder-due", &task);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn reminder_body_uses_notes() {
+        assert_eq!(super::reminder_body(Some(" Drink water ")), "Drink water");
+        assert_eq!(super::reminder_body(Some("  ")), "Reminder");
+        assert_eq!(super::reminder_body(None), "Reminder");
     }
 }

@@ -186,7 +186,9 @@ code; if you change one of the boundaries below, update this file in the same ch
 - Hold-to-talk reads key presses through Raw Input on a hidden window (no `SetWindowsHookEx` keyboard hook):
   keys can't be blocked or altered, injected input is ignored, and only modifier state is used.
 - On first run outside an installer, Wisp adds a per-user Start-menu shortcut (`Wisp.lnk`, AppUserModelID
-  `app.wisp.desktop`) if none exists. The NSIS installer registers `HKCU\…\App Paths\wisp.exe` and removes it
+  `app.wisp.desktop`) if none exists. It also registers that id under
+  `HKCU\Software\Classes\AppUserModelId` (display name and a copy of its logo in the data folder) so
+  notifications carry Wisp's name and icon; the uninstaller removes it. The NSIS installer registers `HKCU\…\App Paths\wisp.exe` and removes it
   on uninstall.
 
 ## Capture & privacy

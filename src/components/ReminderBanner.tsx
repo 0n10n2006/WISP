@@ -11,10 +11,11 @@ export function ReminderBanner() {
       {due.map((t) => (
         <div key={t.id} className="banner banner-reminder" role="alert">
           <span className="banner-icon">
-            <Icon name="info" size={18} />
+            <Icon name="bell" size={18} />
           </span>
           <div className="banner-body">
-            <strong>Reminder: {t.title}</strong>
+            <span className="banner-eyebrow">Reminder</span>
+            <strong>{t.title}</strong>
             {t.notes && <p>{t.notes}</p>}
             <div className="banner-actions">
               <button

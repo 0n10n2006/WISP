@@ -189,10 +189,13 @@ export default function WallpaperTab() {
           ))}
         </ul>
       ) : (
-        <p className="muted pad">
-          Add a folder (for example Pictures\Wallpapers) to flip through it here, or pick single
-          images with Browse.
-        </p>
+        <div className="empty-state">
+          <Icon name="image" size={28} />
+          <p>
+            Add a folder (for example Pictures\Wallpapers) to flip through it here, or pick single
+            images with Browse.
+          </p>
+        </div>
       )}
     </div>
   );

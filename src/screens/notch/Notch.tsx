@@ -74,6 +74,21 @@ function Idle() {
   );
 }
 
+/** How long a due reminder shows in the notch before it tucks back. */
+const REMINDER_PEEK_MS = 8000;
+let reminderTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Pop the notch down to show a reminder that just came due. */
+function showReminder() {
+  if (useNotch.getState().mode !== "sliver") return;
+  void changeMode("peek");
+  if (reminderTimer) clearTimeout(reminderTimer);
+  reminderTimer = setTimeout(() => {
+    const hovered = document.querySelector(".notch-idle:hover") !== null;
+    if (useNotch.getState().mode === "peek" && !hovered) void changeMode("sliver");
+  }, REMINDER_PEEK_MS);
+}
+
 function SliverGlow() {
   const timer = useNotch((n) => n.timer);
   const [now, setNow] = useState(() => Date.now());
@@ -176,6 +191,7 @@ export function Notch() {
       }),
       h.onReminderDue((t) => {
         useDueReminders.getState().push(t);
+        showReminder();
         if (t.title === "Focus session finished") useNotch.getState().finishTimer();
       }),
       h.onCaptureReady((c) => {

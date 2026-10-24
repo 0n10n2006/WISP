@@ -2,12 +2,32 @@
 //! AppUserModelID as its Start-menu shortcut, and when Wisp runs without one
 //! (copied or run straight from a download) it adds a per-user "Wisp"
 //! shortcut, which Windows Search picks up within seconds.
+//!
+//! Notifications get Wisp's name and logo by registering the same id under
+//! `HKCU\Software\Classes\AppUserModelId` (Windows ignores icons passed with
+//! a toast from a desktop app; it uses the registered one).
 
 /// Identifier shared by the process, its shortcut and its notifications.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const APP_ID: &str = "app.wisp.desktop";
 #[cfg_attr(not(windows), allow(dead_code))]
 const DESCRIPTION: &str = "Wisp – AI companion for Windows";
+
+/// The logo shown on Wisp's notifications (256 px).
+#[cfg_attr(not(windows), allow(dead_code))]
+const TOAST_ICON: &[u8] = include_bytes!("../icons/128x128@2x.png");
+#[cfg_attr(not(windows), allow(dead_code))]
+const TOAST_ICON_FILE: &str = "notification-icon.png";
+
+/// Copy the notification logo into the data folder (only when it changed).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn write_toast_icon(data_dir: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    let path = data_dir.join(TOAST_ICON_FILE);
+    if std::fs::read(&path).ok().as_deref() != Some(TOAST_ICON) {
+        std::fs::write(&path, TOAST_ICON)?;
+    }
+    Ok(path)
+}
 
 /// Where a Start-menu shortcut called "Wisp" would be, in each Programs
 /// folder (per-user first, then all users).
@@ -24,9 +44,13 @@ mod imp {
     use super::*;
     use std::path::PathBuf;
     use windows::core::{Interface, HSTRING, PCWSTR};
-    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::Foundation::{ERROR_SUCCESS, PROPERTYKEY};
     use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
     use windows::Win32::System::Com::{CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER};
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE,
+        REG_OPTION_NON_VOLATILE, REG_SZ,
+    };
     use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
     use windows::Win32::UI::Shell::{
         FOLDERID_CommonPrograms, FOLDERID_Programs, IShellLinkW, SHGetKnownFolderPath,
@@ -42,6 +66,39 @@ mod imp {
     pub fn set_app_id() {
         unsafe {
             let _ = SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(APP_ID));
+        }
+    }
+
+    /// Give Wisp's notifications its name and logo.
+    pub fn register_notifications(data_dir: &std::path::Path) {
+        let Ok(icon) = write_toast_icon(data_dir) else {
+            return;
+        };
+        let key = HSTRING::from(format!("Software\\Classes\\AppUserModelId\\{APP_ID}"));
+        let mut hkey = HKEY::default();
+        unsafe {
+            if RegCreateKeyExW(
+                HKEY_CURRENT_USER,
+                &key,
+                None,
+                None,
+                REG_OPTION_NON_VOLATILE,
+                KEY_SET_VALUE,
+                None,
+                &mut hkey,
+                None,
+            ) != ERROR_SUCCESS
+            {
+                return;
+            }
+            let set = |name: &str, value: &str| {
+                let wide: Vec<u16> = value.encode_utf16().chain(Some(0)).collect();
+                let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
+                RegSetValueExW(hkey, &HSTRING::from(name), None, REG_SZ, Some(bytes))
+            };
+            let _ = set("DisplayName", "Wisp");
+            let _ = set("IconUri", &icon.to_string_lossy());
+            let _ = RegCloseKey(hkey);
         }
     }
 
@@ -97,14 +154,26 @@ mod imp {
 mod imp {
     pub fn set_app_id() {}
     pub fn ensure_shortcut() {}
+    pub fn register_notifications(_data_dir: &std::path::Path) {}
 }
 
-pub use imp::{ensure_shortcut, set_app_id};
+pub use imp::{ensure_shortcut, register_notifications, set_app_id};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn notification_icon_is_written_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write_toast_icon(dir.path()).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), TOAST_ICON);
+        assert_eq!(&TOAST_ICON[1..4], b"PNG");
+        std::fs::write(&p, b"old").unwrap();
+        write_toast_icon(dir.path()).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), TOAST_ICON);
+    }
 
     #[test]
     fn looks_for_both_shortcut_layouts() {

@@ -205,9 +205,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
 
   const listId = "bar-results";
   const activeId = results[selected] ? `bar-r-${selected}` : undefined;
-  const placeholder = pending
-    ? "Ask about this area (optional)"
-    : "Ask, open an app, or type a command…";
+  const placeholder = pending ? "Ask about this area (optional)" : "Ask or type a command…";
 
   return (
     <div className="cmd">

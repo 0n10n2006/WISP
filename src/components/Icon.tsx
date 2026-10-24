@@ -65,6 +65,7 @@ export type IconName =
   | "fog"
   | "partly"
   | "nightlight"
+  | "bell"
   | "bell-off"
   | "layers"
   | "taskbar"
@@ -145,6 +146,7 @@ const PATHS: Record<IconName, string> = {
   storm: "M6 12.5h8.5a3.5 3.5 0 0 0 .3-7A5 5 0 0 0 5.2 6.6 3 3 0 0 0 6 12.5zM10.5 13l-2 3h3l-2 3",
   fog: "M4 8h12M3 11h14M5 14h10",
   nightlight: "M14.5 12A5.5 5.5 0 0 1 8 5.5a5.5 5.5 0 1 0 6.5 6.5zM14.5 3v3M13 4.5h3",
+  bell: "M10 3a4.5 4.5 0 0 1 4.5 4.5v3l1.5 3H4l1.5-3v-3A4.5 4.5 0 0 1 10 3zM8.3 16a1.8 1.8 0 0 0 3.4 0",
   "bell-off":
     "M3 3l14 14M7.5 5A4 4 0 0 1 14 8.5v3l1.5 2.5H6M5.2 8.2c-.1.1-.2.2-.2.3v3L3.5 14H11M8.5 16.5a1.6 1.6 0 0 0 3 0",
   layers: "M10 3l7 3.5-7 3.5-7-3.5zM3 10l7 3.5 7-3.5M3 13.5L10 17l7-3.5",

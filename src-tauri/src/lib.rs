@@ -64,6 +64,7 @@ pub fn run() {
             startmenu::set_app_id();
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            startmenu::register_notifications(&data_dir);
             selftest::mark("data-dir");
             let store = SettingsStore::new(data_dir.join("settings.json"));
             let loaded = store.load();

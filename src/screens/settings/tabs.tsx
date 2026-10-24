@@ -579,8 +579,12 @@ export function AboutTab() {
       <h2>About Wisp</h2>
       <p>Version {snapshot?.version}</p>
       <p className="setting-desc">
-        Wisp is an independent, open project. It uses the Google Gemini API with your own key and
-        runs entirely on your PC otherwise.
+        Wisp is an independent, open-source project (MIT License). It uses the Google Gemini API
+        with your own key and runs entirely on your PC otherwise.
+      </p>
+      <p className="about-links">
+        <ExternalLink href={LINKS.project}>Project page</ExternalLink>
+        <ExternalLink href={`${LINKS.project}/issues`}>Report a problem</ExternalLink>
       </p>
       {snapshot?.recoveredFrom && (
         <div className="banner banner-warning" role="status">

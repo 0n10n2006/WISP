@@ -1,3 +1,4 @@
+import { useNotch } from "../../src/state/notch";
 import { useConversation } from "../../src/state/conversation";
 import { act, render, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
@@ -143,11 +144,20 @@ describe("reminders", () => {
     const complete = vi.spyOn(h, "taskComplete");
     const user = await island();
     act(() => useDueReminders.getState().push(t));
-    const banner = await screen.findByText("Reminder: Stand up");
-    expect(banner).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Done" }));
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent("Stand up");
+    await user.click(within(banner).getByRole("button", { name: "Done" }));
     expect(complete).toHaveBeenCalledWith(t.id, true);
-    expect(screen.queryByText("Reminder: Stand up")).not.toBeInTheDocument();
+    await waitFor(() => expect(banner).not.toBeInTheDocument());
+  });
+
+  it("pops the notch down to show a reminder that comes due", async () => {
+    await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    render(<App />);
+    expect(useNotch.getState().mode).toBe("sliver");
+    act(() => (window as unknown as { wispMock: { reminder(): void } }).wispMock.reminder());
+    await waitFor(() => expect(useNotch.getState().mode).toBe("peek"));
+    expect(await screen.findByText("Stand up and stretch")).toBeInTheDocument();
   });
 
   it("creates a reminder straight away when you ask for one", async () => {

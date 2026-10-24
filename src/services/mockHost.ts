@@ -2,6 +2,7 @@
 // Gemini is simulated. Type "/quota", "/offline", "/rate", "/slow" or "/error"
 // into a prompt to exercise error states.
 
+import pkg from "../../package.json";
 import type { WispError } from "./errors";
 import type { AskHandle, Host, SelfTestStep, Unsubscribe, WindowKind } from "./host";
 import { createFakeRecorder } from "./recorder";
@@ -403,7 +404,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     shortcutIssues: [],
     recoveredFrom: null,
     warnings: [],
-    version: "0.2.0-preview",
+    version: `${pkg.version}-preview`,
   });
   const emit = () => {
     const s = snapshot();
@@ -983,7 +984,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       },
     ],
     checkForUpdates: async () => ({
-      current: "0.2.0-preview",
+      current: `${pkg.version}-preview`,
       latest: "0.1.0",
       available: false,
       url: null,
@@ -1021,7 +1022,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       JSON.stringify(
         {
           generatedAt: new Date().toISOString(),
-          appVersion: "0.2.0-preview",
+          appVersion: `${pkg.version}-preview`,
           os: "browser-preview",
           hasApiKey: hasKey,
           settings: {

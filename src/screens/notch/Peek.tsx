@@ -4,6 +4,7 @@ import { WispMark } from "../../components/WispMark";
 import { useOrbState } from "../../hooks/useOrbState";
 import { host } from "../../services/host";
 import type { AgentJob, NowPlaying } from "../../services/types";
+import { useDueReminders } from "../../state/assist";
 import { useDictation } from "../../state/dictation";
 import { formatCountdown, useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
@@ -44,6 +45,7 @@ export function Peek() {
   const dictHandsFree = useDictation((d) => d.handsFree);
   const voiceHandsFree = useVoice((v) => v.handsFree);
   const jobs = useRunningJobs();
+  const reminder = useDueReminders((r) => r.due[0]);
   const [playing, setPlaying] = useState<NowPlaying | null>(null);
 
   useEffect(() => {
@@ -73,6 +75,13 @@ export function Peek() {
       </span>
     );
   else if (voice === "transcribing" || state === "thinking") main = <span>Thinking…</span>;
+  else if (reminder)
+    main = (
+      <span className="peek-reminder">
+        <Icon name="bell" size={14} />
+        <span className="peek-ellipsis">{reminder.title}</span>
+      </span>
+    );
   else if (timer)
     main = (
       <span className="peek-timer">
@@ -92,7 +101,7 @@ export function Peek() {
   else
     main = (
       <span className="peek-clock">
-        {new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        {new Date(now).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
         <span className="muted">
           {" "}
           ·{" "}

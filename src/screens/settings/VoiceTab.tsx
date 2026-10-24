@@ -14,7 +14,7 @@ import { resetSpeechStatus, speechStatus } from "../../state/liveSpeech";
 import { useSettings } from "../../state/settings";
 import { Choice, Toggle } from "./common";
 
-const MB = 1024 * 1024;
+const MB = 1_000_000;
 
 /** Download, progress and removal of the on-device Whisper model. */
 function WhisperModels() {
@@ -63,8 +63,8 @@ function WhisperModels() {
       />
       <p className="setting-desc">
         {model === "standard"
-          ? "Whisper small: quick on any recent PC. About 470 MB."
-          : "Whisper large-v3 turbo: best with accents, names and mixed languages, a little slower. About 550 MB."}{" "}
+          ? "Whisper small: quick on any recent PC."
+          : "Whisper large-v3 turbo: best with accents, names and mixed languages, a little slower."}{" "}
         It loads when you start talking and leaves memory after a few idle minutes.
       </p>
       <div className="row-start" role="status" aria-live="polite">

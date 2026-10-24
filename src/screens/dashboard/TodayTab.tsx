@@ -380,7 +380,7 @@ export default function TodayTab() {
       <div className="today-top">
         <div className="clock">
           <span className="clock-time">
-            {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            {now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
           </span>
           <span className="clock-date">
             {now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}

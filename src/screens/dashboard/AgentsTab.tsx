@@ -56,7 +56,7 @@ export default function AgentsTab() {
               className="input"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g. best budget mechanical keyboards 2026"
+              placeholder="e.g. best budget keyboards"
               aria-label="Research topic"
               maxLength={500}
             />

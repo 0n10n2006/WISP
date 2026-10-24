@@ -43,6 +43,12 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Notifications and polish (v0.2.10)
+
+- [ ] Set a reminder one minute ahead: the Windows notification shows Wisp's logo and the name "Wisp", the reminder title as its heading and the notes (or "Reminder") below.
+- [ ] At the same moment the notch drops down with a bell and the title for about 8 seconds, then tucks back; opening the bar shows the reminder card with Done and Snooze.
+- [ ] Today shows the time without a leading zero; the bar placeholder isn't cut off; Controls has two even rows of tiles; About links to the project page.
+
 ### Offline voice, fewer prompts, antivirus, Start search (v0.2.9)
 
 - [ ] Download the new installer: Windows Defender doesn't flag it or `wisp.exe`. (If it does, report it as in `docs/SIGNING.md`.) Properties → Details of `wisp.exe` shows product, company, version and copyright.

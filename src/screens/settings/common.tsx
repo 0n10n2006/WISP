@@ -9,6 +9,7 @@ export const LINKS = {
   billing: "https://ai.google.dev/gemini-api/docs/billing",
   rateLimits: "https://ai.google.dev/gemini-api/docs/rate-limits",
   privacy: "https://policies.google.com/privacy",
+  project: "https://github.com/0n10n2006/WISP",
 };
 
 export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {

@@ -184,6 +184,7 @@ export function RemindersTab() {
         <input
           id="rem-title"
           type="text"
+          placeholder="e.g. Call Sam"
           value={title}
           maxLength={200}
           onChange={(e) => setTitle(e.target.value)}
@@ -479,8 +480,8 @@ export function MemoryTab() {
       <h2>Memory</h2>
       <p className="setting-desc">
         Short notes Wisp can use to personalise answers. They stay on this PC and are sent to Gemini
-        with your requests only while memory is on. Wisp always asks before saving anything it
-        learned from a conversation.
+        with your requests only while memory is on. "Remember that…" saves a note straight away;
+        anything picked up from your screen or clipboard asks first.
       </p>
       <section className="group">
         <Toggle

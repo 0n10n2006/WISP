@@ -116,7 +116,7 @@ describe("settings window", () => {
     render(<App />);
     await user.click(await screen.findByRole("tab", { name: "Voice & dictation" }));
     expect(screen.getByRole("radio", { name: "Whisper on this PC" })).toBeChecked();
-    expect(await screen.findByText(/not downloaded yet \(465 MB\)/i)).toBeInTheDocument();
+    expect(await screen.findByText(/not downloaded yet \(488 MB\)/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Download" }));
     expect(await screen.findByText(/ready to use offline/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Delete model" }));
