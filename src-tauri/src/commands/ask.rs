@@ -102,6 +102,12 @@ pub async fn ask(
         state.secrets.require()?;
     }
     let settings = state.settings();
+    // Shared window titles are text from other apps (a web page's title, say).
+    let origin = if settings.app_awareness && settings.share_window_titles {
+        wisp_core::tools::Origin::Untrusted
+    } else {
+        request.origin()
+    };
     let cancel = CancellationToken::new();
     state
         .requests
@@ -226,7 +232,7 @@ pub async fn ask(
             // A reply asking for many actions at once is a sign of injected
             // instructions; only the first few are considered.
             let response = if i < wisp_core::tools::MAX_CALLS_PER_TURN {
-                handle_call(&app, &state, call, &on_event, &cancel).await
+                handle_call(&app, &state, call, origin, &on_event, &cancel).await
             } else {
                 json!({ "ok": false, "error": "Too many actions at once; this one was not run." })
             };
@@ -324,6 +330,7 @@ async fn handle_call(
     app: &AppHandle,
     state: &AppState,
     call: &FunctionCall,
+    origin: wisp_core::tools::Origin,
     on_event: &Channel<AskEvent>,
     cancel: &CancellationToken,
 ) -> Value {
@@ -391,7 +398,7 @@ async fn handle_call(
     let summary = action.audit_summary();
 
     let mut confirmed = false;
-    if action.requires_confirmation() {
+    if action.needs_confirmation(origin, delay, settings.confirm_actions) {
         let id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel::<bool>();
         state

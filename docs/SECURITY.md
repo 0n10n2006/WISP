@@ -44,7 +44,14 @@ code; if you change one of the boundaries below, update this file in the same ch
 
 ## Voice recognition
 
-- With the Windows speech engine (the default), Windows' `SpeechRecognizer` (dictation topic) recognises speech
+- With the Whisper engine (the default), speech is recognised on the PC by whisper.cpp; audio never leaves it.
+  The model comes from whisper.cpp's official Hugging Face repository over HTTPS, is written to a `.part` file,
+  and only gets its final name (and is loaded) once its SHA-1 matches the value whisper.cpp publishes in
+  `models/README.md`. Downloads stop if a file grows past its expected size. Recordings reach the host as
+  16-bit PCM WAV (≤ 6 MB of base64, ≤ 130 s) and are parsed by Wisp's own decoder. whisper.cpp is built for
+  AVX2 (`GGML_NATIVE=OFF`), not the CI machine's CPU. Until the model is downloaded, or if it fails, the
+  recording goes to Gemini.
+- With the Windows speech engine, Windows' `SpeechRecognizer` (dictation topic) recognises speech
   while the user talks; Windows dictation is handled by Microsoft's online speech service, which the Voice
   settings and Privacy text state. The webview records the same audio as a backup; it goes to Gemini only if
   Windows is unavailable or unsure, and is discarded otherwise. Choosing the Gemini engine never uses Windows
@@ -69,9 +76,14 @@ code; if you change one of the boundaries below, update this file in the same ch
   embedded credentials, not this PC or the local network, ≤ 2048 chars), `copy_text` (≤ 20 000 chars),
   `create_reminder` (title ≤ 200, RFC 3339 time, not in the past, ≤ 5 years ahead, ≤ 500 open reminders),
   `remember` (≤ 500 chars), `switch_to_app` (a window that is open right now).
-- **Every** model-proposed action needs the user's confirmation, and the dialog shows what will really happen
-  (the copied text, the reminder and its time, the app, the full URL). The model may be following instructions
-  hidden in a web page, a screenshot or the clipboard, so nothing it asks for happens silently.
+- Confirmation depends on where the request came from (`ValidatedAction::needs_confirmation`). A request is
+  **untrusted** when the conversation includes a screenshot or image, clipboard text, a web-grounded answer, or
+  shared window titles; then every action asks, because the model may be following instructions hidden in that
+  content. A **direct** typed or spoken request runs local, easily undone actions (open or switch app,
+  Windows settings, reminder, copy, remember) without asking, but still asks before opening a URL (an address
+  can carry data out) or scheduling anything more than an hour ahead. **Settings → Actions → When to ask →
+  Always** restores a confirmation for every action. The dialog shows what will really happen (the copied
+  text, the reminder and its time, the app, the full URL).
 - At most 3 actions per model reply and 3 model ↔ tool rounds per request; unanswered confirmations expire after
   2 minutes as "declined".
 - Untrusted text is fenced in the prompt: the desktop context (app names, titles) sits in a `<desktop>` block and
@@ -169,7 +181,13 @@ code; if you change one of the boundaries below, update this file in the same ch
 - CI runs with a read-only token and doesn't keep Git credentials on disk. Third-party actions are pinned to
   commit SHAs.
 - Releases are built without caches and with a read-only token; a separate job with write access only uploads
-  the installers and a `SHA256SUMS.txt`. Builds are not yet code-signed.
+  the installers and a `SHA256SUMS.txt`. Once SignPath Foundation signing is configured
+  (`docs/SIGNING.md`), the installers are signed before publishing; until then they're unsigned.
+- Hold-to-talk reads key presses through Raw Input on a hidden window (no `SetWindowsHookEx` keyboard hook):
+  keys can't be blocked or altered, injected input is ignored, and only modifier state is used.
+- On first run outside an installer, Wisp adds a per-user Start-menu shortcut (`Wisp.lnk`, AppUserModelID
+  `app.wisp.desktop`) if none exists. The NSIS installer registers `HKCU\…\App Paths\wisp.exe` and removes it
+  on uninstall.
 
 ## Capture & privacy
 

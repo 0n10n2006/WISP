@@ -58,20 +58,8 @@ pub async fn transcribe(
     let settings = state.settings();
     if settings.retain_audio {
         if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&audio_base64) {
-            let dir = app.path().app_data_dir().map(|d| d.join("recordings"));
-            if let Ok(dir) = dir {
-                let ext = if base_mime.ends_with("ogg") {
-                    "ogg"
-                } else {
-                    "webm"
-                };
-                let name = format!(
-                    "dictation-{}.{ext}",
-                    chrono::Local::now().format("%Y%m%d-%H%M%S")
-                );
-                let _ = std::fs::create_dir_all(&dir)
-                    .and_then(|_| std::fs::write(dir.join(name), bytes));
-            }
+            let ext = base_mime.rsplit('/').next().unwrap_or("webm");
+            retain_recording(&app, ext, &bytes);
         }
     }
     let started = Instant::now();
@@ -133,6 +121,22 @@ pub async fn transcribe(
         }
         Err(e) => Err(e),
     }
+}
+
+/// Keep a recording when the user turned on "keep recordings".
+pub(crate) fn retain_recording(app: &AppHandle, ext: &str, bytes: &[u8]) {
+    let Ok(dir) = app.path().app_data_dir().map(|d| d.join("recordings")) else {
+        return;
+    };
+    let ext = match ext {
+        "wav" | "ogg" | "mp4" | "mpeg" | "aac" => ext,
+        _ => "webm",
+    };
+    let name = format!(
+        "dictation-{}.{ext}",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    );
+    let _ = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(name), bytes));
 }
 
 /// Paste text into the app that was in front before Wisp was summoned.

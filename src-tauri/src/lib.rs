@@ -21,6 +21,7 @@ mod secrets;
 mod selftest;
 mod shortcuts;
 mod speech;
+mod startmenu;
 mod state;
 mod stats;
 mod system_controls;
@@ -28,6 +29,7 @@ mod system_theme;
 mod tray;
 mod wallpaper;
 mod watch;
+mod whisper;
 mod windows;
 mod winsettings;
 
@@ -58,6 +60,8 @@ pub fn run() {
         ))
         .setup(move |app| {
             selftest::mark("setup-start");
+            // Before any window exists, so taskbar and search group them as Wisp.
+            startmenu::set_app_id();
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             selftest::mark("data-dir");
@@ -161,6 +165,10 @@ pub fn run() {
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                 housekeeping(&warm);
                 commands::dashboard::cached_catalogue(&warm, false).await;
+                // Installed builds only: a dev build shouldn't add itself to Start.
+                if !cfg!(debug_assertions) {
+                    let _ = com_worker::run(startmenu::ensure_shortcut).await;
+                }
                 // Retention applies while Wisp keeps running, too.
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
@@ -232,6 +240,12 @@ pub fn run() {
             commands::dictation::speech_start,
             commands::dictation::speech_stop,
             commands::dictation::speech_cancel,
+            commands::whisper::whisper_status,
+            commands::whisper::whisper_download,
+            commands::whisper::whisper_cancel_download,
+            commands::whisper::whisper_delete,
+            commands::whisper::whisper_prewarm,
+            commands::whisper::transcribe_local,
             commands::ask::scheduled_list,
             commands::ask::scheduled_cancel,
             commands::settings::test_openrouter_key,

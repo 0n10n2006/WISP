@@ -179,6 +179,9 @@ export const useConversation = create<ConversationState>((set, get) => ({
         enableTools: true,
         think: opts.think ?? false,
         web: opts.web ?? false,
+        outsideContent: get().messages.some(
+          (m) => m.contextKind === "screen" || m.contextKind === "clipboard" || m.web,
+        ),
       },
       onDelta,
       (ev) =>

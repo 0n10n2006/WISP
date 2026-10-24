@@ -5,6 +5,7 @@ import type { AudioRecorder } from "../services/recorder";
 import { useActivity } from "./activity";
 import { startLiveSpeech, type LiveSpeech } from "./liveSpeech";
 import { useSettings } from "./settings";
+import { prepareSpeech, transcribeRecording } from "./speechToText";
 import { NOTHING_HEARD, recorderOptions } from "./voiceOptions";
 import { toast } from "./toast";
 
@@ -90,6 +91,7 @@ export const useDictation = create<DictationState>((set, get) => ({
       );
       set({ handsFree: !!options.vad });
       await rec.start((level) => set({ level }), options);
+      prepareSpeech("dictation");
     } catch (e) {
       if (recorder === rec) recorder = null;
       void livePromise.then((l) => l?.cancel());
@@ -135,7 +137,7 @@ export const useDictation = create<DictationState>((set, get) => ({
     const live = liveSpeech;
     liveSpeech = null;
     try {
-      // Windows already has the words: no upload, no wait. Otherwise Gemini.
+      // Windows already has the words; otherwise Whisper (or Gemini).
       let text = live ? await live.stop() : null;
       if (text !== null) rec.cancel();
       else {
@@ -144,7 +146,7 @@ export const useDictation = create<DictationState>((set, get) => ({
           set({ phase: "review", transcript: "", heard: false });
           return;
         }
-        text = await host().transcribe(recording);
+        text = await transcribeRecording(recording, "dictation");
       }
       if (gen !== generation) return;
       set({ phase: "review", transcript: text, heard: !!text.trim() });

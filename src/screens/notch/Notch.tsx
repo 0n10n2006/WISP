@@ -94,8 +94,19 @@ function SliverGlow() {
   );
 }
 
+/** Keep listening this long after the keys come up: people let go on the last word. */
+const HOLD_TAIL_MS = 300;
+
 /** Hold-to-talk: Ctrl+Win dictates into the app in front, Win+Alt asks by voice. */
 function onHold(e: HoldEvent) {
+  if (e.phase === "stop") {
+    setTimeout(() => finishHold(e), HOLD_TAIL_MS);
+    return;
+  }
+  finishHold(e);
+}
+
+function finishHold(e: HoldEvent) {
   const dictation = useDictation.getState();
   const voice = useVoice.getState();
   if (e.chord === "dictate") {

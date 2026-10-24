@@ -32,6 +32,7 @@ fn ask(prompt: &str) -> AskRequest {
         enable_tools: false,
         think: false,
         web: false,
+        outside_content: false,
     }
 }
 

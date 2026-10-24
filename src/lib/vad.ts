@@ -37,7 +37,7 @@ export class VoiceActivity {
   /** Feed one loudness reading (RMS, 0..1) taken at time `t` (ms). */
   feed(rms: number, t: number): VadEvent | null {
     if (this.done) return null;
-    const minSpeech = this.opts.minSpeechMs ?? 140;
+    const minSpeech = this.opts.minSpeechMs ?? 120;
     const noSpeech = this.opts.noSpeechMs ?? 8000;
     if (this.startedAt === null) {
       // Nobody starts talking within a few ms of pressing, so the first
@@ -100,11 +100,13 @@ export function trimToSpeech(
   sampleRate: number,
   startMs: number | null,
   endMs: number | null,
-  padMs = 350,
+  padMs = 400,
+  /** Quiet last syllables fall under the speech threshold: keep more after. */
+  tailMs = 800,
 ): Float32Array {
   if (startMs === null || endMs === null) return samples;
   const from = Math.max(0, Math.floor(((startMs - padMs) / 1000) * sampleRate));
-  const to = Math.min(samples.length, Math.ceil(((endMs + padMs) / 1000) * sampleRate));
+  const to = Math.min(samples.length, Math.ceil(((endMs + tailMs) / 1000) * sampleRate));
   return to > from ? samples.subarray(from, to) : samples;
 }
 

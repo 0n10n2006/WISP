@@ -80,12 +80,41 @@ pub enum NotchPosition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SpeechEngine {
-    /// Windows' own recognizer: words appear as you speak; Gemini is the backup.
+    /// Whisper on this PC: accurate, offline, no audio leaves the machine.
+    /// Gemini is the backup until the model is downloaded.
     #[default]
+    Whisper,
+    /// Windows' own recognizer: words appear as you speak; Gemini is the backup.
     Windows,
-    /// Gemini only (most accurate, a little slower).
+    /// Gemini only.
     Gemini,
 }
+
+/// Which Whisper model runs on this PC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WhisperModel {
+    /// Whisper small (about 190 MB): fast on any recent CPU.
+    #[default]
+    Standard,
+    /// Whisper large-v3 turbo (about 550 MB): best accuracy, a little slower.
+    Accurate,
+}
+
+/// When Wisp asks before doing something the model proposed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfirmPolicy {
+    /// Only for links, long delays, and anything prompted by screen,
+    /// clipboard or web content.
+    #[default]
+    Risky,
+    /// Every action.
+    Always,
+}
+
+/// Bumped when a stored setting's meaning changes; see `migrate`.
+pub const SETTINGS_REV: u32 = 1;
 
 /// What Wisp looks like when it's resting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -226,6 +255,12 @@ pub struct Settings {
     pub silence_ms: u32,
     /// What turns speech into text.
     pub speech_engine: SpeechEngine,
+    pub whisper_model: WhisperModel,
+    /// When to ask before running an action.
+    pub confirm_actions: ConfirmPolicy,
+    /// Which `migrate` steps a stored file has had (missing = 0).
+    #[serde(default)]
+    pub settings_rev: u32,
     /// Spoken language hint (BCP-47 such as "en-GB"); empty = detect.
     pub voice_language: String,
     /// Microphone device id; empty = Windows default.
@@ -309,8 +344,11 @@ impl Default for Settings {
             simple_via_openrouter: true,
             openrouter_model: String::new(),
             auto_stop_voice: true,
-            silence_ms: 800,
-            speech_engine: SpeechEngine::Windows,
+            silence_ms: 1200,
+            speech_engine: SpeechEngine::Whisper,
+            whisper_model: WhisperModel::Standard,
+            confirm_actions: ConfirmPolicy::Risky,
+            settings_rev: SETTINGS_REV,
             voice_language: String::new(),
             mic_device: String::new(),
             vocabulary: Vec::new(),
@@ -499,6 +537,22 @@ impl Settings {
     }
 
     /// Apply a JSON merge-patch (shallow per top-level key, deep for objects).
+    /// Bring settings saved by an older version up to date.
+    pub fn migrated(mut self) -> Self {
+        if self.settings_rev < 1 {
+            // 0.2.9: local Whisper replaces the Windows recognizer as the
+            // default, and the 0.8 s pause cut people off mid-sentence.
+            if self.speech_engine == SpeechEngine::Windows {
+                self.speech_engine = SpeechEngine::Whisper;
+            }
+            if self.silence_ms < 1200 {
+                self.silence_ms = 1200;
+            }
+        }
+        self.settings_rev = SETTINGS_REV;
+        self
+    }
+
     pub fn patched(&self, patch: &serde_json::Value) -> Result<Self> {
         let mut base =
             serde_json::to_value(self).map_err(|e| WispError::internal(e.to_string()))?;
@@ -509,6 +563,7 @@ impl Settings {
         // so the UI must not be able to point them anywhere.
         s.recent_wallpapers = self.recent_wallpapers.clone();
         s.wallpaper_folders = self.wallpaper_folders.clone();
+        s.settings_rev = self.settings_rev;
         s.validated()
     }
 }
@@ -559,6 +614,7 @@ impl SettingsStore {
             }
         };
         let parsed = serde_json::from_str::<Settings>(&raw)
+            .map(Settings::migrated)
             .map_err(|e| e.to_string())
             .and_then(|s| s.validated().map_err(|e| e.message));
         match parsed {
@@ -596,6 +652,27 @@ impl SettingsStore {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn migrates_voice_settings_once() {
+        let old: Settings =
+            serde_json::from_value(json!({"speechEngine": "windows", "silenceMs": 800})).unwrap();
+        assert_eq!(old.settings_rev, 0);
+        let m = old.migrated();
+        assert_eq!(m.speech_engine, SpeechEngine::Whisper);
+        assert_eq!(m.silence_ms, 1200);
+        assert_eq!(m.settings_rev, SETTINGS_REV);
+        // A choice made after the upgrade sticks.
+        let mut later = m.clone();
+        later.speech_engine = SpeechEngine::Windows;
+        later.silence_ms = 900;
+        let again = later.migrated();
+        assert_eq!(again.speech_engine, SpeechEngine::Windows);
+        assert_eq!(again.silence_ms, 900);
+        let gemini: Settings = serde_json::from_value(json!({"speechEngine": "gemini"})).unwrap();
+        assert_eq!(gemini.migrated().speech_engine, SpeechEngine::Gemini);
+        assert_eq!(Settings::default().confirm_actions, ConfirmPolicy::Risky);
+    }
 
     #[test]
     fn defaults_validate() {

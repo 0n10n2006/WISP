@@ -227,6 +227,28 @@ pub struct AskRequest {
     /// Ground the answer with Google Search.
     #[serde(default)]
     pub web: bool,
+    /// An earlier turn of this conversation included a screenshot,
+    /// clipboard or web content (so its instructions can't be trusted).
+    #[serde(default)]
+    pub outside_content: bool,
+}
+
+impl AskRequest {
+    /// Where an action proposed while answering this request came from.
+    pub fn origin(&self) -> crate::tools::Origin {
+        let outside = self.outside_content
+            || self.web
+            || !self.attachments.is_empty()
+            || matches!(
+                self.context_kind,
+                ContextKind::Screen | ContextKind::Clipboard
+            );
+        if outside {
+            crate::tools::Origin::Untrusted
+        } else {
+            crate::tools::Origin::Direct
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -295,5 +317,51 @@ impl GenerateOutcome {
         }
         self.text.push_str(&delta);
         delta
+    }
+}
+
+#[cfg(test)]
+mod origin_tests {
+    use super::*;
+    use crate::tools::Origin;
+
+    #[test]
+    fn origin_of_requests() {
+        let base: AskRequest =
+            serde_json::from_value(serde_json::json!({"requestId": "r", "prompt": "open notepad"}))
+                .unwrap();
+        assert_eq!(base.origin(), Origin::Direct);
+        let voice = AskRequest {
+            context_kind: ContextKind::Voice,
+            ..base.clone()
+        };
+        assert_eq!(voice.origin(), Origin::Direct);
+        for r in [
+            AskRequest {
+                context_kind: ContextKind::Screen,
+                ..base.clone()
+            },
+            AskRequest {
+                context_kind: ContextKind::Clipboard,
+                ..base.clone()
+            },
+            AskRequest {
+                web: true,
+                ..base.clone()
+            },
+            AskRequest {
+                outside_content: true,
+                ..base.clone()
+            },
+            AskRequest {
+                attachments: vec![Attachment {
+                    mime_type: "image/png".into(),
+                    data_base64: String::new(),
+                }],
+                ..base.clone()
+            },
+        ] {
+            assert_eq!(r.origin(), Origin::Untrusted);
+        }
     }
 }

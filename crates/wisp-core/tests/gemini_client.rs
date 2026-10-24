@@ -28,6 +28,7 @@ fn ask(prompt: &str) -> AskRequest {
         enable_tools: false,
         think: false,
         web: false,
+        outside_content: false,
     }
 }
 
@@ -392,7 +393,11 @@ async fn function_call_round_trip_echoes_call_and_result() {
     assert_eq!(first.function_calls.len(), 1);
     let call = &first.function_calls[0];
     let action = validate_call(&call.name, &call.args, &[], chrono::Utc::now()).unwrap();
-    assert!(action.requires_confirmation());
+    assert!(action.needs_confirmation(
+        wisp_core::tools::Origin::Untrusted,
+        None,
+        wisp_core::settings::ConfirmPolicy::Risky
+    ));
 
     let next = with_function_results(
         body,

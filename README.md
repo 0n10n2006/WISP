@@ -36,6 +36,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2.6: Google Lens and one-click actions on circled areas, fold on leave, floating ball |
 | v0.2.8: Windows control centre, folder wallpapers, instant voice, delayed actions        | ✅    |
 | v0.2.7: free-model routing (Gemini → Gemma → OpenRouter)                                 | ✅    | ✅  |
+| v0.2.9: offline Whisper voice, fewer prompts, no keyboard hook, findable in Start search | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -49,7 +50,8 @@ What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 3. Wisp opens its setup screen. Paste a Gemini API key from
    [Google AI Studio](https://aistudio.google.com/apikey) and pick a model.
 
-The installer is **unsigned** for now, so Windows SmartScreen may warn you. Choose _More info → Run anyway_.
+Until the free SignPath code signing is set up (see `docs/SIGNING.md`), the installer is unsigned and Windows
+SmartScreen may warn you. Choose _More info → Run anyway_. After installing, type **wisp** in Start to open it.
 
 ### Option B: browser preview (any OS, no key needed)
 
@@ -177,10 +179,10 @@ where that is, and rings it with a label for a few seconds (the overlay is click
 
 ## Dictation
 
-Hold `Ctrl+Win` in any app, speak, and let go: Wisp transcribes with Gemini and types the text where your
-cursor was. Or press `Ctrl+Shift+D` / the mic button to dictate with a review step (**Insert** or **Copy**).
-Choose the clean-up in **Settings → Voice & dictation**: **Verbatim**, **Clean** (removes "um", "like", false
-starts and fixes grammar in your own words; default) or **Polished**. Recordings stop after 2 minutes; audio
+Hold `Ctrl+Win` in any app, speak, and let go: Wisp transcribes on your PC with Whisper and types the text
+where your cursor was. Or press `Ctrl+Shift+D` / the mic button to dictate with a review step (**Insert** or **Copy**).
+Choose the clean-up in **Settings → Voice & dictation**: **Verbatim**, **Clean** (removes "um" and "uh";
+default) or **Polished** (reworded by Gemini). Recordings stop after 2 minutes; audio
 is discarded after transcription unless you turn on _Keep dictation audio_.
 
 If dictation says the microphone is blocked, open **Windows Settings → Privacy & security → Microphone** and
@@ -202,14 +204,17 @@ background noise, trims silence, evens out quiet microphones, and tells Gemini y
 With **app awareness** on (default; **Settings → Privacy**), each question includes the name of the app you're
 in, your open apps and your installed apps, so you can ask "what's using my screen?", "open Steam" or "switch
 to Spotify". Only names are sent, never window contents; window titles only if you allow them. Opening an app
-still asks first.
+Opening an app runs straight away when you ask for it.
 
 ## Actions, reminders, memory, clipboard
 
 - **Actions:** Ask things like "open notepad" or "remind me to stretch at 3pm". Wisp can open allowlisted apps
-  (**Settings → Actions**), open http(s) links, copy text, create reminders, and suggest memories. Opening apps
-  or links and saving memories always ask first. Everything is logged in **History**. Wisp has no shell or
-  script access.
+  (**Settings → Actions**), open http(s) links, copy text, create reminders, change Windows settings and
+  remember things. What you ask for directly just happens. Wisp asks first only when it's risky: opening a
+  link, anything set for more than an hour ahead, or a request that involves your screen, clipboard, a web
+  search or window titles (they can carry instructions you didn't write). Choose **Always** under
+  **Settings → Actions → When to ask** to approve everything. Everything is logged in **History**. Wisp has no
+  shell or script access.
 - **Reminders:** In **Today**, **Settings → Reminders**, the bar (`remind me to … in 10 min`) or by asking.
   They work offline, can repeat, show a Windows notification when due, and can be snoozed from the bar.
 - **Memory:** Short notes in **Settings → Memory** that personalise answers. The memory button in the bar
@@ -235,21 +240,26 @@ centre, accent on Start & taskbar, recent items in Start, dark apps / dark taskb
 
 Type it in the bar instead: `night light on`, `dnd`, `taskbar left`, `hide taskbar`, `brightness 40`,
 `best performance`, `use headphones`, `mute mic`, `accent blue`, `hide desktop icons`, `next wallpaper`,
-`shuffle wallpaper`. Or just ask ("move the taskbar to the left"): Wisp asks before changing anything.
+`shuffle wallpaper`. Or just ask ("move the taskbar to the left").
 
 **Wallpapers:** add folders (e.g. Pictures\\Wallpapers) on the Wallpaper tab and flip through them in a
 carousel: click one to set it, or use Next and Shuffle (also on the control centre and in the bar).
 
 **Later:** "open Chrome in 20 seconds", "switch to Spotify in 5 minutes", "turn on night light in an hour":
-you approve it now and it runs then. Waiting actions show on the Today tab with a cancel button.
+it runs then (anything more than an hour away asks first). Waiting actions show on the Today tab with a cancel button.
 
-## Instant voice
+## Offline voice (Whisper)
 
-Voice and dictation use Windows' built-in speech recognition by default: the words appear while you talk and
-the answer starts the moment you stop, with nothing to upload first. If Windows isn't sure what it heard (or
-isn't set up), the recording goes to Gemini instead. Windows dictation uses Microsoft's online speech service
-(turn on **Settings → Privacy & security → Speech → Online speech recognition**); choose **Gemini** under
-**Settings → Voice & dictation → Speech to text** to avoid it.
+Voice and dictation run [Whisper](https://github.com/ggml-org/whisper.cpp) on your PC: accurate, offline,
+and your audio never leaves the machine. The model downloads the first time you use voice (or press
+**Download** in **Settings → Voice & dictation**); until then Wisp uses Gemini.
+
+- **Standard** (Whisper small, ~470 MB): about half a second to a second for a sentence on a recent laptop.
+- **Most accurate** (Whisper large-v3 turbo, ~550 MB): better with accents, names and mixed languages.
+
+The model loads while you're talking and leaves memory after 3 idle minutes, so Wisp stays light. Words you
+add under **Names and words** are passed to Whisper so it spells them right. You can still choose Windows'
+recognizer (words appear live, uses Microsoft's online speech service) or Gemini only.
 
 ## Free models and routing
 
@@ -298,7 +308,7 @@ picking a model per job and switching when one runs out (**Settings → Model �
 | "Slow down a moment"       | Per-minute limit hit. Wait a few seconds and press **Try again**.                                                |
 | Shortcut doesn't work      | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.                          |
 | The notch is gone          | It's tucked or a fullscreen app is in front. Press `Ctrl+Alt+H` or use the tray icon.                            |
-| Hold-to-talk does nothing  | Check **Settings → Voice & dictation**. Some security tools block keyboard hooks.                                |
+| Hold-to-talk does nothing  | Check **Settings → Voice & dictation** and **Settings → Shortcuts**.                                             |
 | "Wisp closed unexpectedly" | A redacted crash report is in `%APPDATA%\app.wisp.desktop\logs`. Attach it to an issue.                          |
 | Something doesn't react    | **Settings → Data → Preview diagnostics** lists recent errors (also in `logs\errors.log`, kept on this PC only). |
 | Microphone blocked         | Windows Settings → Privacy & security → Microphone → allow desktop apps.                                         |
@@ -306,7 +316,7 @@ picking a model per job and switching when one runs out (**Settings → Model �
 ## Known limitations
 
 - Windows 11 x64 is the only supported platform.
-- Installers are not code-signed yet.
+- Installers are code-signed only once SignPath signing is set up (`docs/SIGNING.md`).
 - Wi-Fi/Bluetooth toggles need Windows' radio access; some managed PCs block them.
 - Insert uses the clipboard. If your clipboard held an image, it isn't restored after inserting.
 - The clipboard history records text and links only.

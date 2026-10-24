@@ -13,7 +13,7 @@ import type {
 } from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { toast } from "../../state/toast";
-import { StatusLine, Toggle, useStatus } from "./common";
+import { Choice, StatusLine, Toggle, useStatus } from "./common";
 
 /** `datetime-local` value ↔ ISO string helpers (local time). */
 export { fromLocalInput, toLocalInput } from "../../lib/time";
@@ -572,6 +572,7 @@ const NO_APPS: AllowedApp[] = [];
 
 export function ActionsTab() {
   const apps = useSettings((s) => s.snapshot?.settings.allowedApps ?? NO_APPS);
+  const confirm = useSettings((s) => s.snapshot?.settings.confirmActions ?? "risky");
   const update = useSettings((s) => s.update);
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
@@ -608,10 +609,27 @@ export function ActionsTab() {
     <div className="tab">
       <h2>Actions</h2>
       <p className="setting-desc">
-        Wisp can open apps and links, copy text, set reminders and suggest memories when you ask.
-        Opening apps or links and saving memories always ask you first. Wisp can't run commands,
-        scripts or change files.
+        Wisp can open and switch apps, open links, change Windows settings, copy text, set reminders
+        and remember things when you ask. Wisp can't run commands, scripts or change files.
       </p>
+      <section className="group">
+        <h3>When to ask</h3>
+        <Choice<"risky" | "always">
+          name="confirm-actions"
+          label="Ask before Wisp acts"
+          value={confirm}
+          options={[
+            { value: "risky", label: "Only when it's risky" },
+            { value: "always", label: "Always" },
+          ]}
+          onChange={(confirmActions) => void update({ confirmActions })}
+        />
+        <p className="setting-desc">
+          {confirm === "risky"
+            ? "What you ask for directly just happens. Wisp still asks before opening a link, before anything set for more than an hour from now, and whenever the request involves your screen, clipboard, a web search or window titles, since those can carry instructions you didn't write."
+            : "Wisp asks you before every action."}
+        </p>
+      </section>
       <section className="group">
         <h3>Apps Wisp may open</h3>
         {apps.length === 0 ? (

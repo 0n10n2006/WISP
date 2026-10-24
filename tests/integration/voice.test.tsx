@@ -6,10 +6,10 @@ import { useActivity } from "../../src/state/activity";
 import { useVoice } from "../../src/state/voice";
 import { setupMockHost } from "../helpers";
 
-function recorder(): AudioRecorder {
+function recorder(mimeType = "audio/webm"): AudioRecorder {
   return {
     start: vi.fn(async () => {}),
-    stop: vi.fn(async () => ({ base64: "AAAA", mimeType: "audio/webm", durationMs: 1500 })),
+    stop: vi.fn(async () => ({ base64: "AAAA", mimeType, durationMs: 1500 })),
     cancel: vi.fn(),
   };
 }
@@ -64,6 +64,7 @@ describe("voice conversation", () => {
       windowKind: "island",
       speech: { text: "What time is it in Tokyo", confidence: "high" },
     });
+    await h.updateSettings({ speechEngine: "windows" });
     const rec = recorder();
     vi.spyOn(h, "createRecorder").mockReturnValue(rec);
     const transcribe = vi.spyOn(h, "transcribe");
@@ -88,6 +89,7 @@ describe("voice conversation", () => {
       windowKind: "island",
       speech: { text: "mumble", confidence: "low" },
     });
+    await h.updateSettings({ speechEngine: "windows" });
     vi.spyOn(h, "createRecorder").mockReturnValue(recorder());
     const transcribe = vi.spyOn(h, "transcribe");
     const ask = vi.spyOn(h, "ask");
@@ -102,6 +104,48 @@ describe("voice conversation", () => {
     expect(ask.mock.calls[0]![0].prompt).toBe(
       "This is a simulated transcript from the browser preview.",
     );
+  });
+
+  it("transcribes on this PC with Whisper when the model is downloaded", async () => {
+    const h = await setupMockHost({
+      withKey: true,
+      onboarded: true,
+      windowKind: "island",
+      whisper: { downloaded: true, text: "Open Notepad" },
+    });
+    vi.spyOn(h, "createRecorder").mockReturnValue(recorder("audio/wav"));
+    const local = vi.spyOn(h, "transcribeLocal");
+    const prewarm = vi.spyOn(h, "whisperPrewarm");
+    const transcribe = vi.spyOn(h, "transcribe");
+    const ask = vi.spyOn(h, "ask");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
+    await screen.findByText("Listening…", { selector: ".dictation-title" });
+    expect(prewarm).toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 3000 });
+    expect(ask.mock.calls[0]![0].prompt).toBe("Open Notepad");
+    expect(local).toHaveBeenCalledWith(expect.anything(), "voice");
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  it("uses Gemini and fetches the model while Whisper isn't downloaded", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    vi.spyOn(h, "createRecorder").mockReturnValue(recorder("audio/wav"));
+    const download = vi.spyOn(h, "whisperDownload");
+    const transcribe = vi.spyOn(h, "transcribe");
+    const ask = vi.spyOn(h, "ask");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /open wisp/i }));
+    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
+    await screen.findByText("Listening…", { selector: ".dictation-title" });
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 3000 });
+    expect(transcribe).toHaveBeenCalledOnce();
+    expect(download).toHaveBeenCalledWith("standard");
   });
 
   it("uses only Gemini when that's the chosen engine", async () => {

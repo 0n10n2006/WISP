@@ -20,6 +20,8 @@ import type {
   SettingsSnapshot,
   ShortcutAction,
   HoldEvent,
+  WhisperProgress,
+  WhisperStatus,
 } from "./types";
 
 /** Note a problem in the host's local error log (never throws). */
@@ -143,6 +145,14 @@ export function createTauriHost(): Host {
 
     createRecorder: () => createMediaRecorder(),
     transcribe: (rec) => call("transcribe", { audioBase64: rec.base64, mimeType: rec.mimeType }),
+    transcribeLocal: (rec, purpose) =>
+      call("transcribe_local", { audioBase64: rec.base64, purpose }),
+    whisperStatus: () => call<WhisperStatus>("whisper_status"),
+    whisperDownload: (model) => call("whisper_download", { model }),
+    whisperCancelDownload: () => call("whisper_cancel_download"),
+    whisperDelete: (model) => call("whisper_delete", { model }),
+    whisperPrewarm: () => call("whisper_prewarm"),
+    onWhisperProgress: (cb) => subscribe<WhisperProgress>("wisp://whisper-download", cb),
     dictationTarget: () => call("dictation_target"),
     insertText: (text) => call("insert_text", { text }),
 

@@ -211,7 +211,7 @@ const DELETE_COPY: Record<DeleteScope, { label: string; title: string; body: str
   everything: {
     label: "Delete everything",
     title: "Delete all Wisp data?",
-    body: "History, memory, reminders, clipboard history, saved dictation audio, crash logs, backups and settings will be removed, and your API key will be deleted from Windows Credential Manager. Files agents saved in Documents\\Wisp are kept. Windows will ask you to confirm once more, then Wisp starts setup again.",
+    body: "History, memory, reminders, clipboard history, saved dictation audio, crash logs, backups and settings will be removed, and your API key will be deleted from Windows Credential Manager. Files agents saved in Documents\\Wisp and the downloaded speech model are kept (delete the model in Voice settings). Windows will ask you to confirm once more, then Wisp starts setup again.",
   },
 };
 

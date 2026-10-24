@@ -343,7 +343,7 @@ pub fn spawn(app: AppHandle, process_start: Instant, setup_ms: u128) {
         // Informational: whether the hold-to-talk hook installed (Windows only).
         let hook = MARKS
             .lock()
-            .map(|m| m.iter().any(|(p, _)| p == "hold-hook"))
+            .map(|m| m.iter().any(|(p, _)| p == "hold-keys"))
             .unwrap_or(false);
         checks.push(Check {
             name: "hold-to-talk-hook".into(),

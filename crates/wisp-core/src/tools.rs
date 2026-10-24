@@ -8,7 +8,7 @@
 
 use crate::error::{Result, WispError};
 use crate::redact::summarize_text;
-use crate::settings::AllowedApp;
+use crate::settings::{AllowedApp, ConfirmPolicy};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -36,7 +36,7 @@ pub enum ValidatedAction {
         notes: Option<String>,
         due_at: DateTime<Utc>,
     },
-    /// Save a memory entry. Always asks the user first.
+    /// Save a memory entry.
     Remember {
         content: String,
         category: String,
@@ -55,6 +55,18 @@ pub enum ValidatedAction {
         change: crate::winsettings::WinChange,
     },
 }
+
+/// Where the request behind a proposed action came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// Only what the user typed or said (and their own memory).
+    Direct,
+    /// The conversation includes a screenshot, clipboard or web content.
+    Untrusted,
+}
+
+/// Actions put off for longer than this ask first even on a direct request.
+pub const ASK_IF_DELAYED_OVER_SECS: u32 = 3600;
 
 /// Longest an action may be put off ("open Chrome in 20 seconds").
 pub const MAX_DELAY_SECS: u32 = 24 * 3600;
@@ -173,11 +185,27 @@ impl ValidatedAction {
         }
     }
 
-    /// Every model-proposed action needs the user's confirmation: the model
-    /// may be following instructions hidden in a page, screenshot or the
-    /// clipboard, so nothing it asks for happens silently.
-    pub fn requires_confirmation(&self) -> bool {
-        true
+    /// Whether to ask the user before running this action.
+    ///
+    /// The model may be following instructions hidden in a page, screenshot
+    /// or the clipboard, so anything proposed while such content is in the
+    /// conversation always asks. A plain typed or spoken request runs small,
+    /// local, easily undone actions straight away; opening a link (it can
+    /// leak data in its address) and anything put off for over an hour still
+    /// ask.
+    pub fn needs_confirmation(
+        &self,
+        origin: Origin,
+        delay_secs: Option<u32>,
+        policy: ConfirmPolicy,
+    ) -> bool {
+        if policy == ConfirmPolicy::Always || origin == Origin::Untrusted {
+            return true;
+        }
+        if delay_secs.is_some_and(|d| d > ASK_IF_DELAYED_OVER_SECS) {
+            return true;
+        }
+        matches!(self, Self::OpenUrl { .. })
     }
 
     /// Short description safe for the audit log (no long free text).
@@ -832,7 +860,7 @@ mod tests {
         };
         let a = validate_call_in("open_app", &json!({"name": "spotify"}), &env, now()).unwrap();
         assert!(matches!(a, ValidatedAction::Launch { ref item } if item.id == "lnk:a"));
-        assert!(a.requires_confirmation());
+        assert!(!a.needs_confirmation(Origin::Direct, None, ConfirmPolicy::Risky));
         let d = validate_call_in("open_app", &json!({"name": "dota"}), &env, now()).unwrap();
         assert_eq!(d.describe(), "Open Dota 2");
         let amb =
@@ -848,7 +876,7 @@ mod tests {
                 app: "chrome".into()
             }
         );
-        assert!(sw.requires_confirmation());
+        assert!(!sw.needs_confirmation(Origin::Direct, None, ConfirmPolicy::Risky));
         assert!(validate_call_in("switch_to_app", &json!({"name": "excel"}), &env, now()).is_err());
     }
 
@@ -892,7 +920,7 @@ mod tests {
                 target: "notepad.exe".into()
             }
         );
-        assert!(ok.requires_confirmation());
+        assert!(ok.needs_confirmation(Origin::Untrusted, None, ConfirmPolicy::Risky));
         assert!(validate_call("open_app", &json!({"name": "regedit"}), &apps(), now()).is_err());
     }
 
@@ -986,8 +1014,46 @@ mod tests {
         )
         .is_err());
         let a = validate_call("copy_text", &json!({"text": "hi"}), &apps(), now()).unwrap();
-        assert!(a.requires_confirmation());
+        assert!(!a.needs_confirmation(Origin::Direct, None, ConfirmPolicy::Risky));
         assert_eq!(a.audit_summary(), "chars=2");
+    }
+
+    #[test]
+    fn confirmation_policy() {
+        let env = ToolEnv {
+            allowed_apps: &[],
+            launchable: &[],
+            windows: &[],
+        };
+        let url = validate_call(
+            "open_url",
+            &json!({"url": "https://example.com"}),
+            &apps(),
+            now(),
+        )
+        .unwrap();
+        let app = validate_call("open_app", &json!({"name": "Notepad"}), &apps(), now()).unwrap();
+        let setting = validate_call_in(
+            "change_setting",
+            &json!({"setting": "night_light", "value": "on"}),
+            &env,
+            now(),
+        )
+        .unwrap();
+        let risky = ConfirmPolicy::Risky;
+        // Direct requests: local actions run, links ask.
+        assert!(!app.needs_confirmation(Origin::Direct, None, risky));
+        assert!(!setting.needs_confirmation(Origin::Direct, None, risky));
+        assert!(url.needs_confirmation(Origin::Direct, None, risky));
+        // Delays: short ones run, over an hour asks.
+        assert!(!app.needs_confirmation(Origin::Direct, Some(20), risky));
+        assert!(!app.needs_confirmation(Origin::Direct, Some(ASK_IF_DELAYED_OVER_SECS), risky));
+        assert!(app.needs_confirmation(Origin::Direct, Some(ASK_IF_DELAYED_OVER_SECS + 1), risky));
+        // Screen, clipboard or web content in play: everything asks.
+        for a in [&url, &app, &setting] {
+            assert!(a.needs_confirmation(Origin::Untrusted, None, risky));
+            assert!(a.needs_confirmation(Origin::Direct, None, ConfirmPolicy::Always));
+        }
     }
 
     #[test]
@@ -1003,7 +1069,7 @@ mod tests {
     }
 
     #[test]
-    fn remember_always_asks() {
+    fn remember_runs_on_a_direct_request() {
         let a = validate_call(
             "remember",
             &json!({"content": " Prefers metric "}),
@@ -1011,7 +1077,7 @@ mod tests {
             now(),
         )
         .unwrap();
-        assert!(a.requires_confirmation());
+        assert!(!a.needs_confirmation(Origin::Direct, None, ConfirmPolicy::Risky));
         assert_eq!(
             a,
             ValidatedAction::Remember {

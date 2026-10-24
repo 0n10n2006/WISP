@@ -1,3 +1,4 @@
+import { useConversation } from "../../src/state/conversation";
 import { act, render, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
@@ -33,6 +34,7 @@ describe("model-proposed actions", () => {
 
   it("does nothing when the user declines", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    await h.updateSettings({ confirmActions: "always" });
     const user = await island();
     await user.type(
       await screen.findByRole("combobox", { name: /ask wisp/i }),
@@ -44,8 +46,9 @@ describe("model-proposed actions", () => {
     expect((await h.actionsList())[0]).toMatchObject({ outcome: "declined" });
   });
 
-  it("saves a memory only after approval", async () => {
+  it("saves a memory only after approval when set to always ask", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    await h.updateSettings({ confirmActions: "always" });
     const user = await island();
     await user.type(
       await screen.findByRole("combobox", { name: /ask wisp/i }),
@@ -147,8 +150,41 @@ describe("reminders", () => {
     expect(screen.queryByText("Reminder: Stand up")).not.toBeInTheDocument();
   });
 
+  it("creates a reminder straight away when you ask for one", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const user = await island();
+    await user.type(
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
+      "remind me /remind{Enter}",
+    );
+    expect(await screen.findByText(/reminder created/i)).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /asking for permission/i })).not.toBeInTheDocument();
+    expect(await h.tasksList(false)).toHaveLength(1);
+  });
+
+  it("still asks when the conversation includes clipboard content", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const ask = vi.spyOn(h, "ask");
+    useConversation.setState({
+      messages: [
+        { id: "u1", role: "user", text: "Summarize", status: "done", contextKind: "clipboard" },
+        { id: "m1", role: "model", text: "A summary.", status: "done", contextKind: "clipboard" },
+      ],
+    });
+    const user = await island();
+    await user.type(
+      await screen.findByRole("combobox", { name: /ask wisp/i }),
+      "remind me /remind{Enter}",
+    );
+    const group = await screen.findByRole("group", { name: /asking for permission/i });
+    expect(ask.mock.calls[0]![0].outsideContent).toBe(true);
+    await user.click(within(group).getByRole("button", { name: "Allow" }));
+    expect(await screen.findByText(/reminder created/i)).toBeInTheDocument();
+  });
+
   it("creates reminders when the model asks, after confirming", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    await h.updateSettings({ confirmActions: "always" });
     const user = await island();
     await user.type(
       await screen.findByRole("combobox", { name: /ask wisp/i }),

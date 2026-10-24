@@ -6,6 +6,7 @@ import { useActivity } from "./activity";
 import { useConversation } from "./conversation";
 import { startLiveSpeech, type LiveSpeech } from "./liveSpeech";
 import { useSettings } from "./settings";
+import { prepareSpeech, transcribeRecording } from "./speechToText";
 import { NOTHING_HEARD, recorderOptions } from "./voiceOptions";
 
 export type VoicePhase = "idle" | "listening" | "transcribing" | "error";
@@ -85,6 +86,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
       );
       set({ handsFree: !!options.vad });
       await rec.start((level) => set({ level }), options);
+      prepareSpeech("voice");
     } catch (e) {
       starting = false;
       if (recorder === rec) recorder = null;
@@ -125,12 +127,12 @@ export const useVoice = create<VoiceState>((set, get) => ({
     const live = liveSpeech;
     liveSpeech = null;
     try {
-      // Windows already has the words: no upload, no wait. Otherwise Gemini.
+      // Windows already has the words; otherwise Whisper (or Gemini).
       let text = live ? await live.stop() : null;
       if (text !== null) rec.cancel();
       else {
         const recording = await rec.stop();
-        text = recording.durationMs < 400 ? "" : await host().transcribe(recording);
+        text = recording.durationMs < 400 ? "" : await transcribeRecording(recording, "voice");
       }
       if (gen !== generation) return;
       if (!text.trim()) {

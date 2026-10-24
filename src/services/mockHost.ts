@@ -34,6 +34,8 @@ import {
   type ModelUsage,
   type Heard,
   type WinSettingsState,
+  type WhisperModel,
+  type WhisperProgress,
 } from "./types";
 
 const STORAGE_KEY = "wisp.mock.settings";
@@ -179,6 +181,8 @@ export interface MockHostOptions {
   persist?: boolean;
   /** Simulate Windows speech recognition hearing this (else it's unavailable). */
   speech?: Heard;
+  /** Local Whisper: whether the model is downloaded, and what it hears. */
+  whisper?: { downloaded?: boolean; text?: string; fail?: boolean };
 }
 
 export function createMockHost(opts: MockHostOptions = {}): Host {
@@ -205,6 +209,10 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       ? { text: "What's the weather like tomorrow", confidence: "high" }
       : null);
   let speechTimer: ReturnType<typeof setInterval> | null = null;
+  const whisperModels = new Set<WhisperModel>(
+    opts.whisper?.downloaded ? [settings.whisperModel] : [],
+  );
+  const whisperListeners = new Set<(p: WhisperProgress) => void>();
   const speechListeners = new Set<(t: string) => void>();
   const scheduledListeners = new Set<
     (r: { description: string; outcome: string; message: string }) => void
@@ -606,7 +614,24 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
             ...actions,
           ];
         };
-        const propose = async (kind: string, description: string): Promise<boolean> => {
+        // Like the real host: ask only when it's risky (or always, if set).
+        const untrusted =
+          req.contextKind === "screen" ||
+          req.contextKind === "clipboard" ||
+          req.attachments.length > 0 ||
+          !!req.web ||
+          !!req.outsideContent;
+        const propose = async (
+          kind: string,
+          description: string,
+          delaySecs = 0,
+        ): Promise<boolean> => {
+          const ask =
+            settings.confirmActions === "always" ||
+            untrusted ||
+            kind === "open_url" ||
+            delaySecs > 3600;
+          if (!ask) return true;
           const id = `confirm-${Date.now()}`;
           onAction?.({ type: "actionProposed", id, kind, description });
           const approved = await new Promise<boolean>((resolve) => {
@@ -631,7 +656,7 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
         if (p.includes("/later")) {
           // "Open Chrome in 20 seconds": approved now, runs later.
           const description = "Open Chrome in 20 seconds";
-          const ok = await propose("open_app", description);
+          const ok = await propose("open_app", description, 20);
           audit("open_app", "app=chrome", ok ? "done" : "declined", ok);
           onAction?.({
             type: "actionResult",
@@ -670,7 +695,6 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
           });
         }
         if (p.includes("/remind")) {
-          // Like the real host: every model-proposed action asks first.
           const description = 'Remind you "Stretch" in an hour';
           const ok = await propose("create_reminder", description);
           if (ok) {
@@ -834,6 +858,37 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       await new Promise((r) => setTimeout(r, 200));
       return rec.durationMs < 0 ? "" : "This is a simulated transcript from the browser preview.";
     },
+    transcribeLocal: async (rec) => {
+      if (!whisperModels.has(settings.whisperModel) || opts.whisper?.fail)
+        throw err("unsupported", "The speech model isn't downloaded yet.");
+      await new Promise((r) => setTimeout(r, 50));
+      return rec.durationMs < 0
+        ? ""
+        : (opts.whisper?.text ?? "This is a simulated transcript from the browser preview.");
+    },
+    whisperStatus: async () => ({
+      models: (["standard", "accurate"] as const).map((model) => ({
+        model,
+        downloaded: whisperModels.has(model),
+        bytes: model === "standard" ? 487_601_967 : 574_041_195,
+      })),
+      downloading: null,
+      loaded: null,
+    }),
+    whisperDownload: async (model) => {
+      const total = model === "standard" ? 487_601_967 : 574_041_195;
+      for (const f of [0.25, 0.5, 1]) {
+        await new Promise((r) => setTimeout(r, 30));
+        whisperListeners.forEach((cb) => cb({ model, done: Math.round(total * f), total }));
+      }
+      whisperModels.add(model);
+    },
+    whisperCancelDownload: async () => {},
+    whisperDelete: async (model) => {
+      whisperModels.delete(model);
+    },
+    whisperPrewarm: async () => {},
+    onWhisperProgress: (cb) => on(whisperListeners, cb),
     dictationTarget: async () => ({ available: true, title: "Untitled - Notepad" }),
     insertText: async () => {},
 

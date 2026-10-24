@@ -1,10 +1,11 @@
 //! Hold-to-talk: hold Ctrl+Win to dictate, Win+Alt to ask by voice (or
 //! the pairs the user picked in Settings → Shortcuts).
 //!
-//! A low-level keyboard hook *observes* key events and feeds the pure
-//! `wisp_core::hold::HoldDetector`. Keys are never swallowed or recorded;
-//! only modifier state is looked at, and any other key turns the chord into
-//! a normal shortcut. Windows-only; elsewhere this is a no-op.
+//! Key events arrive through Raw Input (the API games use), registered on a
+//! hidden window, and feed the pure `wisp_core::hold::HoldDetector`. There is
+//! no keyboard hook: keys can't be swallowed or changed, nothing is recorded,
+//! only modifier state is looked at, and any other key turns the chord into a
+//! normal shortcut. Windows-only; elsewhere this is a no-op.
 
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -63,14 +64,20 @@ mod imp {
     use std::sync::{Mutex, OnceLock};
     use std::time::{Duration, Instant};
     use tauri::{AppHandle, Emitter, Manager};
-    use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows::core::w;
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
         VIRTUAL_KEY,
     };
+    use windows::Win32::UI::Input::{
+        GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE,
+        RAWINPUTHEADER, RIDEV_INPUTSINK, RID_INPUT, RIM_TYPEKEYBOARD,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
-        KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
+        TranslateMessage, MSG, RI_KEY_BREAK, WINDOW_EX_STYLE, WM_INPUT, WNDCLASSW, WS_POPUP,
     };
     use wisp_core::hold::{HoldDetector, Key, Mod};
 
@@ -99,32 +106,61 @@ mod imp {
         }
     }
 
-    unsafe extern "system" fn hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if code >= 0
-            && ENABLED.load(Ordering::Relaxed)
-            && !PAUSED.load(Ordering::Relaxed)
-            && !RECORDING.load(Ordering::Relaxed)
+    fn feed(vk: u32, down: bool) {
+        if !ENABLED.load(Ordering::Relaxed)
+            || PAUSED.load(Ordering::Relaxed)
+            || RECORDING.load(Ordering::Relaxed)
         {
-            let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-            // Ignore synthetic input (including our own Start-menu suppressor).
-            if !info.flags.contains(LLKHF_INJECTED) {
-                let msg = wparam.0 as u32;
-                let down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
-                if let Ok(mut d) = detector().try_lock() {
-                    if let Some(e) = d.key(classify(info.vkCode), down, Instant::now()) {
-                        if let Some(tx) = TX.get() {
-                            let _ = tx.send(e);
-                        }
-                    }
-                    if d.waiting() {
-                        if let Some(w) = WAKE.get() {
-                            let _ = w.send(());
-                        }
-                    }
+            return;
+        }
+        if let Ok(mut d) = detector().try_lock() {
+            if let Some(e) = d.key(classify(vk), down, Instant::now()) {
+                if let Some(tx) = TX.get() {
+                    let _ = tx.send(e);
+                }
+            }
+            if d.waiting() {
+                if let Some(w) = WAKE.get() {
+                    let _ = w.send(());
                 }
             }
         }
-        unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+
+    unsafe extern "system" fn wndproc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_INPUT {
+            let mut raw = RAWINPUT::default();
+            let mut size = std::mem::size_of::<RAWINPUT>() as u32;
+            let got = unsafe {
+                GetRawInputData(
+                    HRAWINPUT(lparam.0 as *mut core::ffi::c_void),
+                    RID_INPUT,
+                    Some(&mut raw as *mut RAWINPUT as *mut core::ffi::c_void),
+                    &mut size,
+                    std::mem::size_of::<RAWINPUTHEADER>() as u32,
+                )
+            };
+            // Synthetic input (including our own Start-menu suppressor) has
+            // no device; only real key presses count.
+            if got != u32::MAX
+                && raw.header.dwType == RIM_TYPEKEYBOARD.0
+                && !raw.header.hDevice.is_invalid()
+            {
+                let kb = unsafe { raw.data.keyboard };
+                let down = u32::from(kb.Flags) & RI_KEY_BREAK == 0;
+                // 0xFF marks the fake keys some keyboards send around
+                // extended keys; they aren't presses.
+                if kb.VKey != 0xFF {
+                    feed(u32::from(kb.VKey), down);
+                }
+            }
+        }
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 
     /// Releasing Win on its own opens Start; a harmless unassigned key press
@@ -212,13 +248,50 @@ mod imp {
                 while wake_rx.try_recv().is_ok() {}
             }
         });
-        // The hook needs a thread with a message loop.
+        // Raw Input arrives as window messages: a hidden, never-shown
+        // window on its own thread with a message loop receives them.
         std::thread::spawn(|| unsafe {
-            if SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook), None, 0).is_err() {
-                crate::selftest::mark("hold-hook-failed");
+            let Ok(module) = GetModuleHandleW(None) else {
+                return;
+            };
+            let class = w!("WispHoldKeys");
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(wndproc),
+                hInstance: module.into(),
+                lpszClassName: class,
+                ..Default::default()
+            };
+            RegisterClassW(&wc);
+            let Ok(hwnd) = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                class,
+                w!(""),
+                WS_POPUP,
+                0,
+                0,
+                0,
+                0,
+                None,
+                None,
+                Some(module.into()),
+                None,
+            ) else {
+                crate::selftest::mark("hold-keys-failed");
+                return;
+            };
+            let device = RAWINPUTDEVICE {
+                usUsagePage: 0x01, // generic desktop
+                usUsage: 0x06,     // keyboard
+                dwFlags: RIDEV_INPUTSINK,
+                hwndTarget: hwnd,
+            };
+            if RegisterRawInputDevices(&[device], std::mem::size_of::<RAWINPUTDEVICE>() as u32)
+                .is_err()
+            {
+                crate::selftest::mark("hold-keys-failed");
                 return;
             }
-            crate::selftest::mark("hold-hook");
+            crate::selftest::mark("hold-keys");
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                 let _ = TranslateMessage(&msg);

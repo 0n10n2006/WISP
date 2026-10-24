@@ -74,8 +74,14 @@ export interface Settings {
   autoStopVoice: boolean;
   /** Pause that counts as "done talking", in ms. */
   silenceMs: number;
-  /** What turns speech into text: Windows (instant, Gemini backup) or Gemini. */
-  speechEngine: "windows" | "gemini";
+  /** What turns speech into text: Whisper on this PC, Windows, or Gemini. */
+  speechEngine: SpeechEngine;
+  /** Whisper model: standard (small) or accurate (large-v3 turbo). */
+  whisperModel: WhisperModel;
+  /** Ask before acting: only when risky, or always. */
+  confirmActions: "risky" | "always";
+  /** Settings migration level (host-managed). */
+  settingsRev?: number;
   /** Language hint such as "en-GB"; empty = detect. */
   voiceLanguage: string;
   /** Microphone device id; empty = default. */
@@ -184,6 +190,9 @@ export interface ChatTurn {
   text: string;
 }
 
+export type SpeechEngine = "whisper" | "windows" | "gemini";
+export type WhisperModel = "standard" | "accurate";
+
 export interface Attachment {
   mimeType: string;
   dataBase64: string;
@@ -201,6 +210,8 @@ export interface AskRequest {
   think?: boolean;
   /** Ground the answer with Google Search. */
   web?: boolean;
+  /** An earlier turn included screen, clipboard or web content. */
+  outsideContent?: boolean;
 }
 
 export interface Source {
@@ -314,8 +325,10 @@ export const DEFAULT_SETTINGS: Settings = {
   simpleViaOpenrouter: true,
   openrouterModel: "",
   autoStopVoice: true,
-  silenceMs: 800,
-  speechEngine: "windows",
+  silenceMs: 1200,
+  speechEngine: "whisper",
+  whisperModel: "standard",
+  confirmActions: "risky",
   voiceLanguage: "",
   micDevice: "",
   vocabulary: [],
@@ -517,6 +530,24 @@ export type WinChange =
   | { setting: "brightness"; value: number }
   | { setting: "powerMode"; value: PowerMode }
   | { setting: "outputDevice"; value: string };
+
+export interface WhisperModelState {
+  model: WhisperModel;
+  downloaded: boolean;
+  bytes: number;
+}
+
+export interface WhisperStatus {
+  models: WhisperModelState[];
+  downloading: WhisperModel | null;
+  loaded: WhisperModel | null;
+}
+
+export interface WhisperProgress {
+  model: WhisperModel;
+  done: number;
+  total: number;
+}
 
 export interface SpeechStatus {
   available: boolean;

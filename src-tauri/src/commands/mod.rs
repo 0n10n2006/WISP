@@ -10,5 +10,6 @@ pub mod local;
 pub mod personalize;
 pub mod settings;
 pub mod system;
+pub mod whisper;
 
 pub type CmdResult<T> = Result<T, wisp_core::WispError>;

@@ -53,6 +53,9 @@ import type {
   WallpaperInfo,
   Weather,
   WeatherPlace,
+  WhisperModel,
+  WhisperProgress,
+  WhisperStatus,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -142,6 +145,16 @@ export interface Host {
   /** Dictation. */
   createRecorder(): AudioRecorder;
   transcribe(rec: Recording): Promise<string>;
+  /** Transcribe a WAV recording with Whisper on this PC. */
+  transcribeLocal(rec: Recording, purpose: "dictation" | "voice"): Promise<string>;
+  whisperStatus(): Promise<WhisperStatus>;
+  /** Resolves once the model is downloaded and checked. */
+  whisperDownload(model: WhisperModel): Promise<void>;
+  whisperCancelDownload(): Promise<void>;
+  whisperDelete(model: WhisperModel): Promise<void>;
+  /** Load the model while the user is still talking. */
+  whisperPrewarm(): Promise<void>;
+  onWhisperProgress(cb: (p: WhisperProgress) => void): Unsubscribe;
   dictationTarget(): Promise<{ available: boolean; title: string | null }>;
   insertText(text: string): Promise<void>;
 

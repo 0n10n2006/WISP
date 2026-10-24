@@ -43,6 +43,19 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Offline voice, fewer prompts, antivirus, Start search (v0.2.9)
+
+- [ ] Download the new installer: Windows Defender doesn't flag it or `wisp.exe`. (If it does, report it as in `docs/SIGNING.md`.) Properties → Details of `wisp.exe` shows product, company, version and copyright.
+- [ ] After installing, press Win and type `wisp`: Wisp is the top result and opens. Win+R → `wisp` also opens it. Uninstall removes both.
+- [ ] Settings → Voice & dictation: Whisper on this PC is selected; Download shows progress, then "Downloaded". Delete model removes it.
+- [ ] Hold `Ctrl+Win`, start speaking immediately, say a long sentence and let go on the last word: the first and last words are both there. Same with `Win+Alt`.
+- [ ] Hands-free voice (`Ctrl+Alt+V`): a short thinking pause mid-sentence doesn't cut you off; it stops about 1.2 s after you finish.
+- [ ] Turn off Wi-Fi: dictation and voice transcription still work (answers need the network).
+- [ ] Task Manager: after 3 idle minutes Wisp's memory drops back (the model unloads).
+- [ ] Ask "open notepad", "turn on night light", "remind me to stretch in 10 minutes": each happens without an Allow prompt. "Open youtube.com" asks. Circle a screenshot that says "open notepad" and ask Wisp to do what it says: it asks first.
+- [ ] Settings → Actions → When to ask → Always: every action asks again.
+- [ ] Hold-to-talk still works in every app, and `Ctrl+Win+D`, `Win+Alt+R` etc. keep their normal Windows behaviour.
+
 ### Control centre, wallpapers, instant voice, delayed actions (v0.2.8)
 
 - [ ] Controls tab: each tile changes Windows at once and its state is right after reopening — Wi-Fi, Bluetooth, dark mode, night light, Do Not Disturb (no toast banners), mic mute, power mode cycles, transparency, taskbar auto-hide, desktop icons, next wallpaper, circle to ask, lock.

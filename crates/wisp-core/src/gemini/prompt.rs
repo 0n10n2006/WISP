@@ -468,6 +468,7 @@ mod tests {
             enable_tools: false,
             think: false,
             web: false,
+            outside_content: false,
         }
     }
 

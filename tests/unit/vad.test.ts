@@ -49,8 +49,10 @@ describe("VoiceActivity", () => {
 describe("audio clean-up", () => {
   it("trims to the speech with padding", () => {
     const samples = new Float32Array(16000 * 3); // 3 s at 16 kHz
-    const out = trimToSpeech(samples, 16000, 1000, 2000, 250);
+    const out = trimToSpeech(samples, 16000, 1000, 2000, 250, 250);
     expect(out.length).toBe(16000 * 1.5);
+    // By default more is kept after the speech than before it.
+    expect(trimToSpeech(samples, 16000, 1000, 2000).length).toBe(16000 * 2.2);
     expect(trimToSpeech(samples, 16000, null, null).length).toBe(samples.length);
   });
 

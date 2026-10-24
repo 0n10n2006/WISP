@@ -109,4 +109,29 @@ describe("settings window", () => {
       expect(useSettings.getState().snapshot?.settings.simpleViaOpenrouter).toBe(false),
     );
   });
+
+  it("downloads and deletes the offline speech model", async () => {
+    await setupMockHost({ windowKind: "settings", withKey: true, onboarded: true });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("tab", { name: "Voice & dictation" }));
+    expect(screen.getByRole("radio", { name: "Whisper on this PC" })).toBeChecked();
+    expect(await screen.findByText(/not downloaded yet \(465 MB\)/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    expect(await screen.findByText(/ready to use offline/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete model" }));
+    expect(await screen.findByText(/not downloaded yet/i)).toBeInTheDocument();
+  });
+
+  it("chooses when Wisp asks before acting", async () => {
+    await setupMockHost({ windowKind: "settings", withKey: true, onboarded: true });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("tab", { name: "Actions" }));
+    expect(screen.getByRole("radio", { name: "Only when it's risky" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "Always" }));
+    await waitFor(() =>
+      expect(useSettings.getState().snapshot?.settings.confirmActions).toBe("always"),
+    );
+  });
 });

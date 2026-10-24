@@ -1,9 +1,129 @@
 import { useEffect, useState } from "react";
 import { host } from "../../services/host";
-import { chordLabel, type DictationStyle, type SpeechStatus } from "../../services/types";
+import { toWispError } from "../../services/errors";
+import {
+  chordLabel,
+  type DictationStyle,
+  type SpeechEngine as SpeechEngineChoice,
+  type SpeechStatus,
+  type WhisperModel,
+  type WhisperProgress,
+  type WhisperStatus,
+} from "../../services/types";
 import { resetSpeechStatus, speechStatus } from "../../state/liveSpeech";
 import { useSettings } from "../../state/settings";
 import { Choice, Toggle } from "./common";
+
+const MB = 1024 * 1024;
+
+/** Download, progress and removal of the on-device Whisper model. */
+function WhisperModels() {
+  const model = useSettings((st) => st.snapshot?.settings.whisperModel ?? "standard");
+  const update = useSettings((st) => st.update);
+  const [status, setStatus] = useState<WhisperStatus | null>(null);
+  const [progress, setProgress] = useState<WhisperProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const refresh = () =>
+    void host()
+      .whisperStatus()
+      .then(setStatus)
+      .catch(() => {});
+  useEffect(() => {
+    refresh();
+    return host().onWhisperProgress(setProgress);
+  }, []);
+  const current = status?.models.find((m) => m.model === model);
+  const downloading = progress && progress.done < progress.total ? progress : null;
+  const busy = !!downloading || (status?.downloading ?? null) !== null;
+  const download = async () => {
+    setError(null);
+    try {
+      await host().whisperDownload(model);
+    } catch (e) {
+      const err = toWispError(e);
+      if (err.code !== "cancelled") setError(err.message);
+    } finally {
+      setProgress(null);
+      refresh();
+    }
+  };
+  return (
+    <>
+      <Choice<WhisperModel>
+        name="whisper-model"
+        label="Speech model"
+        value={model}
+        options={[
+          { value: "standard", label: "Standard" },
+          { value: "accurate", label: "Most accurate" },
+        ]}
+        onChange={(whisperModel) => {
+          void update({ whisperModel }).then(refresh);
+        }}
+      />
+      <p className="setting-desc">
+        {model === "standard"
+          ? "Whisper small: quick on any recent PC. About 470 MB."
+          : "Whisper large-v3 turbo: best with accents, names and mixed languages, a little slower. About 550 MB."}{" "}
+        It loads when you start talking and leaves memory after a few idle minutes.
+      </p>
+      <div className="row-start" role="status" aria-live="polite">
+        {downloading ? (
+          <>
+            <progress
+              max={downloading.total}
+              value={downloading.done}
+              aria-label="Download progress"
+            />
+            <span className="muted">
+              {Math.round(downloading.done / MB)} of {Math.round(downloading.total / MB)} MB
+            </span>
+            <button
+              className="btn btn-small btn-ghost"
+              onClick={() => void host().whisperCancelDownload()}
+            >
+              Cancel
+            </button>
+          </>
+        ) : current?.downloaded ? (
+          <>
+            <span className="muted">Downloaded, ready to use offline.</span>
+            <button
+              className="btn btn-small btn-ghost"
+              onClick={() =>
+                void host()
+                  .whisperDelete(model)
+                  .then(refresh)
+                  .catch((e) => setError(toWispError(e).message))
+              }
+            >
+              Delete model
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="muted">
+              Not downloaded yet{current ? ` (${Math.round(current.bytes / MB)} MB)` : ""}. Until
+              then Wisp uses Gemini.
+            </span>
+            <button
+              className="btn btn-small btn-primary"
+              disabled={busy}
+              onClick={() => void download()}
+            >
+              Download
+            </button>
+          </>
+        )}
+      </div>
+      {error && (
+        <p className="setting-desc" role="alert">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
 
 /** Speech engine choice, with what Windows says about its recognizer. */
 function SpeechEngine() {
@@ -11,7 +131,7 @@ function SpeechEngine() {
   const update = useSettings((st) => st.update);
   const [status, setStatus] = useState<SpeechStatus | null>(null);
   const lang = s?.voiceLanguage ?? "";
-  const engine = s?.speechEngine ?? "windows";
+  const engine = s?.speechEngine ?? "whisper";
   useEffect(() => {
     if (engine !== "windows") return;
     let live = true;
@@ -25,21 +145,25 @@ function SpeechEngine() {
   return (
     <section className="group">
       <h3>Speech to text</h3>
-      <Choice<"windows" | "gemini">
+      <Choice<SpeechEngineChoice>
         name="speech-engine"
         label="Recognise speech with"
         value={engine}
         options={[
-          { value: "windows", label: "Windows (instant)" },
-          { value: "gemini", label: "Gemini (most accurate)" },
+          { value: "whisper", label: "Whisper on this PC" },
+          { value: "windows", label: "Windows (live words)" },
+          { value: "gemini", label: "Gemini" },
         ]}
         onChange={(speechEngine) => void update({ speechEngine })}
       />
       <p className="setting-desc">
-        {engine === "windows"
-          ? "Words appear while you speak and the answer starts the moment you stop. Windows dictation is handled by Microsoft's online speech service; if it isn't sure what it heard, Wisp sends the recording to Gemini instead."
-          : "Your recording is sent to Gemini after you stop. A little slower, best for accents, names and mixed languages."}
+        {engine === "whisper"
+          ? "Accurate and private: speech is turned into text on your PC and the audio never leaves it. Works offline."
+          : engine === "windows"
+            ? "Words appear while you speak. Windows dictation is handled by Microsoft's online speech service; if it isn't sure what it heard, Wisp sends the recording to Gemini instead."
+            : "Your recording is sent to Gemini after you stop."}
       </p>
+      {engine === "whisper" && <WhisperModels />}
       {engine === "windows" && status && !status.available && (
         <div className="banner banner-warning" role="status">
           <div className="banner-body">

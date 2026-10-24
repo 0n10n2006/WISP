@@ -442,15 +442,18 @@ export function PrivacyTab() {
             screen to Gemini; “Google Lens” on a circled area sends just that area to Google Lens
             and opens the results in your browser; with an OpenRouter key (optional), simple text
             questions and clipboard help go to OpenRouter's free models (text only, never
-            screenshots or audio); with the Windows speech engine (Voice settings), what you say is
-            recognised by Microsoft's online speech service; weather sends the place you picked to
+            screenshots or audio); the offline speech model downloads once from whisper.cpp's
+            Hugging Face page; with the Windows speech engine (Voice settings), what you say is
+            recognised by Microsoft's online speech service, and with the Gemini engine (or before
+            the model is downloaded) recordings go to Gemini; weather sends the place you picked to
             Open-Meteo; the speed test downloads from speed.cloudflare.com; update checks contact
             GitHub.
           </li>
           <li>
             <strong>Stays on this PC:</strong> settings, reminders, memory, clipboard history (off
             by default), launcher and agent history, and request history (metadata only unless you
-            opt in below). Your API key is stored in Windows Credential Manager.
+            opt in below), and what you say with offline voice (Whisper, the default). Your API key
+            is stored in Windows Credential Manager.
           </li>
           <li>
             <strong>Never collected:</strong> Wisp has no analytics or telemetry. Nothing is sent to

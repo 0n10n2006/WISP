@@ -683,6 +683,7 @@ mod tests {
             enable_tools: true,
             think: false,
             web: false,
+            outside_content: false,
         }
     }
 
