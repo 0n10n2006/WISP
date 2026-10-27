@@ -190,18 +190,6 @@ html[data-window="highlight"] body {
   color: var(--color-accent);
   font-variant-numeric: tabular-nums;
 }
-.peek-live {
-  position: relative;
-  color: var(--color-accent);
-}
-.peek-level {
-  width: 22px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--color-accent);
-  transform-origin: left center;
-  transition: transform 80ms linear;
-}
 .peek-dot {
   width: 7px;
   height: 7px;
@@ -1725,18 +1713,42 @@ html[data-notch="ball"][data-corner="bottom-right"] :is(.peek, .bar-wrap) {
   color: var(--color-text-muted);
 }
 
-/* ---------- Live words while speaking ---------- */
-.live-words {
-  margin: 4px 16px 10px;
-  max-height: 4.5em;
-  overflow: hidden;
-  font-size: var(--text-md, 15px);
-  line-height: 1.5;
-  color: var(--color-text);
-  text-align: center;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+/* ---------- Asking by voice ---------- */
+.voice-hint {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 16px 10px;
+  padding-bottom: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-accent);
+}
+/* Fills up while Wisp waits to ask; restarts whenever new words arrive. */
+.voice-countdown {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  border-radius: 1px;
+  background: var(--color-accent);
+  transform-origin: left center;
+  animation: voice-countdown 1.5s linear both;
+}
+@keyframes voice-countdown {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-countdown {
+    animation: none;
+    opacity: 0.5;
+  }
 }
 
 /* ---------- Control centre ----------

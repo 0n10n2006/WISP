@@ -4,10 +4,9 @@ import { createMockHost, type MockHostOptions } from "../src/services/mockHost";
 import { useClipboardAssist, useDueReminders } from "../src/state/assist";
 import { useCapture } from "../src/state/capture";
 import { useConversation } from "../src/state/conversation";
-import { useDictation } from "../src/state/dictation";
-import { resetSpeechStatus } from "../src/state/liveSpeech";
 import { useNotch } from "../src/state/notch";
 import { useSettings } from "../src/state/settings";
+import { useVoice } from "../src/state/voice";
 import { useConfirm } from "../src/screens/notch/actions";
 
 /** Fresh mock host + reset stores for each test. */
@@ -16,7 +15,6 @@ export async function setupMockHost(
 ): Promise<Host> {
   const h = createMockHost({ tokenDelay: 0, persist: false, ...opts });
   setHost(h);
-  resetSpeechStatus();
   useConversation.setState({
     messages: [],
     requestActive: false,
@@ -38,7 +36,7 @@ export async function setupMockHost(
     timer: null,
   });
   useConfirm.setState({ pending: null });
-  useDictation.getState().cancel();
+  useVoice.getState().stop();
   if (opts.withKey) await h.setApiKey("AIzaTEST-key-0000000000000000000");
   if (opts.onboarded) await h.updateSettings({ onboardingComplete: true });
   await act(async () => {

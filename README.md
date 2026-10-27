@@ -145,22 +145,22 @@ test downloads from `speed.cloudflare.com` only when you press the button. Agent
 
 ## Shortcuts
 
-| Action                               | Default                        |
-| ------------------------------------ | ------------------------------ |
-| Open the command bar                 | `Ctrl+Alt+Space`               |
-| Circle (or box) an area to ask about | `Ctrl+Shift+S`                 |
-| Dictation (press to start/stop)      | `Ctrl+Shift+D`                 |
-| Clipboard history / help             | `Ctrl+Shift+C`                 |
-| Ask by voice (press to start/stop)   | `Ctrl+Alt+V`                   |
-| Tuck Wisp away / bring it back       | `Ctrl+Alt+H`                   |
-| **Hold** to dictate into any app     | `Ctrl+Win` (release to insert) |
-| **Hold** to ask by voice             | `Win+Alt` (release to ask)     |
+| Action                               | Default          |
+| ------------------------------------ | ---------------- |
+| Open the command bar                 | `Ctrl+Alt+Space` |
+| Circle (or box) an area to ask about | `Ctrl+Shift+S`   |
+| Dictation (press to start/stop)      | `Ctrl+Shift+D`   |
+| Clipboard history / help             | `Ctrl+Shift+C`   |
+| Ask by voice (press to start/stop)   | `Ctrl+Alt+V`     |
+| Tuck Wisp away / bring it back       | `Ctrl+Alt+H`     |
+| **Tap** to dictate into any app      | `Ctrl+Win`       |
+| **Tap** to ask by voice              | `Win+Alt`        |
 
 Change them in **Settings → Shortcuts** (or type `shortcuts` in the bar): click a shortcut and press the new
-keys; Wisp's own shortcuts pause while you do. The hold keys can be any two of Ctrl, Alt, Shift and Win (or
-off), also in **Settings → Shortcuts**; turn hold-to-talk off in **Settings → Voice & dictation**. The hold
-keys are watched by a keyboard hook that only looks at modifier keys and never blocks or records typing. If you
-press any other key while holding them, they act as normal Windows shortcuts (e.g. `Ctrl+Win+D`).
+keys; Wisp's own shortcuts pause while you do. The voice keys can be any two of Ctrl, Alt, Shift and Win (or
+off), also in **Settings → Shortcuts**; turn them off in **Settings → Voice & dictation**. They're read through
+Raw Input, which only looks at modifier keys and never blocks or records typing. If you press any other key
+with them, they act as normal Windows shortcuts (e.g. `Ctrl+Win+D`).
 
 ## Circle to ask and Show me
 
@@ -178,34 +178,28 @@ circle is dimmed in the image. The area is attached to your next question and is
 **Show me**: type `where is …` or `show me …` and Wisp takes one screenshot of the current screen, asks Gemini
 where that is, and rings it with a label for a few seconds (the overlay is click-through).
 
-## Dictation
+## Voice and dictation
 
-Hold `Ctrl+Win` in any app, speak, and let go: Wisp transcribes on your PC with Whisper and types the text
-where your cursor was. Or press `Ctrl+Shift+D` / the mic button to dictate with a review step (**Insert** or **Copy**).
-Choose the clean-up in **Settings → Voice & dictation**: **Verbatim**, **Clean** (removes "um" and "uh";
-default) or **Polished** (reworded by Gemini). Recordings stop after 2 minutes; audio
-is discarded after transcription unless you turn on _Keep dictation audio_.
+Voice uses Windows 11's own voice typing (the same as `Win+H`): words appear as you speak, punctuated, and
+it stops by itself when you pause. There's nothing to download and no wait after you finish; Wisp never
+records audio itself.
 
-If dictation says the microphone is blocked, open **Windows Settings → Privacy & security → Microphone** and
-allow desktop apps.
+- **Dictate:** tap `Ctrl+Win` (or press `Ctrl+Shift+D`, or the mic button) and talk: the words are typed
+  straight into the app you're in.
+- **Ask by voice:** tap `Win+Alt` (or press `Ctrl+Alt+V`, or the talk button): the words appear in Wisp's bar
+  and the question is asked a moment after you stop. Press Enter to ask straight away, or type to edit first.
+  Spoken commands like "timer 25" or "night light on" run instantly.
 
-## Voice questions
-
-Hold `Win+Alt`, ask, and let go. Or press `Ctrl+Alt+V` / the talk button and just speak: Wisp notices when
-you've finished (a pause of 1.2 s by default) and asks by itself. The transcript is asked as a normal question
-and the answer appears as text. Wisp never listens in the background and never speaks.
-
-**Better recognition** (**Settings → Voice & dictation**): pick your microphone and the language you speak,
-add names and jargon it should spell exactly, and tune the pause that means "done". Wisp learns the room's
-background noise, trims silence, evens out quiet microphones, and tells Gemini your installed app names so
-"open Obsidian" comes out right.
+Voice typing uses Microsoft's speech service. If Windows says it isn't available, turn on **Settings → Time &
+language → Speech → Online speech recognition** (**Settings → Voice & dictation** has a button). Language,
+microphone and automatic punctuation are set in Windows (press `Win+H`, then the gear).
 
 ## Knows your PC
 
 With **app awareness** on (default; **Settings → Privacy**), each question includes the name of the app you're
 in, your open apps and your installed apps, so you can ask "what's using my screen?", "open Steam" or "switch
 to Spotify". Only names are sent, never window contents; window titles only if you allow them. Opening an app
-Opening an app runs straight away when you ask for it.
+runs straight away when you ask for it.
 
 ## Actions, reminders, memory, clipboard
 
@@ -248,19 +242,6 @@ carousel: click one to set it, or use Next and Shuffle (also on the control cent
 
 **Later:** "open Chrome in 20 seconds", "switch to Spotify in 5 minutes", "turn on night light in an hour":
 it runs then (anything more than an hour away asks first). Waiting actions show on the Today tab with a cancel button.
-
-## Offline voice (Whisper)
-
-Voice and dictation run [Whisper](https://github.com/ggml-org/whisper.cpp) on your PC: accurate, offline,
-and your audio never leaves the machine. The model downloads the first time you use voice (or press
-**Download** in **Settings → Voice & dictation**); until then Wisp uses Gemini.
-
-- **Standard** (Whisper small, ~470 MB): about half a second to a second for a sentence on a recent laptop.
-- **Most accurate** (Whisper large-v3 turbo, ~550 MB): better with accents, names and mixed languages.
-
-The model loads while you're talking and leaves memory after 3 idle minutes, so Wisp stays light. Words you
-add under **Names and words** are passed to Whisper so it spells them right. You can still choose Windows'
-recognizer (words appear live, uses Microsoft's online speech service) or Gemini only.
 
 ## Free models and routing
 
@@ -309,10 +290,10 @@ picking a model per job and switching when one runs out (**Settings → Model �
 | "Slow down a moment"       | Per-minute limit hit. Wait a few seconds and press **Try again**.                                                |
 | Shortcut doesn't work      | Another app may own it. See the warning in **Settings → Shortcuts** and choose another.                          |
 | The notch is gone          | It's tucked or a fullscreen app is in front. Press `Ctrl+Alt+H` or use the tray icon.                            |
-| Hold-to-talk does nothing  | Check **Settings → Voice & dictation** and **Settings → Shortcuts**.                                             |
+| Voice keys do nothing      | Check **Settings → Voice & dictation** and **Settings → Shortcuts**.                                             |
 | "Wisp closed unexpectedly" | A redacted crash report is in `%APPDATA%\app.wisp.desktop\logs`. Attach it to an issue.                          |
 | Something doesn't react    | **Settings → Data → Preview diagnostics** lists recent errors (also in `logs\errors.log`, kept on this PC only). |
-| Microphone blocked         | Windows Settings → Privacy & security → Microphone → allow desktop apps.                                         |
+| Voice typing unavailable   | Windows Settings → Time & language → Speech → turn on Online speech recognition; allow microphone access.        |
 
 ## Known limitations
 

@@ -75,6 +75,17 @@ fn dispatch(app: &AppHandle, action: &str) {
             let tucked = app.state::<crate::state::AppState>().settings().tucked;
             windows::set_tucked(app, !tucked);
         }
+        "dictation" => {
+            // Voice typing goes into the app in front: don't open the bar
+            // over it, just remember it.
+            if let Some(t) = crate::foreground::current() {
+                *app.state::<crate::state::AppState>()
+                    .insert_target
+                    .lock()
+                    .expect("target") = Some(t);
+            }
+            let _ = app.emit_to(windows::ISLAND, "wisp://shortcut", "dictation");
+        }
         other => {
             windows::summon_island(app);
             let _ = app.emit_to(windows::ISLAND, "wisp://shortcut", other);

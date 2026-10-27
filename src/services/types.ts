@@ -34,8 +34,7 @@ export interface Settings {
   voiceEnabled: boolean;
   /** Skip the model's thinking step for much faster answers. */
   fastMode: boolean;
-  dictationStyle: DictationStyle;
-  /** Hold Ctrl+Win to dictate, Win+Alt to ask by voice (keys configurable). */
+  /** Tap Ctrl+Win to dictate, Win+Alt to ask by voice (keys configurable). */
   holdToTalk: boolean;
   /** Modifier pair held to dictate, e.g. "ctrl+win", or "off". */
   holdDictate: HoldChord;
@@ -70,24 +69,10 @@ export interface Settings {
   simpleViaOpenrouter: boolean;
   /** OpenRouter model; "" picks the biggest free one. */
   openrouterModel: string;
-  /** Stop listening automatically when you finish speaking. */
-  autoStopVoice: boolean;
-  /** Pause that counts as "done talking", in ms. */
-  silenceMs: number;
-  /** What turns speech into text: Whisper on this PC, Windows, or Gemini. */
-  speechEngine: SpeechEngine;
-  /** Whisper model: standard (small) or accurate (large-v3 turbo). */
-  whisperModel: WhisperModel;
   /** Ask before acting: only when risky, or always. */
   confirmActions: "risky" | "always";
   /** Settings migration level (host-managed). */
   settingsRev?: number;
-  /** Language hint such as "en-GB"; empty = detect. */
-  voiceLanguage: string;
-  /** Microphone device id; empty = default. */
-  micDevice: string;
-  /** Names and words dictation should get right. */
-  vocabulary: string[];
   hideInGames: boolean;
   shortcutsInGames: boolean;
   /** Process names Wisp never appears over. */
@@ -97,8 +82,6 @@ export interface Settings {
   /** Forget history whenever Wisp closes or Windows shuts down. */
   clearHistoryOnExit: boolean;
   screenContextEnabled: boolean;
-  dictationAutoInsert: boolean;
-  retainAudio: boolean;
   useMemory: boolean;
   contentHistory: boolean;
   historyRetentionDays: number;
@@ -129,7 +112,6 @@ export function chordLabel(c: HoldChord): string {
     .join("+");
 }
 
-export type DictationStyle = "verbatim" | "clean" | "formal";
 export type Tone = "concise" | "friendly" | "professional";
 export type Accent = "cyan" | "lavender" | "ember" | "mint" | "custom";
 export type NotchPosition = "left" | "center" | "right";
@@ -189,9 +171,6 @@ export interface ChatTurn {
   role: "user" | "model";
   text: string;
 }
-
-export type SpeechEngine = "whisper" | "windows" | "gemini";
-export type WhisperModel = "standard" | "accurate";
 
 export interface Attachment {
   mimeType: string;
@@ -290,7 +269,6 @@ export const DEFAULT_SETTINGS: Settings = {
   selectedModel: "gemini-2.5-flash",
   voiceEnabled: true,
   fastMode: true,
-  dictationStyle: "clean",
   holdToTalk: true,
   holdDictate: "ctrl+win",
   holdAsk: "win+alt",
@@ -324,14 +302,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoFallback: true,
   simpleViaOpenrouter: true,
   openrouterModel: "",
-  autoStopVoice: true,
-  silenceMs: 1200,
-  speechEngine: "whisper",
-  whisperModel: "standard",
   confirmActions: "risky",
-  voiceLanguage: "",
-  micDevice: "",
-  vocabulary: [],
   hideInGames: true,
   shortcutsInGames: false,
   neverOverApps: [],
@@ -339,8 +310,6 @@ export const DEFAULT_SETTINGS: Settings = {
   shareWindowTitles: false,
   clearHistoryOnExit: false,
   screenContextEnabled: true,
-  dictationAutoInsert: false,
-  retainAudio: false,
   useMemory: true,
   contentHistory: false,
   historyRetentionDays: 30,
@@ -531,35 +500,6 @@ export type WinChange =
   | { setting: "powerMode"; value: PowerMode }
   | { setting: "outputDevice"; value: string };
 
-export interface WhisperModelState {
-  model: WhisperModel;
-  downloaded: boolean;
-  bytes: number;
-}
-
-export interface WhisperStatus {
-  models: WhisperModelState[];
-  downloading: WhisperModel | null;
-  loaded: WhisperModel | null;
-}
-
-export interface WhisperProgress {
-  model: WhisperModel;
-  done: number;
-  total: number;
-}
-
-export interface SpeechStatus {
-  available: boolean;
-  reason: string | null;
-  fixUri: string | null;
-}
-
-export interface Heard {
-  text: string;
-  confidence: "high" | "medium" | "low" | "rejected";
-}
-
 /** A confirmed action waiting to run ("open Chrome in 20 seconds"). */
 export interface ScheduledAction {
   id: string;
@@ -681,7 +621,7 @@ export interface Point {
 
 export interface HoldEvent {
   chord: "dictate" | "ask";
-  phase: "start" | "stop" | "cancel";
+  phase: "start" | "stop" | "cancel" | "tap";
 }
 
 export interface OpenWindow {

@@ -5,10 +5,8 @@ import { useOrbState } from "../../hooks/useOrbState";
 import { host } from "../../services/host";
 import type { AgentJob, NowPlaying } from "../../services/types";
 import { useDueReminders } from "../../state/assist";
-import { useDictation } from "../../state/dictation";
 import { formatCountdown, useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
-import { useVoice } from "../../state/voice";
 
 function useNow(ms: number): number {
   const [now, setNow] = useState(() => Date.now());
@@ -39,11 +37,6 @@ export function Peek() {
   const state = useOrbState();
   const now = useNow(1000);
   const timer = useNotch((n) => n.timer);
-  const dictation = useDictation((d) => d.phase);
-  const level = useDictation((d) => d.level);
-  const voice = useVoice((v) => v.phase);
-  const dictHandsFree = useDictation((d) => d.handsFree);
-  const voiceHandsFree = useVoice((v) => v.handsFree);
   const jobs = useRunningJobs();
   const reminder = useDueReminders((r) => r.due[0]);
   const [playing, setPlaying] = useState<NowPlaying | null>(null);
@@ -60,21 +53,7 @@ export function Peek() {
   }, []);
 
   let main: React.ReactNode;
-  if (dictation === "listening" || dictation === "starting")
-    main = (
-      <span className="peek-live">
-        <span className="peek-level" style={{ transform: `scaleX(${0.15 + level * 0.85})` }} />
-        {dictHandsFree ? "Listening — pause when you're done" : "Listening — release to type it in"}
-      </span>
-    );
-  else if (dictation === "transcribing") main = <span>Writing it down…</span>;
-  else if (voice === "listening")
-    main = (
-      <span>
-        {voiceHandsFree ? "Listening — pause when you're done" : "Listening — release to ask"}
-      </span>
-    );
-  else if (voice === "transcribing" || state === "thinking") main = <span>Thinking…</span>;
+  if (state === "thinking") main = <span>Thinking…</span>;
   else if (reminder)
     main = (
       <span className="peek-reminder">

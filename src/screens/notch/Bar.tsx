@@ -1,22 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { ClipboardCard } from "../../components/ClipboardCard";
-import { DictationCard } from "../../components/DictationCard";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { Icon, type IconName } from "../../components/Icon";
 import { MessageList } from "../../components/MessageList";
 import { ReminderBanner } from "../../components/ReminderBanner";
-import { VoiceCard } from "../../components/VoiceCard";
 import { useOnline } from "../../hooks/useOnline";
 import { chipsFor } from "../../lib/chips";
 import { host } from "../../services/host";
 import { askAboutClipboard, useClipboardAssist } from "../../state/assist";
 import { runCaptureAction, useCapture, type CaptureAction } from "../../state/capture";
 import { useConversation } from "../../state/conversation";
-import { useDictation } from "../../state/dictation";
 import { useNotch } from "../../state/notch";
 import { useSettings } from "../../state/settings";
 import { toast } from "../../state/toast";
-import { useVoice } from "../../state/voice";
 import { Dashboard } from "../dashboard/load";
 import { useConfirm } from "./actions";
 import { busy } from "./busy";
@@ -257,8 +253,6 @@ export default function Bar() {
   const input = useRef<CommandBarHandle>(null);
   const query = useNotch((n) => n.query);
   const messages = useConversation((c) => c.messages);
-  const dictating = useDictation((d) => d.phase !== "idle");
-  const voiceActive = useVoice((v) => v.phase !== "idle");
   const clipboardOpen = useClipboardAssist((c) => c.open);
   const snapshot = useSettings((s) => s.snapshot);
   const online = useOnline();
@@ -351,9 +345,7 @@ export default function Bar() {
   const showChat = messages.length > 0;
 
   let body;
-  if (dictating) body = <DictationCard />;
-  else if (voiceActive) body = <VoiceCard />;
-  else if (clipboardOpen) body = <ClipboardCard />;
+  if (clipboardOpen) body = <ClipboardCard />;
   else if (query.trim())
     body = null; // results render inside the command bar
   else if (showChat)
@@ -406,7 +398,7 @@ export default function Bar() {
         <PendingCapture sendCapture={() => input.current?.submit()} />
         {body !== null && (
           <div className="bar-body">
-            {!hasKey && snapshot && !query && !dictating && !voiceActive && <SetupCard />}
+            {!hasKey && snapshot && !query && <SetupCard />}
             {body}
           </div>
         )}

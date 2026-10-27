@@ -35,18 +35,6 @@ pub const MAX_PERSONA_CHARS: usize = 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
-pub enum DictationStyle {
-    /// Exactly as spoken.
-    Verbatim,
-    /// Remove filler words and fix grammar, keep the speaker's voice.
-    #[default]
-    Clean,
-    /// Polished, professional wording.
-    Formal,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
 pub enum Tone {
     #[default]
     Concise,
@@ -76,31 +64,6 @@ pub enum NotchPosition {
     Right,
 }
 
-/// What turns speech into text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum SpeechEngine {
-    /// Whisper on this PC: accurate, offline, no audio leaves the machine.
-    /// Gemini is the backup until the model is downloaded.
-    #[default]
-    Whisper,
-    /// Windows' own recognizer: words appear as you speak; Gemini is the backup.
-    Windows,
-    /// Gemini only.
-    Gemini,
-}
-
-/// Which Whisper model runs on this PC.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum WhisperModel {
-    /// Whisper small (about 190 MB): fast on any recent CPU.
-    #[default]
-    Standard,
-    /// Whisper large-v3 turbo (about 550 MB): best accuracy, a little slower.
-    Accurate,
-}
-
 /// When Wisp asks before doing something the model proposed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -113,8 +76,8 @@ pub enum ConfirmPolicy {
     Always,
 }
 
-/// Bumped when a stored setting's meaning changes; see `migrate`.
-pub const SETTINGS_REV: u32 = 1;
+/// Bumped when a stored setting's meaning changes; see `migrated`.
+pub const SETTINGS_REV: u32 = 2;
 
 /// What Wisp looks like when it's resting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -161,7 +124,6 @@ pub const DASHBOARD_TABS: [&str; 8] = [
     "wallpaper",
     "power",
 ];
-pub const MAX_VOCABULARY: usize = 100;
 pub const MAX_NEVER_OVER: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -204,12 +166,11 @@ pub struct Settings {
     pub voice_enabled: bool,
     /// Skip the model's "thinking" step for much faster answers.
     pub fast_mode: bool,
-    pub dictation_style: DictationStyle,
-    /// Hold Ctrl+Win to dictate and Win+Alt to ask by voice.
+    /// Tap Ctrl+Win to dictate and Win+Alt to ask by voice.
     pub hold_to_talk: bool,
-    /// Modifier pair held to dictate, e.g. "ctrl+win" (or "off").
+    /// Modifier pair tapped to dictate, e.g. "ctrl+win" (or "off").
     pub hold_dictate: String,
-    /// Modifier pair held to ask by voice, e.g. "win+alt" (or "off").
+    /// Modifier pair tapped to ask by voice, e.g. "win+alt" (or "off").
     pub hold_ask: String,
     /// Hide the notch while a fullscreen app (game, video) is in front.
     pub auto_hide_fullscreen: bool,
@@ -249,24 +210,11 @@ pub struct Settings {
     pub simple_via_openrouter: bool,
     /// OpenRouter model to use; empty picks the biggest free one.
     pub openrouter_model: String,
-    /// Stop listening automatically when you finish speaking.
-    pub auto_stop_voice: bool,
-    /// Pause after speech that counts as "done talking" (ms).
-    pub silence_ms: u32,
-    /// What turns speech into text.
-    pub speech_engine: SpeechEngine,
-    pub whisper_model: WhisperModel,
     /// When to ask before running an action.
     pub confirm_actions: ConfirmPolicy,
     /// Which `migrate` steps a stored file has had (missing = 0).
     #[serde(default)]
     pub settings_rev: u32,
-    /// Spoken language hint (BCP-47 such as "en-GB"); empty = detect.
-    pub voice_language: String,
-    /// Microphone device id; empty = Windows default.
-    pub mic_device: String,
-    /// Names and words dictation should get right.
-    pub vocabulary: Vec<String>,
     /// Hide the notch and pause hold-to-talk while a game is in front.
     pub hide_in_games: bool,
     /// Let Wisp's shortcuts work while a game is in front.
@@ -281,8 +229,6 @@ pub struct Settings {
     /// or Windows shuts down.
     pub clear_history_on_exit: bool,
     pub screen_context_enabled: bool,
-    pub dictation_auto_insert: bool,
-    pub retain_audio: bool,
     pub use_memory: bool,
     pub content_history: bool,
     pub history_retention_days: u32,
@@ -318,7 +264,6 @@ impl Default for Settings {
             selected_model: DEFAULT_MODEL.into(),
             voice_enabled: true,
             fast_mode: true,
-            dictation_style: DictationStyle::Clean,
             hold_to_talk: true,
             hold_dictate: "ctrl+win".into(),
             hold_ask: "win+alt".into(),
@@ -343,15 +288,8 @@ impl Default for Settings {
             auto_fallback: true,
             simple_via_openrouter: true,
             openrouter_model: String::new(),
-            auto_stop_voice: true,
-            silence_ms: 1200,
-            speech_engine: SpeechEngine::Whisper,
-            whisper_model: WhisperModel::Standard,
             confirm_actions: ConfirmPolicy::Risky,
             settings_rev: SETTINGS_REV,
-            voice_language: String::new(),
-            mic_device: String::new(),
-            vocabulary: Vec::new(),
             hide_in_games: true,
             shortcuts_in_games: false,
             never_over_apps: Vec::new(),
@@ -359,8 +297,6 @@ impl Default for Settings {
             share_window_titles: false,
             clear_history_on_exit: false,
             screen_context_enabled: true,
-            dictation_auto_insert: false,
-            retain_audio: false,
             use_memory: true,
             content_history: false,
             history_retention_days: 30,
@@ -450,39 +386,10 @@ impl Settings {
                 "Dictation and asking need different hold keys",
             ));
         }
-        if !(500..=4000).contains(&s.silence_ms) {
-            return Err(WispError::invalid(
-                "The pause must be between 0.5 and 4 seconds",
-            ));
-        }
         s.openrouter_model = s.openrouter_model.trim().to_string();
         if !s.openrouter_model.is_empty() && !crate::openrouter::valid_model_id(&s.openrouter_model)
         {
             return Err(WispError::invalid("That OpenRouter model name isn't valid"));
-        }
-        s.voice_language = s.voice_language.trim().to_string();
-        if s.voice_language.len() > 20
-            || !s
-                .voice_language
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            return Err(WispError::invalid("Language must be a code like en-GB"));
-        }
-        if s.mic_device.len() > 300 {
-            return Err(WispError::invalid("Invalid microphone"));
-        }
-        let mut seen = std::collections::HashSet::new();
-        s.vocabulary = s
-            .vocabulary
-            .iter()
-            .map(|w| w.trim().chars().take(60).collect::<String>())
-            .filter(|w| !w.is_empty() && seen.insert(w.to_lowercase()))
-            .collect();
-        if s.vocabulary.len() > MAX_VOCABULARY {
-            return Err(WispError::invalid(format!(
-                "Keep the word list under {MAX_VOCABULARY} entries"
-            )));
         }
         s.never_over_apps = s
             .never_over_apps
@@ -539,16 +446,8 @@ impl Settings {
     /// Apply a JSON merge-patch (shallow per top-level key, deep for objects).
     /// Bring settings saved by an older version up to date.
     pub fn migrated(mut self) -> Self {
-        if self.settings_rev < 1 {
-            // 0.2.9: local Whisper replaces the Windows recognizer as the
-            // default, and the 0.8 s pause cut people off mid-sentence.
-            if self.speech_engine == SpeechEngine::Windows {
-                self.speech_engine = SpeechEngine::Whisper;
-            }
-            if self.silence_ms < 1200 {
-                self.silence_ms = 1200;
-            }
-        }
+        // 0.2.11: voice uses Windows voice typing; the old engine, model,
+        // language and pause settings are simply dropped when loading.
         self.settings_rev = SETTINGS_REV;
         self
     }
@@ -654,23 +553,19 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn migrates_voice_settings_once() {
-        let old: Settings =
-            serde_json::from_value(json!({"speechEngine": "windows", "silenceMs": 800})).unwrap();
+    fn old_voice_settings_are_dropped() {
+        let old: Settings = serde_json::from_value(json!({
+            "speechEngine": "whisper", "whisperModel": "accurate", "silenceMs": 800,
+            "vocabulary": ["Ada"], "dictationStyle": "formal", "retainAudio": true,
+            "voiceEnabled": false
+        }))
+        .unwrap();
         assert_eq!(old.settings_rev, 0);
         let m = old.migrated();
-        assert_eq!(m.speech_engine, SpeechEngine::Whisper);
-        assert_eq!(m.silence_ms, 1200);
+        assert!(!m.voice_enabled);
         assert_eq!(m.settings_rev, SETTINGS_REV);
-        // A choice made after the upgrade sticks.
-        let mut later = m.clone();
-        later.speech_engine = SpeechEngine::Windows;
-        later.silence_ms = 900;
-        let again = later.migrated();
-        assert_eq!(again.speech_engine, SpeechEngine::Windows);
-        assert_eq!(again.silence_ms, 900);
-        let gemini: Settings = serde_json::from_value(json!({"speechEngine": "gemini"})).unwrap();
-        assert_eq!(gemini.migrated().speech_engine, SpeechEngine::Gemini);
+        let v = serde_json::to_value(&m).unwrap();
+        assert!(v.get("speechEngine").is_none() && v.get("vocabulary").is_none());
         assert_eq!(Settings::default().confirm_actions, ConfirmPolicy::Risky);
     }
 
@@ -710,10 +605,9 @@ mod tests {
             )
             .is_err());
         let ok = Settings::default()
-            .patched(&json!({"weatherPlace": {"name": " Leeds ", "latitude": 53.8, "longitude": -1.55}, "dictationStyle": "formal", "accent": "ember"}))
+            .patched(&json!({"weatherPlace": {"name": " Leeds ", "latitude": 53.8, "longitude": -1.55}, "accent": "ember"}))
             .unwrap();
         assert_eq!(ok.weather_place.unwrap().name, "Leeds");
-        assert_eq!(ok.dictation_style, DictationStyle::Formal);
         assert!(Settings::default()
             .patched(&json!({"selectedModel": "../etc"}))
             .is_err());
@@ -775,9 +669,7 @@ mod tests {
                 "notchStyle": "ball",
                 "ballCorner": "top-left",
                 "openrouterModel": " meta-llama/llama-3.3-70b-instruct:free ",
-                "vocabulary": [" Alexandra ", "alexandra", "", "Kubernetes"],
                 "neverOverApps": ["C:\\Tools\\OBS64.EXE", "obs64", "photoshop.exe"],
-                "voiceLanguage": "en-GB",
             }))
             .unwrap();
         assert_eq!(s.accent_color, "#ffaa00");
@@ -787,7 +679,6 @@ mod tests {
         assert_eq!(s.notch_style, NotchStyle::Ball);
         assert_eq!(s.ball_corner, BallCorner::TopLeft);
         assert_eq!(s.openrouter_model, "meta-llama/llama-3.3-70b-instruct:free");
-        assert_eq!(s.vocabulary, vec!["Alexandra", "Kubernetes"]);
         assert_eq!(s.never_over_apps, vec!["obs64", "photoshop"]);
 
         for bad in [
@@ -795,9 +686,6 @@ mod tests {
             json!({"holdDictate": "win+alt"}),
             json!({"accentColor": "red"}),
             json!({"dashboardTabs": ["bogus"]}),
-            json!({"silenceMs": 100}),
-            json!({"silenceMs": 9000}),
-            json!({"voiceLanguage": "en GB; drop"}),
             json!({"notchPosition": "bottom"}),
             json!({"notchStyle": "square"}),
             json!({"ballCorner": "middle"}),

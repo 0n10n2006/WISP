@@ -43,6 +43,14 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Voice = Windows voice typing (v0.2.11)
+
+- [ ] In Notepad, tap `Ctrl+Win` and speak: Windows voice typing opens and the words appear as you talk, punctuated; it stops by itself after a pause. Start doesn't open. `Ctrl+Shift+D` and the bar's mic button do the same in the app you came from.
+- [ ] Tap `Win+Alt` and ask "what's the weather in Leeds": the bar opens, the words appear in it, and about 1.5 s after you stop it asks. Say "timer 25": the timer starts without asking Gemini. Start typing while it's listening: it waits for Enter.
+- [ ] `Ctrl+Win+D`, `Ctrl+Win+←/→` and `Win+Alt+R` still do their normal Windows things and don't start voice typing.
+- [ ] Turn off Online speech recognition: Windows says voice typing isn't available; Settings → Voice & dictation's button opens the right page.
+- [ ] After upgrading from 0.2.9/0.2.10, `%APPDATA%\app.wisp.desktop\models` (the old Whisper model) is gone.
+
 ### Notifications and polish (v0.2.10)
 
 - [ ] Set a reminder one minute ahead: the Windows notification shows Wisp's logo and the name "Wisp", the reminder title as its heading and the notes (or "Reminder") below.

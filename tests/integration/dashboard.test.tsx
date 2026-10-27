@@ -1,9 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
-import type { AudioRecorder } from "../../src/services/recorder";
 import { useConversation } from "../../src/state/conversation";
-import { useDictation } from "../../src/state/dictation";
 import { useNotch } from "../../src/state/notch";
 import { useSettings } from "../../src/state/settings";
 import { setupMockHost } from "../helpers";
@@ -212,44 +210,39 @@ describe("dashboard tabs", () => {
   });
 });
 
-describe("hold to talk", () => {
-  function recorder(): AudioRecorder {
-    return {
-      start: vi.fn(async () => {}),
-      stop: vi.fn(async () => ({ base64: "AAAA", mimeType: "audio/wav", durationMs: 1500 })),
-      cancel: vi.fn(),
-    };
-  }
+describe("voice keys", () => {
+  const mock = () => (window as unknown as { wispMock: { hold(e: unknown): void } }).wispMock;
 
-  it("dictates while Ctrl+Win is held and types it in on release", async () => {
+  it("tapping Ctrl+Win starts Windows voice typing in the app you're in", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
-    vi.spyOn(h, "createRecorder").mockReturnValue(recorder());
-    const insert = vi.spyOn(h, "insertText");
+    const typing = vi.spyOn(h, "voiceTyping");
     render(<App />);
-    const mock = (window as unknown as { wispMock: { hold(e: unknown): void } }).wispMock;
-    act(() => mock.hold({ chord: "dictate", phase: "start" }));
-    await waitFor(() => expect(useDictation.getState().phase).toBe("listening"));
-    expect(await screen.findByText(/release to type it in/i)).toBeInTheDocument();
-    act(() => mock.hold({ chord: "dictate", phase: "stop" }));
-    await waitFor(() =>
-      expect(insert).toHaveBeenCalledWith(
-        "This is a simulated transcript from the browser preview.",
-      ),
-    );
+    act(() => mock().hold({ chord: "dictate", phase: "tap" }));
+    await waitFor(() => expect(typing).toHaveBeenCalledWith("app"));
+    expect(useNotch.getState().mode).not.toBe("open");
   });
 
-  it("discards the recording when the chord becomes a normal shortcut", async () => {
+  it("tapping Win+Alt opens the bar and voice-types the question into it", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
-    const rec = recorder();
-    vi.spyOn(h, "createRecorder").mockReturnValue(rec);
-    const transcribe = vi.spyOn(h, "transcribe");
+    const typing = vi.spyOn(h, "voiceTyping");
     render(<App />);
-    const mock = (window as unknown as { wispMock: { hold(e: unknown): void } }).wispMock;
-    act(() => mock.hold({ chord: "dictate", phase: "start" }));
-    await waitFor(() => expect(useDictation.getState().phase).toBe("listening"));
-    act(() => mock.hold({ chord: "dictate", phase: "cancel" }));
-    expect(rec.cancel).toHaveBeenCalled();
-    expect(transcribe).not.toHaveBeenCalled();
+    act(() => mock().hold({ chord: "ask", phase: "tap" }));
+    await waitFor(() => expect(typing).toHaveBeenCalledWith("bar"));
+    expect(useNotch.getState().mode).toBe("open");
+    expect(await screen.findByPlaceholderText("Speak now…")).toBeInTheDocument();
+  });
+
+  it("a held chord starts on release; a chord that became a shortcut does nothing", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const typing = vi.spyOn(h, "voiceTyping");
+    render(<App />);
+    act(() => mock().hold({ chord: "dictate", phase: "start" }));
+    act(() => mock().hold({ chord: "dictate", phase: "cancel" }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(typing).not.toHaveBeenCalled();
+    act(() => mock().hold({ chord: "dictate", phase: "start" }));
+    act(() => mock().hold({ chord: "dictate", phase: "stop" }));
+    await waitFor(() => expect(typing).toHaveBeenCalledOnce());
   });
 });
 

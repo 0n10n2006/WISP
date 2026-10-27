@@ -20,16 +20,15 @@ mod routing;
 mod secrets;
 mod selftest;
 mod shortcuts;
-mod speech;
 mod startmenu;
 mod state;
 mod stats;
 mod system_controls;
 mod system_theme;
 mod tray;
+mod voicetyping;
 mod wallpaper;
 mod watch;
-mod whisper;
 mod windows;
 mod winsettings;
 
@@ -230,6 +229,7 @@ pub fn run() {
             commands::settings::remove_api_key,
             commands::settings::list_models,
             commands::settings::test_connection,
+            commands::voice::voice_typing,
             commands::personalize::win_settings_get,
             commands::personalize::win_setting_set,
             commands::personalize::win_settings_page,
@@ -237,16 +237,6 @@ pub fn run() {
             commands::personalize::wallpaper_folder_add,
             commands::personalize::wallpaper_folder_remove,
             commands::personalize::wallpaper_next,
-            commands::dictation::speech_status,
-            commands::dictation::speech_start,
-            commands::dictation::speech_stop,
-            commands::dictation::speech_cancel,
-            commands::whisper::whisper_status,
-            commands::whisper::whisper_download,
-            commands::whisper::whisper_cancel_download,
-            commands::whisper::whisper_delete,
-            commands::whisper::whisper_prewarm,
-            commands::whisper::transcribe_local,
             commands::ask::scheduled_list,
             commands::ask::scheduled_cancel,
             commands::settings::test_openrouter_key,
@@ -274,9 +264,6 @@ pub fn run() {
             commands::capture::capture_select_lasso,
             commands::capture::show_me,
             commands::capture::highlights_get,
-            commands::dictation::dictation_target,
-            commands::dictation::transcribe,
-            commands::dictation::insert_text,
             commands::local::tasks_list,
             commands::local::task_create,
             commands::local::task_update,
@@ -362,7 +349,7 @@ fn clear_history(app: &tauri::AppHandle) {
     let _ = state.db.clear_clips(false);
 }
 
-/// Apply the history retention period to stored history and kept audio.
+/// Apply the history retention period, and tidy old voice files.
 fn housekeeping(app: &tauri::AppHandle) {
     use tauri::Manager;
     let state = app.state::<AppState>();
@@ -371,12 +358,9 @@ fn housekeeping(app: &tauri::AppHandle) {
         .db
         .prune_history(s.history_retention_days.max(1), s.content_history);
     if let Ok(dir) = app.path().app_data_dir() {
-        let days = if s.retain_audio {
-            s.history_retention_days.max(1)
-        } else {
-            0
-        };
-        cleanup::prune_recordings(&dir, days);
+        // Voice no longer records anything: clear what older versions kept
+        // (recordings, the offline speech model).
+        cleanup::remove_voice_leftovers(&dir);
     }
 }
 

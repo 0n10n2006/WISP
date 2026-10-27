@@ -3,12 +3,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toWispError } from "./errors";
 import type { AskHandle, Host, Unsubscribe, WindowKind } from "./host";
-import { createMediaRecorder } from "./recorder";
 import type { WispError } from "./errors";
 import type {
-  Heard,
   ScheduledAction,
-  SpeechStatus,
   WinSettingsState,
   FreeModel,
   ModelUsage,
@@ -20,8 +17,6 @@ import type {
   SettingsSnapshot,
   ShortcutAction,
   HoldEvent,
-  WhisperProgress,
-  WhisperStatus,
 } from "./types";
 
 /** Note a problem in the host's local error log (never throws). */
@@ -143,18 +138,7 @@ export function createTauriHost(): Host {
     onCaptureReady: (cb) => subscribe<CaptureReady>("wisp://capture-ready", cb),
     onCaptureError: (cb) => subscribe<WispError>("wisp://capture-error", cb),
 
-    createRecorder: () => createMediaRecorder(),
-    transcribe: (rec) => call("transcribe", { audioBase64: rec.base64, mimeType: rec.mimeType }),
-    transcribeLocal: (rec, purpose) =>
-      call("transcribe_local", { audioBase64: rec.base64, purpose }),
-    whisperStatus: () => call<WhisperStatus>("whisper_status"),
-    whisperDownload: (model) => call("whisper_download", { model }),
-    whisperCancelDownload: () => call("whisper_cancel_download"),
-    whisperDelete: (model) => call("whisper_delete", { model }),
-    whisperPrewarm: () => call("whisper_prewarm"),
-    onWhisperProgress: (cb) => subscribe<WhisperProgress>("wisp://whisper-download", cb),
-    dictationTarget: () => call("dictation_target"),
-    insertText: (text) => call("insert_text", { text }),
+    voiceTyping: (target) => call("voice_typing", { target }),
 
     respondAction: (id, approved) => call("action_respond", { id, approved }),
     tasksList: (includeCompleted) => call("tasks_list", { includeCompleted }),
@@ -217,11 +201,6 @@ export function createTauriHost(): Host {
     winSettings: () => call<WinSettingsState>("win_settings_get"),
     winSettingSet: (change) => call<{ message: string }>("win_setting_set", { change }),
     winSettingsPage: (change) => call<string>("win_settings_page", { change }),
-    speechStatus: (language) => call<SpeechStatus>("speech_status", { language }),
-    speechStart: (language) => call("speech_start", { language }),
-    speechStop: () => call<Heard>("speech_stop"),
-    speechCancel: () => call("speech_cancel"),
-    onSpeech: (cb) => subscribe<string>("wisp://speech", cb),
     scheduledList: () => call<ScheduledAction[]>("scheduled_list"),
     scheduledCancel: (id) => call<boolean>("scheduled_cancel", { id }),
     onScheduledRan: (cb) =>

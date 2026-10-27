@@ -1,11 +1,8 @@
 import { act, render, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
-import { createFakeRecorder } from "../../src/services/recorder";
-import { useConversation } from "../../src/state/conversation";
 import { useNotch } from "../../src/state/notch";
 import { useSettings } from "../../src/state/settings";
-import { useVoice } from "../../src/state/voice";
 import { setupMockHost } from "../helpers";
 
 async function openBar() {
@@ -107,38 +104,5 @@ describe("customisation", () => {
     await waitFor(() =>
       expect(useSettings.getState().snapshot!.settings.neverOverApps).toEqual(["spotify"]),
     );
-  });
-});
-
-describe("knowing when you're done talking", () => {
-  beforeEach(() => useVoice.getState().cancel());
-
-  it("asks by itself after you pause", async () => {
-    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
-    await h.updateSettings({ silenceMs: 500 });
-    await reload();
-    vi.spyOn(h, "createRecorder").mockReturnValue(createFakeRecorder(300));
-    const ask = vi.spyOn(h, "ask");
-    await act(() => useVoice.getState().start());
-    expect(useVoice.getState().handsFree).toBe(true);
-    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 4000 });
-    expect(ask.mock.calls[0]![0]).toMatchObject({ contextKind: "voice" });
-    await waitFor(() => expect(useConversation.getState().requestActive).toBe(false), {
-      timeout: 6000,
-    });
-  });
-
-  it("waits for the key when holding to talk", async () => {
-    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
-    await h.updateSettings({ silenceMs: 500 });
-    await reload();
-    vi.spyOn(h, "createRecorder").mockReturnValue(createFakeRecorder(100));
-    const ask = vi.spyOn(h, "ask");
-    await act(() => useVoice.getState().start(true));
-    expect(useVoice.getState().handsFree).toBe(false);
-    await new Promise((r) => setTimeout(r, 1000));
-    expect(ask).not.toHaveBeenCalled();
-    expect(useVoice.getState().phase).toBe("listening");
-    useVoice.getState().cancel();
   });
 });

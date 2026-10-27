@@ -44,20 +44,13 @@ code; if you change one of the boundaries below, update this file in the same ch
 
 ## Voice recognition
 
-- With the Whisper engine (the default), speech is recognised on the PC by whisper.cpp; audio never leaves it.
-  The model comes from whisper.cpp's official Hugging Face repository over HTTPS, is written to a `.part` file,
-  and only gets its final name (and is loaded) once its SHA-1 matches the value whisper.cpp publishes in
-  `models/README.md`. Downloads stop if a file grows past its expected size. Recordings reach the host as
-  16-bit PCM WAV (≤ 6 MB of base64, ≤ 130 s) and are parsed by Wisp's own decoder. whisper.cpp is built for
-  AVX2 (`GGML_NATIVE=OFF`), not the CI machine's CPU. Until the model is downloaded, or if it fails, the
-  recording goes to Gemini.
-- With the Windows speech engine, Windows' `SpeechRecognizer` (dictation topic) recognises speech
-  while the user talks; Windows dictation is handled by Microsoft's online speech service, which the Voice
-  settings and Privacy text state. The webview records the same audio as a backup; it goes to Gemini only if
-  Windows is unavailable or unsure, and is discarded otherwise. Choosing the Gemini engine never uses Windows
-  recognition.
-- Recognition runs only between press and release (or Wisp's own pause detection); the recognizer is kept
-  compiled but receives no audio until started.
+- Voice uses Windows 11's own voice typing. The `voice_typing` command waits until the user's modifier keys
+  are released (up to 1.5 s), puts focus back in the app the user came from (or in Wisp's bar), and sends
+  Win+H with `SendInput`. Windows does the recognition under its own speech privacy settings, using
+  Microsoft's speech service. Wisp never opens the microphone, records, stores or uploads audio, and has no
+  speech model or recogniser of its own. Older versions' recordings and downloaded models are deleted at
+  startup.
+- A spoken question is just text typed into the bar; it's asked like a typed one (no different trust).
 
 ## Model routing
 

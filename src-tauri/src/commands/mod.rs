@@ -5,11 +5,10 @@ pub mod ask;
 pub mod capture;
 pub mod dashboard;
 pub mod data;
-pub mod dictation;
 pub mod local;
 pub mod personalize;
 pub mod settings;
 pub mod system;
-pub mod whisper;
+pub mod voice;
 
 pub type CmdResult<T> = Result<T, wisp_core::WispError>;

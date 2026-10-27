@@ -1,7 +1,6 @@
 import { visibleTabs } from "../../src/screens/dashboard/Dashboard";
 import { processName } from "../../src/screens/settings/FocusTab";
 import { moveTab, toggleTab } from "../../src/screens/settings/NotchTab";
-import { parseVocabulary } from "../../src/screens/settings/VoiceTab";
 
 describe("customisation helpers", () => {
   it("orders and filters dashboard tabs", () => {
@@ -19,13 +18,5 @@ describe("customisation helpers", () => {
     expect(processName("C:\\Program Files\\OBS\\obs64.EXE")).toBe("obs64");
     expect(processName("  Photoshop.exe ")).toBe("photoshop");
     expect(processName("")).toBe("");
-  });
-
-  it("reads the vocabulary box", () => {
-    expect(parseVocabulary("Alexandra\nKubernetes, kubernetes\n\n  WISP ")).toEqual([
-      "Alexandra",
-      "Kubernetes",
-      "WISP",
-    ]);
   });
 });

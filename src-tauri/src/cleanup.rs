@@ -4,7 +4,6 @@
 
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, SystemTime};
 
 fn is_leftover(name: &str) -> bool {
     (name.starts_with("wisp.v") && name.ends_with(".bak"))
@@ -53,23 +52,16 @@ pub fn remove_backups(data_dir: &Path) {
     }
 }
 
-/// Delete kept recordings older than `days` (0 deletes them all).
-pub fn prune_recordings(data_dir: &Path, days: u32) -> usize {
-    let cutoff = SystemTime::now() - Duration::from_secs(u64::from(days) * 86_400);
-    let Ok(entries) = fs::read_dir(data_dir.join("recordings")) else {
-        return 0;
-    };
-    entries
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        .filter(|e| {
-            days == 0
-                || e.metadata()
-                    .and_then(|m| m.modified())
-                    .is_ok_and(|t| t < cutoff)
-        })
-        .filter(|e| fs::remove_file(e.path()).is_ok())
-        .count()
+/// Remove what older versions kept for voice: recordings and the offline
+/// speech models (Whisper, up to ~550 MB each). Voice now uses Windows'
+/// own voice typing and keeps nothing.
+pub fn remove_voice_leftovers(data_dir: &Path) {
+    for sub in ["recordings", "models"] {
+        let dir = data_dir.join(sub);
+        if dir.is_dir() {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -102,11 +94,16 @@ mod tests {
     }
 
     #[test]
-    fn prunes_recordings() {
+    fn removes_old_voice_files() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("recordings")).unwrap();
         fs::write(dir.path().join("recordings").join("new.webm"), "x").unwrap();
-        assert_eq!(prune_recordings(dir.path(), 30), 0);
-        assert_eq!(prune_recordings(dir.path(), 0), 1);
+        fs::create_dir(dir.path().join("models")).unwrap();
+        fs::write(dir.path().join("models").join("ggml-small.bin"), "x").unwrap();
+        fs::write(dir.path().join("settings.json"), "{}").unwrap();
+        remove_voice_leftovers(dir.path());
+        assert!(!dir.path().join("recordings").exists());
+        assert!(!dir.path().join("models").exists());
+        assert!(dir.path().join("settings.json").exists());
     }
 }

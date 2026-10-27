@@ -7,11 +7,10 @@ import { invalidateCatalogue, useCatalogue } from "../../lib/catalogue";
 import { host } from "../../services/host";
 import { DEFAULT_SCREEN_PROMPT, useCapture } from "../../state/capture";
 import { useConversation } from "../../state/conversation";
-import { useDictation } from "../../state/dictation";
 import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
-import { useVoice } from "../../state/voice";
+import { spokenQuery, useVoice, VOICE_SEND_MS } from "../../state/voice";
 import { chordLabel, type HoldChord, type OpenWindow } from "../../services/types";
 import { runResult } from "./actions";
 
@@ -23,7 +22,7 @@ export interface CommandBarHandle {
 
 const NO_STARS: string[] = [];
 const holdTitle = (what: string, chord: HoldChord) =>
-  chord === "off" ? what : `${what} (or hold ${chordLabel(chord)})`;
+  chord === "off" ? what : `${what} (or tap ${chordLabel(chord)})`;
 function resultIcon(r: BarResult): IconName {
   if (r.kind === "ask") return "spark";
   if (r.kind === "window") return "external";
@@ -146,6 +145,34 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
     };
   }, [awareness]);
 
+  // Asking by voice: Windows types the words in; once they stop for a
+  // moment, the question is asked (like pressing Enter).
+  const listening = useVoice((v) => v.listening);
+  const [composing, setComposing] = useState(false);
+  // Windows types into whatever has focus: make that the input.
+  useEffect(() => {
+    if (listening) input.current?.focus();
+  }, [listening]);
+  useEffect(() => {
+    if (!listening || composing || !spokenQuery(query)) return;
+    const t = setTimeout(() => {
+      const q = spokenQuery(useNotch.getState().query);
+      useVoice.getState().stop();
+      if (!q) return;
+      setQuery(q);
+      const top = barResults(
+        q,
+        catalogue?.items ?? [],
+        starred,
+        catalogue?.recent ?? [],
+        windows,
+      )[0];
+      if (top) void runResult(top, { web, think });
+    }, VOICE_SEND_MS);
+    return () => clearTimeout(t);
+  }, [listening, composing, query, catalogue, starred, windows, web, think, setQuery]);
+  useEffect(() => () => useVoice.getState().stop(), []);
+
   const results = useMemo(
     () =>
       pending
@@ -178,6 +205,16 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   });
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Keys the user types (not Windows' voice typing) mean they're editing.
+    if (listening && !e.nativeEvent.isComposing && e.key !== "Process" && e.key !== "Enter") {
+      useVoice.getState().stop();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
+    if (e.key === "Enter") useVoice.getState().stop();
     if (e.key === "ArrowDown" && results.length) {
       e.preventDefault();
       setSel({ query, index: (selected + 1) % results.length });
@@ -205,7 +242,11 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
 
   const listId = "bar-results";
   const activeId = results[selected] ? `bar-r-${selected}` : undefined;
-  const placeholder = pending ? "Ask about this area (optional)" : "Ask or type a command…";
+  const placeholder = pending
+    ? "Ask about this area (optional)"
+    : listening
+      ? "Speak now…"
+      : "Ask or type a command…";
 
   return (
     <div className="cmd">
@@ -219,6 +260,8 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
           placeholder={placeholder}
           aria-label="Ask Wisp or search"
           role="combobox"
@@ -288,7 +331,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
             </button>
             <button
               className="icon-btn icon-btn-small"
-              onClick={() => void useDictation.getState().start()}
+              onClick={() => void useVoice.getState().dictate()}
               aria-label="Dictate"
               title={holdTitle("Dictate", holdDictate)}
             >
@@ -296,7 +339,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
             </button>
             <button
               className="icon-btn icon-btn-small"
-              onClick={() => void useVoice.getState().start()}
+              onClick={() => void useVoice.getState().ask()}
               aria-label="Ask by voice"
               title={holdTitle("Ask by voice", holdAsk)}
             >
@@ -321,6 +364,19 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
           </div>
         )}
       </div>
+      {listening && (
+        <p className="voice-hint" role="status">
+          <Icon name="mic" size={14} />
+          {spokenQuery(query) ? (
+            <>
+              <span>Asking when you stop… Enter asks now, typing lets you edit.</span>
+              <span key={query} className="voice-countdown" aria-hidden />
+            </>
+          ) : (
+            <span>Listening — Windows voice typing writes what you say here.</span>
+          )}
+        </p>
+      )}
       {results.length > 0 && (
         <ul className="cmd-results" id={listId} role="listbox" aria-label="Results">
           {results.map((r, i) => (

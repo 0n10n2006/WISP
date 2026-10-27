@@ -73,11 +73,6 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
         let _ = app.state::<AppState>().db.clear_clips(false);
         let _ = app.emit("wisp://data-changed", "clipboard");
     }
-    if old.retain_audio && !new.retain_audio {
-        if let Ok(dir) = app.path().app_data_dir() {
-            crate::cleanup::prune_recordings(&dir, 0);
-        }
-    }
     crate::hotkeys::set_enabled(new.hold_to_talk && new.voice_enabled);
     if old.hold_dictate != new.hold_dictate || old.hold_ask != new.hold_ask {
         crate::hotkeys::configure(&new.hold_dictate, &new.hold_ask);

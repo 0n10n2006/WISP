@@ -37,6 +37,8 @@ pub enum HoldEvent {
     Stop(Chord),
     /// A started chord was turned into a normal shortcut; discard capture.
     Cancel(Chord),
+    /// The chord was pressed on its own and let go before the hold delay.
+    Tap(Chord),
 }
 
 pub const HOLD_DELAY: Duration = Duration::from_millis(250);
@@ -154,6 +156,11 @@ impl HoldDetector {
         self.candidate.is_some()
     }
 
+    /// The chord being held, before it starts.
+    pub fn candidate(&self) -> Option<Chord> {
+        self.candidate.map(|(c, _)| c)
+    }
+
     fn chord(&self) -> Option<Chord> {
         let held = Some(Mods {
             ctrl: self.ctrl,
@@ -200,9 +207,20 @@ impl HoldDetector {
                 }
                 *slot = down;
                 if !self.any_mod() {
+                    let tap = match (self.candidate.take(), self.spoiled, self.active) {
+                        (Some((c, _)), false, None) => Some(HoldEvent::Tap(c)),
+                        _ => None,
+                    };
                     self.spoiled = false;
-                    self.candidate = None;
-                    return self.active.take().map(HoldEvent::Stop);
+                    return self.active.take().map(HoldEvent::Stop).or(tap);
+                }
+                // Letting go of a chord that was pressed on its own (and
+                // never became a hold) is a tap.
+                if !down && self.active.is_none() && !self.spoiled {
+                    if let Some((c, _)) = self.candidate.take() {
+                        self.spoiled = true;
+                        return Some(HoldEvent::Tap(c));
+                    }
                 }
                 if let Some(active) = self.active {
                     if self.chord() != Some(active) && down {
@@ -302,6 +320,49 @@ mod tests {
         );
         assert_eq!(d.key(Key::Mod(Mod::Ctrl), false, at(910, t0)), None);
         assert_eq!(d.active(), None);
+    }
+
+    #[test]
+    fn a_quick_press_on_its_own_is_a_tap() {
+        let t0 = Instant::now();
+        let mut d = HoldDetector::new();
+        d.key(Key::Mod(Mod::Ctrl), true, at(0, t0));
+        d.key(Key::Mod(Mod::Win), true, at(20, t0));
+        assert_eq!(d.candidate(), Some(Chord::Dictate));
+        assert_eq!(
+            d.key(Key::Mod(Mod::Win), false, at(120, t0)),
+            Some(HoldEvent::Tap(Chord::Dictate))
+        );
+        assert_eq!(d.key(Key::Mod(Mod::Ctrl), false, at(130, t0)), None);
+        assert_eq!(d.tick(at(500, t0)), None);
+        // Both keys up at once still counts.
+        d.key(Key::Mod(Mod::Alt), true, at(1000, t0));
+        d.key(Key::Mod(Mod::Win), true, at(1000, t0));
+        d.key(Key::Mod(Mod::Alt), false, at(1100, t0));
+        // (Alt went up first: that's the tap.)
+        assert_eq!(d.key(Key::Mod(Mod::Win), false, at(1100, t0)), None);
+    }
+
+    #[test]
+    fn no_tap_after_a_shortcut_or_a_single_modifier() {
+        let t0 = Instant::now();
+        let mut d = HoldDetector::new();
+        d.key(Key::Mod(Mod::Ctrl), true, at(0, t0));
+        d.key(Key::Mod(Mod::Win), true, at(0, t0));
+        d.key(Key::Other, true, at(50, t0)); // Ctrl+Win+Right
+        assert_eq!(d.key(Key::Mod(Mod::Win), false, at(100, t0)), None);
+        assert_eq!(d.key(Key::Mod(Mod::Ctrl), false, at(110, t0)), None);
+        // Ctrl alone, then released.
+        d.key(Key::Mod(Mod::Ctrl), true, at(200, t0));
+        assert_eq!(d.key(Key::Mod(Mod::Ctrl), false, at(260, t0)), None);
+        // A held chord ends with Stop, not Tap.
+        d.key(Key::Mod(Mod::Ctrl), true, at(300, t0));
+        d.key(Key::Mod(Mod::Win), true, at(300, t0));
+        d.tick(at(600, t0));
+        assert_eq!(
+            d.key(Key::Mod(Mod::Ctrl), false, at(700, t0)),
+            Some(HoldEvent::Stop(Chord::Dictate))
+        );
     }
 
     #[test]

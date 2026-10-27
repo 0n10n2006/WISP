@@ -363,7 +363,7 @@ export function ShortcutsTab() {
   );
 }
 
-/** Which two modifier keys, held on their own, dictate or ask by voice. */
+/** Which two modifier keys, tapped on their own, dictate or ask by voice. */
 function HoldKeys() {
   const s = useSettingsValue();
   const update = useSettings((st) => st.update);
@@ -396,21 +396,21 @@ function HoldKeys() {
   );
   return (
     <section className="group">
-      <h3>Hold to talk</h3>
+      <h3>Voice keys</h3>
       <p className="setting-desc">
-        Hold two modifier keys on their own to talk; let go to finish. Pressing any other key while
-        holding them keeps your normal shortcuts working.
-        {!s.holdToTalk && " Hold-to-talk is off in Voice & dictation."}
+        Tap two modifier keys on their own to start Windows voice typing. Pressing any other key
+        with them keeps your normal shortcuts working.
+        {!s.holdToTalk && " The voice keys are off in Voice & dictation."}
       </p>
       <div className="setting-row">
         <div className="setting-text">
-          <label htmlFor="hold-dictate">Hold to dictate into any app</label>
+          <label htmlFor="hold-dictate">Tap to dictate into any app</label>
         </div>
         {select("hold-dictate", s.holdDictate, s.holdAsk, "holdDictate")}
       </div>
       <div className="setting-row">
         <div className="setting-text">
-          <label htmlFor="hold-ask">Hold to ask by voice</label>
+          <label htmlFor="hold-ask">Tap to ask by voice</label>
         </div>
         {select("hold-ask", s.holdAsk, s.holdDictate, "holdAsk")}
       </div>
@@ -432,9 +432,9 @@ export function PrivacyTab() {
           <li>
             <strong>Sent to Google Gemini when you ask:</strong> your prompt, recent messages in the
             current conversation, and — only if you explicitly include them — a selected screen
-            region, clipboard text, or dictated audio. Enabled memory notes are included unless you
-            turn memory off. With app awareness on (below), the names of the app in front, your open
-            apps and installed apps are included too; window titles only if you allow them.
+            region or clipboard text. Enabled memory notes are included unless you turn memory off.
+            With app awareness on (below), the names of the app in front, your open apps and
+            installed apps are included too; window titles only if you allow them.
           </li>
           <li>
             <strong>Only when you use them:</strong> web answers and research briefs use Google
@@ -442,18 +442,15 @@ export function PrivacyTab() {
             screen to Gemini; “Google Lens” on a circled area sends just that area to Google Lens
             and opens the results in your browser; with an OpenRouter key (optional), simple text
             questions and clipboard help go to OpenRouter's free models (text only, never
-            screenshots or audio); the offline speech model downloads once from whisper.cpp's
-            Hugging Face page; with the Windows speech engine (Voice settings), what you say is
-            recognised by Microsoft's online speech service, and with the Gemini engine (or before
-            the model is downloaded) recordings go to Gemini; weather sends the place you picked to
-            Open-Meteo; the speed test downloads from speed.cloudflare.com; update checks contact
-            GitHub.
+            screenshots); voice uses Windows voice typing, so what you say is recognised by
+            Microsoft's speech service under Windows' own privacy settings (Wisp never records or
+            uploads audio); weather sends the place you picked to Open-Meteo; the speed test
+            downloads from speed.cloudflare.com; update checks contact GitHub.
           </li>
           <li>
             <strong>Stays on this PC:</strong> settings, reminders, memory, clipboard history (off
             by default), launcher and agent history, and request history (metadata only unless you
-            opt in below), and what you say with offline voice (Whisper, the default). Your API key
-            is stored in Windows Credential Manager.
+            opt in below). Your API key is stored in Windows Credential Manager.
           </li>
           <li>
             <strong>Never collected:</strong> Wisp has no analytics or telemetry. Nothing is sent to
@@ -542,13 +539,6 @@ export function PrivacyTab() {
           checked={s.shareWindowTitles}
           disabled={!s.appAwareness}
           onChange={(shareWindowTitles) => void update({ shareWindowTitles })}
-        />
-        <Toggle
-          id="retain-audio"
-          label="Keep dictation audio"
-          description="Off by default. Audio is discarded right after transcription."
-          checked={s.retainAudio}
-          onChange={(retainAudio) => void update({ retainAudio })}
         />
       </section>
     </div>

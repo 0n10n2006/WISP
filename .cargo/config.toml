@@ -1,5 +1,0 @@
-# whisper.cpp would otherwise be tuned to the build machine's CPU (CI
-# runners have AVX-512), producing an app that crashes on other PCs. With
-# this it targets AVX2, which every Windows 11 PC has.
-[env]
-GGML_NATIVE = "OFF"

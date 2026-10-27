@@ -49,7 +49,6 @@ const SAFE_SETTINGS: &[&str] = &[
     "selectedModel",
     "voiceEnabled",
     "fastMode",
-    "dictationStyle",
     "holdToTalk",
     "holdDictate",
     "holdAsk",
@@ -70,20 +69,13 @@ const SAFE_SETTINGS: &[&str] = &[
     "openrouterModel",
     "notchStyle",
     "ballCorner",
-    "autoStopVoice",
-    "silenceMs",
-    "speechEngine",
-    "whisperModel",
     "confirmActions",
     "settingsRev",
-    "voiceLanguage",
     "hideInGames",
     "shortcutsInGames",
     "appAwareness",
     "shareWindowTitles",
     "screenContextEnabled",
-    "dictationAutoInsert",
-    "retainAudio",
     "useMemory",
     "contentHistory",
     "historyRetentionDays",
@@ -119,12 +111,7 @@ fn summarised_settings(s: &Settings) -> serde_json::Map<String, serde_json::Valu
         "wallpaperFolders",
         serde_json::json!(s.wallpaper_folders.len()),
     );
-    put("vocabulary", serde_json::json!(s.vocabulary.len()));
     put("neverOverApps", serde_json::json!(s.never_over_apps.len()));
-    put(
-        "customMicrophone",
-        serde_json::json!(!s.mic_device.is_empty()),
-    );
     m
 }
 
@@ -137,7 +124,6 @@ const SUMMARISED_KEYS: &[&str] = &[
     "wallpaperFolders",
     "weatherPlace",
     "persona",
-    "vocabulary",
     "neverOverApps",
     "micDevice",
     "windowPosition",
@@ -231,8 +217,6 @@ mod tests {
         let mut settings = Settings::default();
         settings.persona.instructions = "I'm Alexandra, a nurse in Leeds".into();
         settings.starred_apps = vec!["lnk:C:\\Users\\alexandra\\x.lnk".into()];
-        settings.vocabulary = vec!["Alexandra".into()];
-        settings.mic_device = "abc123".into();
         let report = build(DiagnosticsInput {
             app_version: "1.0",
             has_api_key: false,

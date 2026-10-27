@@ -1,5 +1,6 @@
-//! Hold-to-talk: hold Ctrl+Win to dictate, Win+Alt to ask by voice (or
-//! the pairs the user picked in Settings → Shortcuts).
+//! Voice keys: tap Ctrl+Win to dictate, Win+Alt to ask by voice (or the
+//! pairs the user picked in Settings → Shortcuts). Voice starts once the keys
+//! are up, so Windows voice typing (Win+H) isn't mixed with them.
 //!
 //! Key events arrive through Raw Input (the API games use), registered on a
 //! hidden window, and feed the pure `wisp_core::hold::HoldDetector`. There is
@@ -27,6 +28,7 @@ pub fn payload(e: HoldEvent) -> HoldPayload {
         HoldEvent::Start(c) => (c, "start"),
         HoldEvent::Stop(c) => (c, "stop"),
         HoldEvent::Cancel(c) => (c, "cancel"),
+        HoldEvent::Tap(c) => (c, "tap"),
     };
     HoldPayload {
         chord: match c {
@@ -59,7 +61,7 @@ pub fn set_recording(on: bool) {
 mod imp {
     use super::*;
     use crate::state::AppState;
-    use crate::windows::{self as wins, NotchMode};
+    use crate::windows as wins;
     use std::sync::mpsc::{channel, Sender};
     use std::sync::{Mutex, OnceLock};
     use std::time::{Duration, Instant};
@@ -114,7 +116,16 @@ mod imp {
             return;
         }
         if let Ok(mut d) = detector().try_lock() {
-            if let Some(e) = d.key(classify(vk), down, Instant::now()) {
+            let was = d.candidate();
+            let event = d.key(classify(vk), down, Instant::now());
+            // A Win-key chord just went down: tell Windows the Win key is
+            // part of a combination now, so letting go never opens Start.
+            if let (None, Some(c)) = (was, d.candidate()) {
+                if d.mods(c).is_some_and(|m| m.win) {
+                    suppress_start_menu();
+                }
+            }
+            if let Some(e) = event {
                 if let Some(tx) = TX.get() {
                     let _ = tx.send(e);
                 }
@@ -187,27 +198,27 @@ mod imp {
     }
 
     fn handle(app: &AppHandle, e: HoldEvent) {
-        if let HoldEvent::Start(chord) = e {
-            // Only a chord with the Win key would otherwise open Start.
-            let win = detector()
-                .lock()
-                .map(|d| d.mods(chord).is_some_and(|m| m.win))
-                .unwrap_or(true);
-            if win {
-                suppress_start_menu();
-            }
-            // Remember where dictated text should go, and show the notch
-            // without taking focus away from that app.
-            if let Some(t) = crate::foreground::current() {
-                *app.state::<AppState>()
-                    .insert_target
+        match e {
+            HoldEvent::Start(chord) => {
+                // Still held: make sure Start stays shut when it's let go.
+                if detector()
                     .lock()
-                    .expect("target") = Some(t);
+                    .map(|d| d.mods(chord).is_some_and(|m| m.win))
+                    .unwrap_or(true)
+                {
+                    suppress_start_menu();
+                }
             }
-            if app.state::<AppState>().island.lock().expect("island").mode != NotchMode::Open {
-                wins::set_mode(app, NotchMode::Peek, None);
+            HoldEvent::Tap(_) | HoldEvent::Stop(_) => {
+                // Remember the app in front: dictation types into it.
+                if let Some(t) = crate::foreground::current() {
+                    *app.state::<AppState>()
+                        .insert_target
+                        .lock()
+                        .expect("target") = Some(t);
+                }
             }
-            wins::set_island_visible(app, true);
+            HoldEvent::Cancel(_) => {}
         }
         let _ = app.emit_to(wins::ISLAND, "wisp://hold", payload(e));
     }

@@ -16,8 +16,6 @@ jobs:
   build:
     runs-on: windows-latest
     env:
-      # whisper.cpp's Rust bindings are generated with the runner's LLVM.
-      LIBCLANG_PATH: C:\Program Files\LLVM\bin
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

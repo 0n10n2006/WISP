@@ -9,7 +9,6 @@ import type { HoldEvent, ShortcutAction } from "../../services/types";
 import { useClipboardAssist, useDueReminders } from "../../state/assist";
 import { useCapture } from "../../state/capture";
 import { useConversation } from "../../state/conversation";
-import { useDictation } from "../../state/dictation";
 import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
@@ -31,9 +30,7 @@ function Idle() {
   const mode = useNotch((n) => n.mode);
   const state = useOrbState();
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const listening = useDictation((d) => d.phase === "listening" || d.phase === "transcribing");
-  const voice = useVoice((v) => v.phase === "listening" || v.phase === "transcribing");
-  const sticky = listening || voice;
+  const sticky = useVoice((v) => v.listening);
   const sliverStyle = useSettings((s) => s.snapshot?.settings.sliverStyle ?? "glow");
   const ball = useSettings((s) => s.snapshot?.settings.notchStyle === "ball");
 
@@ -109,45 +106,12 @@ function SliverGlow() {
   );
 }
 
-/** Keep listening this long after the keys come up: people let go on the last word. */
-const HOLD_TAIL_MS = 300;
-
-/** Hold-to-talk: Ctrl+Win dictates into the app in front, Win+Alt asks by voice. */
+/** Voice keys: once Ctrl+Win (dictate) or Win+Alt (ask) is tapped, or
+ * held and let go, Windows voice typing starts. */
 function onHold(e: HoldEvent) {
-  if (e.phase === "stop") {
-    setTimeout(() => finishHold(e), HOLD_TAIL_MS);
-    return;
-  }
-  finishHold(e);
-}
-
-function finishHold(e: HoldEvent) {
-  const dictation = useDictation.getState();
-  const voice = useVoice.getState();
-  if (e.chord === "dictate") {
-    if (e.phase === "start") void dictation.start(true);
-    if (e.phase === "cancel") {
-      dictation.cancel();
-      void host().hideIsland();
-    }
-    if (e.phase === "stop") {
-      void dictation.stop(true).then(() => {
-        const after = useDictation.getState();
-        if (after.phase === "idle") void host().hideIsland();
-        else open();
-      });
-    }
-    return;
-  }
-  if (e.phase === "start") void voice.start(true);
-  if (e.phase === "cancel") {
-    voice.cancel();
-    void host().hideIsland();
-  }
-  if (e.phase === "stop") {
-    open();
-    void voice.finish();
-  }
+  if (e.phase !== "tap" && e.phase !== "stop") return;
+  if (e.chord === "dictate") void useVoice.getState().dictate();
+  else void useVoice.getState().ask();
 }
 
 export function Notch() {
@@ -212,6 +176,8 @@ export function Notch() {
       ),
       h.onShortcut((action: ShortcutAction) => {
         if (action === "selectToAsk") return void h.startCapture();
+        if (action === "dictation") return void useVoice.getState().dictate();
+        if (action === "voice") return void useVoice.getState().ask();
         open();
         if (action === "clipboardAssist") {
           if (useSettings.getState().snapshot?.settings.clipboardHistory) {
@@ -219,8 +185,6 @@ export function Notch() {
             useConversation.getState().clear();
           } else void useClipboardAssist.getState().openAssist();
         }
-        if (action === "voice") void useVoice.getState().toggle();
-        if (action === "dictation") void useDictation.getState().toggle();
       }),
     ];
     return () => offs.forEach((off) => off());

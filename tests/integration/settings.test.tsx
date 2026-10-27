@@ -110,17 +110,16 @@ describe("settings window", () => {
     );
   });
 
-  it("downloads and deletes the offline speech model", async () => {
-    await setupMockHost({ windowKind: "settings", withKey: true, onboarded: true });
+  it("voice settings point to Windows voice typing", async () => {
+    const h = await setupMockHost({ windowKind: "settings", withKey: true, onboarded: true });
+    const launch = vi.spyOn(h, "launchItem");
     const user = userEvent.setup();
     render(<App />);
     await user.click(await screen.findByRole("tab", { name: "Voice & dictation" }));
-    expect(screen.getByRole("radio", { name: "Whisper on this PC" })).toBeChecked();
-    expect(await screen.findByText(/not downloaded yet \(488 MB\)/i)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Download" }));
-    expect(await screen.findByText(/ready to use offline/i)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Delete model" }));
-    expect(await screen.findByText(/not downloaded yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/uses Windows voice typing/i)).toBeInTheDocument();
+    expect(screen.queryByText(/whisper/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open Windows speech settings" }));
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ target: "ms-settings:speech" }));
   });
 
   it("chooses when Wisp asks before acting", async () => {

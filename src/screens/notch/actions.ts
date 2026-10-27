@@ -5,7 +5,7 @@ import { formatMinutes } from "../../lib/commands";
 import { toWispError } from "../../services/errors";
 import { host } from "../../services/host";
 import { useConversation } from "../../state/conversation";
-import { useDictation } from "../../state/dictation";
+import { useVoice } from "../../state/voice";
 import { useNotch } from "../../state/notch";
 import { toast } from "../../state/toast";
 
@@ -100,7 +100,7 @@ export async function runCommand(cmd: Command): Promise<void> {
     case "selectArea":
       return guarded(() => h.startCapture());
     case "dictate":
-      return void useDictation.getState().start();
+      return void useVoice.getState().dictate();
     case "tuck":
       return guarded(
         () => h.setTucked(true),

@@ -5,7 +5,6 @@
 import pkg from "../../package.json";
 import type { WispError } from "./errors";
 import type { AskHandle, Host, SelfTestStep, Unsubscribe, WindowKind } from "./host";
-import { createFakeRecorder } from "./recorder";
 import {
   DEFAULT_SETTINGS,
   type ActionAudit,
@@ -33,10 +32,7 @@ import {
   type NotchMode,
   type FreeModel,
   type ModelUsage,
-  type Heard,
   type WinSettingsState,
-  type WhisperModel,
-  type WhisperProgress,
 } from "./types";
 
 const STORAGE_KEY = "wisp.mock.settings";
@@ -180,10 +176,8 @@ export interface MockHostOptions {
   tokenDelay?: number;
   windowKind?: WindowKind;
   persist?: boolean;
-  /** Simulate Windows speech recognition hearing this (else it's unavailable). */
-  speech?: Heard;
-  /** Local Whisper: whether the model is downloaded, and what it hears. */
-  whisper?: { downloaded?: boolean; text?: string; fail?: boolean };
+  /** What Windows voice typing "types" into Wisp's bar when asked by voice. */
+  voice?: string;
 }
 
 export function createMockHost(opts: MockHostOptions = {}): Host {
@@ -204,17 +198,6 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
   }
   let hasKey = persist && safeGet(KEY_FLAG) === "1";
   let hasOpenrouter = false;
-  const speech: Heard | null =
-    opts.speech ??
-    (params.get("speech") === "1"
-      ? { text: "What's the weather like tomorrow", confidence: "high" }
-      : null);
-  let speechTimer: ReturnType<typeof setInterval> | null = null;
-  const whisperModels = new Set<WhisperModel>(
-    opts.whisper?.downloaded ? [settings.whisperModel] : [],
-  );
-  const whisperListeners = new Set<(p: WhisperProgress) => void>();
-  const speechListeners = new Set<(t: string) => void>();
   const scheduledListeners = new Set<
     (r: { description: string; outcome: string; message: string }) => void
   >();
@@ -851,47 +834,18 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     onCaptureReady: (cb) => on(listeners.captureReady, cb),
     onCaptureError: (cb) => on(listeners.captureError, cb),
 
-    // The preview pretends you speak for ~2 s; tests drive the recorder themselves.
-    createRecorder: () => createFakeRecorder(persist ? 2000 : undefined),
-    transcribe: async (rec) => {
-      if (!hasKey)
-        throw err("missing_key", "Add your Gemini API key in Settings → Model to ask Wisp.");
-      await new Promise((r) => setTimeout(r, 200));
-      return rec.durationMs < 0 ? "" : "This is a simulated transcript from the browser preview.";
+    // Windows voice typing, simulated: in the bar, the spoken words appear in
+    // the focused input as if typed.
+    voiceTyping: async (target) => {
+      const text = opts.voice ?? (persist ? "What's the weather like tomorrow?" : null);
+      if (target !== "bar" || !text || typeof document === "undefined") return;
+      setTimeout(() => {
+        const el = document.activeElement;
+        if (!(el instanceof HTMLInputElement)) return;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(el, text);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }, 120);
     },
-    transcribeLocal: async (rec) => {
-      if (!whisperModels.has(settings.whisperModel) || opts.whisper?.fail)
-        throw err("unsupported", "The speech model isn't downloaded yet.");
-      await new Promise((r) => setTimeout(r, 50));
-      return rec.durationMs < 0
-        ? ""
-        : (opts.whisper?.text ?? "This is a simulated transcript from the browser preview.");
-    },
-    whisperStatus: async () => ({
-      models: (["standard", "accurate"] as const).map((model) => ({
-        model,
-        downloaded: whisperModels.has(model),
-        bytes: model === "standard" ? 487_601_967 : 574_041_195,
-      })),
-      downloading: null,
-      loaded: null,
-    }),
-    whisperDownload: async (model) => {
-      const total = model === "standard" ? 487_601_967 : 574_041_195;
-      for (const f of [0.25, 0.5, 1]) {
-        await new Promise((r) => setTimeout(r, 30));
-        whisperListeners.forEach((cb) => cb({ model, done: Math.round(total * f), total }));
-      }
-      whisperModels.add(model);
-    },
-    whisperCancelDownload: async () => {},
-    whisperDelete: async (model) => {
-      whisperModels.delete(model);
-    },
-    whisperPrewarm: async () => {},
-    onWhisperProgress: (cb) => on(whisperListeners, cb),
-    dictationTarget: async () => ({ available: true, title: "Untitled - Notepad" }),
-    insertText: async () => {},
 
     respondAction: async (id, approved) => {
       pendingActions.get(id)?.(approved);
@@ -1228,33 +1182,6 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       return { message: "Done." };
     },
     winSettingsPage: async () => "ms-settings:",
-    speechStatus: async () =>
-      speech
-        ? { available: true, reason: null, fixUri: null }
-        : {
-            available: false,
-            reason: "Instant voice uses Windows speech recognition.",
-            fixUri: null,
-          },
-    speechStart: async () => {
-      if (!speech) throw err("unsupported", "Instant voice uses Windows speech recognition.");
-      const words = speech.text.split(" ");
-      let n = 0;
-      if (speechTimer) clearInterval(speechTimer);
-      speechTimer = setInterval(() => {
-        n = Math.min(words.length, n + 1);
-        speechListeners.forEach((cb) => cb(words.slice(0, n).join(" ")));
-        if (n >= words.length && speechTimer) clearInterval(speechTimer);
-      }, 60);
-    },
-    speechStop: async () => {
-      if (speechTimer) clearInterval(speechTimer);
-      return speech ?? { text: "", confidence: "rejected" };
-    },
-    speechCancel: async () => {
-      if (speechTimer) clearInterval(speechTimer);
-    },
-    onSpeech: (cb) => on(speechListeners, cb),
     scheduledList: async () => [],
     scheduledCancel: async () => false,
     onScheduledRan: (cb) => on(scheduledListeners, cb),

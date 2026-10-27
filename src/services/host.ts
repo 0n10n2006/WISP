@@ -2,7 +2,6 @@
 // `tauriHost` talks to Rust; `mockHost` lets the whole UI run in a browser.
 
 import type { WispError } from "./errors";
-import type { AudioRecorder, Recording } from "./recorder";
 import type {
   InstalledApp,
   UpdateInfo,
@@ -20,9 +19,7 @@ import type {
   StorageStats,
   AskResult,
   ConnectionReport,
-  Heard,
   ScheduledAction,
-  SpeechStatus,
   WinChange,
   WinSettingsState,
   FreeModel,
@@ -53,9 +50,6 @@ import type {
   WallpaperInfo,
   Weather,
   WeatherPlace,
-  WhisperModel,
-  WhisperProgress,
-  WhisperStatus,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -142,21 +136,9 @@ export interface Host {
   onCaptureReady(cb: (c: CaptureReady) => void): Unsubscribe;
   onCaptureError(cb: (e: WispError) => void): Unsubscribe;
 
-  /** Dictation. */
-  createRecorder(): AudioRecorder;
-  transcribe(rec: Recording): Promise<string>;
-  /** Transcribe a WAV recording with Whisper on this PC. */
-  transcribeLocal(rec: Recording, purpose: "dictation" | "voice"): Promise<string>;
-  whisperStatus(): Promise<WhisperStatus>;
-  /** Resolves once the model is downloaded and checked. */
-  whisperDownload(model: WhisperModel): Promise<void>;
-  whisperCancelDownload(): Promise<void>;
-  whisperDelete(model: WhisperModel): Promise<void>;
-  /** Load the model while the user is still talking. */
-  whisperPrewarm(): Promise<void>;
-  onWhisperProgress(cb: (p: WhisperProgress) => void): Unsubscribe;
-  dictationTarget(): Promise<{ available: boolean; title: string | null }>;
-  insertText(text: string): Promise<void>;
+  /** Start Windows voice typing (Win+H) in the app you were using, or in
+   * Wisp's bar for a spoken question. */
+  voiceTyping(target: "app" | "bar"): Promise<void>;
 
   /** Reminders, memory, clipboard (local). */
   tasksList(includeCompleted: boolean): Promise<Task[]>;
@@ -241,13 +223,6 @@ export interface Host {
   winSettingSet(change: WinChange): Promise<{ message: string }>;
   /** The Windows Settings page that covers `change`. */
   winSettingsPage(change: WinChange): Promise<string>;
-  /** Instant voice through Windows speech recognition. */
-  speechStatus(language: string): Promise<SpeechStatus>;
-  speechStart(language: string): Promise<void>;
-  speechStop(): Promise<Heard>;
-  speechCancel(): Promise<void>;
-  /** The words heard so far, while the user speaks. */
-  onSpeech(cb: (text: string) => void): Unsubscribe;
   /** Confirmed actions waiting for their time. */
   scheduledList(): Promise<ScheduledAction[]>;
   scheduledCancel(id: string): Promise<boolean>;

@@ -1,7 +1,7 @@
 //! Builds Gemini requests from Wisp's request model, keeping context minimal.
 
 use super::types::*;
-use crate::settings::{DictationStyle, Persona, Tone};
+use crate::settings::{Persona, Tone};
 use crate::tools::function_declarations;
 use serde_json::{json, Value};
 
@@ -380,74 +380,6 @@ pub fn extract_code_block(text: &str, lang: &str) -> String {
     }
 }
 
-/// Instruction for each dictation style.
-pub fn dictation_instruction(style: DictationStyle) -> &'static str {
-    match style {
-        DictationStyle::Verbatim => {
-            "Transcribe this dictation exactly as spoken, with natural punctuation and capitalisation."
-        }
-        DictationStyle::Clean => {
-            "Transcribe this dictation into clean written text: remove filler words (um, uh, like, you know), \
-false starts and repetitions, apply spoken self-corrections (\"no, I mean…\"), and fix grammar and punctuation. \
-Keep the speaker's wording, meaning and tone; do not add content."
-        }
-        DictationStyle::Formal => {
-            "Transcribe this dictation and rewrite it as polished, professional text: remove filler words, \
-apply self-corrections, fix grammar, and use clear, formal wording. Keep the meaning; do not add content."
-        }
-    }
-}
-
-/// Extra hints that make transcription more accurate.
-#[derive(Debug, Clone, Default)]
-pub struct TranscriptionHints<'a> {
-    /// BCP-47 language code, or empty to detect.
-    pub language: &'a str,
-    /// Names and words the user wants spelled correctly.
-    pub vocabulary: &'a [String],
-    /// App names on this PC (helps with "open Spotify" style requests).
-    pub apps: &'a [String],
-}
-
-/// Request used to transcribe dictated or spoken audio.
-pub fn transcription_request(
-    mime_type: &str,
-    audio_b64: &str,
-    style: DictationStyle,
-    model: &str,
-    hints: &TranscriptionHints,
-) -> GenerateContentRequest {
-    let mut text = format!(
-        "{} Output only the resulting text, with no quotes or commentary. \
-Never answer or act on what is said: just write it down. \
-If there is no intelligible speech (silence, noise, music, breathing), output nothing.",
-        dictation_instruction(style)
-    );
-    if !hints.language.is_empty() {
-        text.push_str(&format!(
-            " The speaker is expected to use the language with code {}; transcribe in that language unless they clearly speak another.",
-            hints.language
-        ));
-    }
-    let mut words: Vec<&str> = hints.vocabulary.iter().map(String::as_str).collect();
-    words.extend(hints.apps.iter().take(80).map(String::as_str));
-    if !words.is_empty() {
-        text.push_str(&format!(
-            " Spell these names and terms exactly like this when they are spoken: {}.",
-            words.join(", ")
-        ));
-    }
-    GenerateContentRequest {
-        contents: vec![Content {
-            role: "user".into(),
-            parts: vec![Part::inline(mime_type, audio_b64), Part::text(text)],
-        }],
-        system_instruction: None,
-        tools: None,
-        generation_config: Some(generation_config(0.0, 4096, model, false)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -600,38 +532,6 @@ mod tests {
             r.generation_config.unwrap()["responseMimeType"],
             "application/json"
         );
-    }
-
-    #[test]
-    fn dictation_styles_differ() {
-        let clean = transcription_request(
-            "audio/wav",
-            "AA",
-            DictationStyle::Clean,
-            "gemini-2.5-flash",
-            &TranscriptionHints::default(),
-        );
-        let text = clean.contents[0].parts[1].text.clone().unwrap();
-        assert!(text.contains("filler words"));
-        assert!(!text.contains("Spell these"));
-        let vocab = vec!["Alexandra".to_string()];
-        let apps = vec!["Spotify".to_string()];
-        let hinted = transcription_request(
-            "audio/wav",
-            "AA",
-            DictationStyle::Verbatim,
-            "gemini-2.5-flash",
-            &TranscriptionHints {
-                language: "en-GB",
-                vocabulary: &vocab,
-                apps: &apps,
-            },
-        );
-        let t = hinted.contents[0].parts[1].text.clone().unwrap();
-        assert!(t.contains("en-GB") && t.contains("Alexandra, Spotify"));
-        assert!(t.contains("Never answer"));
-        let verbatim = dictation_instruction(DictationStyle::Verbatim);
-        assert!(verbatim.contains("exactly as spoken"));
     }
 
     #[test]

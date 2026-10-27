@@ -1,171 +1,97 @@
 import { act, render, screen, waitFor } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
-import type { AudioRecorder } from "../../src/services/recorder";
-import { useActivity } from "../../src/state/activity";
-import { useVoice } from "../../src/state/voice";
+import { useNotch } from "../../src/state/notch";
+import { useSettings } from "../../src/state/settings";
+import { spokenQuery, useVoice, VOICE_SEND_MS } from "../../src/state/voice";
 import { setupMockHost } from "../helpers";
 
-function recorder(mimeType = "audio/webm"): AudioRecorder {
-  return {
-    start: vi.fn(async () => {}),
-    stop: vi.fn(async () => ({ base64: "AAAA", mimeType, durationMs: 1500 })),
-    cancel: vi.fn(),
-  };
+async function openBar() {
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(screen.getByRole("button", { name: /open wisp/i }));
+  return user;
 }
 
-describe("voice conversation", () => {
-  beforeEach(() => {
-    useVoice.getState().cancel();
-    useActivity.setState({ listening: false });
-  });
-
-  it("listens, asks with voice context, and answers in text only", async () => {
+describe("voice (Windows voice typing)", () => {
+  it("the dictate button starts voice typing in the app you came from", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
-    vi.spyOn(h, "createRecorder").mockReturnValue(recorder());
-    const ask = vi.spyOn(h, "ask");
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
-    expect(
-      await screen.findByText("Listening…", { selector: ".dictation-title" }),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 3000 });
-    expect(ask.mock.calls[0]![0]).toMatchObject({
-      contextKind: "voice",
-      prompt: "This is a simulated transcript from the browser preview.",
-    });
-    expect(await screen.findByText(/simulated answer/i, {}, { timeout: 5000 })).toBeInTheDocument();
-    // Wisp never talks back.
-    expect("speechSynthesis" in window && vi.isMockFunction(window.speechSynthesis?.speak)).toBe(
-      false,
-    );
-    expect(useActivity.getState().listening).toBe(false);
+    const typing = vi.spyOn(h, "voiceTyping");
+    const user = await openBar();
+    await user.click(await screen.findByRole("button", { name: "Dictate" }));
+    expect(typing).toHaveBeenCalledWith("app");
   });
 
-  it("respects the voice setting", async () => {
-    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
-    await h.updateSettings({ voiceEnabled: false });
-    await act(async () => {
-      const { useSettings } = await import("../../src/state/settings");
-      await useSettings.getState().load();
-    });
-    await act(() => useVoice.getState().start());
-    expect(useVoice.getState().phase).toBe("error");
-    expect(useVoice.getState().error?.message).toMatch(/turned off/i);
-  });
-
-  it("uses Windows' words straight away when it's sure, without uploading audio", async () => {
+  it("asks by voice: the words appear in the bar and are asked once they stop", async () => {
     const h = await setupMockHost({
       withKey: true,
       onboarded: true,
       windowKind: "island",
-      speech: { text: "What time is it in Tokyo", confidence: "high" },
+      voice: "What time is it in Tokyo.",
     });
-    await h.updateSettings({ speechEngine: "windows" });
-    const rec = recorder();
-    vi.spyOn(h, "createRecorder").mockReturnValue(rec);
-    const transcribe = vi.spyOn(h, "transcribe");
     const ask = vi.spyOn(h, "ask");
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
-    // Words appear while speaking.
-    expect(await screen.findByText("What time is it in Tokyo")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 3000 });
+    const user = await openBar();
+    await user.click(await screen.findByRole("button", { name: "Ask by voice" }));
+    expect(useVoice.getState().listening).toBe(true);
+    const box = screen.getByRole("combobox", { name: /ask wisp/i });
+    await waitFor(() => expect(box).toHaveValue("What time is it in Tokyo."));
+    expect(screen.getByText(/asking when you stop/i)).toBeInTheDocument();
+    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: VOICE_SEND_MS + 2000 });
+    // The full stop Windows adds is dropped.
     expect(ask.mock.calls[0]![0].prompt).toBe("What time is it in Tokyo");
-    expect(transcribe).not.toHaveBeenCalled();
-    expect(rec.cancel).toHaveBeenCalled();
+    expect(useVoice.getState().listening).toBe(false);
   });
 
-  it("falls back to Gemini when Windows isn't sure", async () => {
+  it("typing cancels the automatic send so you can edit", async () => {
     const h = await setupMockHost({
       withKey: true,
       onboarded: true,
       windowKind: "island",
-      speech: { text: "mumble", confidence: "low" },
+      voice: "Summarise my week",
     });
-    await h.updateSettings({ speechEngine: "windows" });
-    vi.spyOn(h, "createRecorder").mockReturnValue(recorder());
-    const transcribe = vi.spyOn(h, "transcribe");
     const ask = vi.spyOn(h, "ask");
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
-    await screen.findByText("Listening…", { selector: ".dictation-title" });
-    await user.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 3000 });
-    expect(transcribe).toHaveBeenCalledOnce();
-    expect(ask.mock.calls[0]![0].prompt).toBe(
-      "This is a simulated transcript from the browser preview.",
-    );
+    const user = await openBar();
+    await user.click(await screen.findByRole("button", { name: "Ask by voice" }));
+    const box = screen.getByRole("combobox", { name: /ask wisp/i });
+    await waitFor(() => expect(box).toHaveValue("Summarise my week"));
+    await user.type(box, " please");
+    expect(useVoice.getState().listening).toBe(false);
+    await new Promise((r) => setTimeout(r, VOICE_SEND_MS + 300));
+    expect(ask).not.toHaveBeenCalled();
+    await user.type(box, "{Enter}");
+    await waitFor(() => expect(ask).toHaveBeenCalledOnce());
+    expect(ask.mock.calls[0]![0].prompt).toBe("Summarise my week please");
   });
 
-  it("transcribes on this PC with Whisper when the model is downloaded", async () => {
+  it("a spoken command runs like a typed one", async () => {
     const h = await setupMockHost({
       withKey: true,
       onboarded: true,
       windowKind: "island",
-      whisper: { downloaded: true, text: "Open Notepad" },
+      voice: "Timer 25.",
     });
-    vi.spyOn(h, "createRecorder").mockReturnValue(recorder("audio/wav"));
-    const local = vi.spyOn(h, "transcribeLocal");
-    const prewarm = vi.spyOn(h, "whisperPrewarm");
-    const transcribe = vi.spyOn(h, "transcribe");
     const ask = vi.spyOn(h, "ask");
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
-    await screen.findByText("Listening…", { selector: ".dictation-title" });
-    expect(prewarm).toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 3000 });
-    expect(ask.mock.calls[0]![0].prompt).toBe("Open Notepad");
-    expect(local).toHaveBeenCalledWith(expect.anything(), "voice");
-    expect(transcribe).not.toHaveBeenCalled();
+    const user = await openBar();
+    await user.click(await screen.findByRole("button", { name: "Ask by voice" }));
+    await waitFor(() => expect(useNotch.getState().timer).not.toBeNull(), {
+      timeout: VOICE_SEND_MS + 2000,
+    });
+    expect(ask).not.toHaveBeenCalled();
   });
 
-  it("uses Gemini and fetches the model while Whisper isn't downloaded", async () => {
+  it("says when voice is turned off", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
-    vi.spyOn(h, "createRecorder").mockReturnValue(recorder("audio/wav"));
-    const download = vi.spyOn(h, "whisperDownload");
-    const transcribe = vi.spyOn(h, "transcribe");
-    const ask = vi.spyOn(h, "ask");
-    const user = userEvent.setup();
+    await act(async () => void (await useSettings.getState().update({ voiceEnabled: false })));
+    const typing = vi.spyOn(h, "voiceTyping");
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
-    await screen.findByText("Listening…", { selector: ".dictation-title" });
-    await user.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 3000 });
-    expect(transcribe).toHaveBeenCalledOnce();
-    expect(download).toHaveBeenCalledWith("standard");
+    await act(() => useVoice.getState().dictate());
+    expect(typing).not.toHaveBeenCalled();
+    expect(await screen.findByText(/voice is turned off/i)).toBeInTheDocument();
   });
 
-  it("uses only Gemini when that's the chosen engine", async () => {
-    const h = await setupMockHost({
-      withKey: true,
-      onboarded: true,
-      windowKind: "island",
-      speech: { text: "hello there", confidence: "high" },
-    });
-    await h.updateSettings({ speechEngine: "gemini" });
-    const start = vi.spyOn(h, "speechStart");
-    vi.spyOn(h, "createRecorder").mockReturnValue(recorder());
-    const transcribe = vi.spyOn(h, "transcribe");
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(screen.getByRole("button", { name: /open wisp/i }));
-    await user.click(await screen.findByRole("button", { name: /ask by voice/i }));
-    await screen.findByText("Listening…", { selector: ".dictation-title" });
-    await user.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(transcribe).toHaveBeenCalledOnce(), { timeout: 3000 });
-    expect(start).not.toHaveBeenCalled();
+  it("cleans up what Windows typed", () => {
+    expect(spokenQuery("  Open Spotify. ")).toBe("Open Spotify");
+    expect(spokenQuery("What's 2 + 2?")).toBe("What's 2 + 2?");
+    expect(spokenQuery("…")).toBe("…");
   });
 });

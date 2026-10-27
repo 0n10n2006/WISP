@@ -40,10 +40,9 @@ export function PreviewFrame({ children }: { children: ReactNode }) {
         <div className="preview-actions">
           <button onClick={() => call("focus")}>Open command bar</button>
           <button onClick={() => call("shortcut", "selectToAsk")}>Circle to ask</button>
-          <button onClick={() => call("hold", { chord: "dictate", phase: "start" })}>
-            Hold Ctrl+Win
+          <button onClick={() => call("hold", { chord: "ask", phase: "tap" })}>
+            Tap Win+Alt (ask by voice)
           </button>
-          <button onClick={() => call("hold", { chord: "dictate", phase: "stop" })}>Release</button>
           <button onClick={() => call("shortcut", "clipboardAssist")}>Clipboard</button>
           <button onClick={() => call("reminder")}>Reminder due</button>
           <button onClick={() => call("blur")}>Click elsewhere</button>
