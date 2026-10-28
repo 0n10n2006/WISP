@@ -38,6 +38,8 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2.7: free-model routing (Gemini → Gemma → OpenRouter)                                 | ✅    | ✅  |
 | v0.2.9: offline Whisper voice, fewer prompts, no keyboard hook, findable in Start search | ✅    |
 | v0.2.10: notifications with Wisp's logo, reminders pop down from the notch, UI polish    | ✅    |
+| v0.2.11–12: voice with Windows' own speech recognition, no pop-up                        | ✅    |
+| v0.2.13: instant file search, quick PC answers, instant app list                         | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -120,6 +122,11 @@ Type anything:
 - **An app or game** — fuzzy search over Start-menu apps, Steam games and Windows settings pages
   (`spo` → Spotify, `vsc` → Visual Studio Code). Starred and recent apps rank first. If the app is already
   open, **Switch to** it comes first; `switch to <app or window title>` jumps straight there.
+- **A file or folder** — Wisp keeps an index of the names of the files in your folders, so `resu` shows
+  `Resume.pdf` instantly. Enter opens it, `Ctrl+Enter` shows it in Explorer. `open my budget`,
+  `open downloads` and `find invoice` work too (also by voice). See [Instant file search](#instant-file-search).
+- **A question about this PC** — `battery`, `disk space`, `my ip`, `memory`, `cpu`, `uptime` are answered on
+  this PC instantly, without Gemini.
 - **A command** — `timer 25`, `stop timer`, `remind me to stretch in 20 min`, `volume 30`, `mute`, `next`,
   `dark mode`, `wifi off`, `bluetooth on`, `lock`, `sleep`, `restart`, `shutdown`, `cancel shutdown`,
   `show me the save button`, `research <topic>`, `replica`, `select`, `dictate`, `tuck`, `stats`, `apps`, …
@@ -192,6 +199,19 @@ to download; Wisp never records audio itself.
 
 Recognition uses Microsoft's speech service: turn on **Settings → Privacy & security → Speech → Online speech
 recognition** (**Settings → Voice & dictation** has a button). The language follows Windows' speech language.
+
+## Instant file search
+
+Wisp indexes the **names and places** (not contents) of the files in Desktop, Documents, Downloads, Pictures,
+Music, Videos and OneDrive once, in the background at low priority, then keeps the index up to date as files
+change. Lookups take a few milliseconds even with hundreds of thousands of files. Add more folders (say, a
+projects drive) or turn it off in **Settings → Search**. Programs, scripts and shortcuts are never listed or
+opened, hidden folders and things like `node_modules` and `AppData` are skipped, and file names never leave
+your PC unless Gemini looks for a file for you (it then sees the names of up to 8 matches). Ask "find my
+budget spreadsheet and open it" and Gemini uses the same index.
+
+The app list is saved too, so the launcher is ready the moment Wisp starts and is refreshed quietly in the
+background.
 
 ## Knows your PC
 

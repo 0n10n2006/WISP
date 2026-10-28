@@ -3,6 +3,9 @@
 
 import type { WispError } from "./errors";
 import type {
+  FileHit,
+  FilesStatus,
+  PcInfo,
   InstalledApp,
   UpdateInfo,
   ActionAudit,
@@ -214,6 +217,19 @@ export interface Host {
   /** The launcher catalogue; `refresh` re-scans installed apps and games. */
   launcherList(refresh?: boolean): Promise<Catalogue>;
   launchItem(item: LaunchItem): Promise<void>;
+  /** File search: names and places from the index, best first. */
+  filesSearch(query: string, limit?: number): Promise<FileHit[]>;
+  /** Open an indexed file (or show it in its folder) by id. */
+  fileOpen(id: number): Promise<string>;
+  fileReveal(id: number): Promise<string>;
+  filesStatus(): Promise<FilesStatus>;
+  filesRebuild(): Promise<FilesStatus>;
+  /** Pick a folder in a native dialog and add it to the index. */
+  filesFolderAdd(): Promise<FilesStatus>;
+  filesFolderRemove(folder: string): Promise<FilesStatus>;
+  onFilesIndex(cb: (s: FilesStatus) => void): Unsubscribe;
+  /** Battery, disks, memory and the local address, read on this PC. */
+  pcInfo(): Promise<PcInfo>;
   /** Dashboard: power (the UI confirms first). */
   powerAction(action: PowerAction): Promise<void>;
   /** Dashboard: wallpaper. */

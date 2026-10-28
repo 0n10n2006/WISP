@@ -42,6 +42,29 @@ code; if you change one of the boundaries below, update this file in the same ch
 - Wallpaper folders are chosen in a native folder picker and kept host-side (the UI can't set them); only
   images directly inside them, on local drives, are listed or read.
 
+## File index
+
+- Wisp indexes the **names, folders, sizes and dates** of files in Desktop, Documents, Downloads, Pictures, Music,
+  Videos, OneDrive and folders the user adds in a native folder picker (host-only, like wallpaper folders: the
+  UI can't set them). It never reads file contents. The index is its own SQLite file (`files.db`) in Wisp's
+  data folder and never leaves the PC; turning "Index my files" off or "Delete everything" clears it.
+- Hidden and system items, links and junctions, folders such as `AppData`, `node_modules`, `.git` and
+  `$Recycle.Bin`, and anything more than 12 levels deep are skipped. Executables, scripts, shortcuts and other
+  types that run code when opened (`exe`, `msi`, `bat`, `cmd`, `ps1`, `vbs`, `js`, `hta`, `lnk`, `url`, `dll`,
+  `reg`, `py`, …) are never indexed or opened, so file search can't become a way to run programs.
+- The UI and the model only ever see an id, the name, the folder relative to its root ("Downloads/Invoices"),
+  the kind and the date. Opening goes by id: the host looks the path up in its own index and checks again,
+  right before opening, that it's inside an indexed folder, not a link, not a blocked type, and still there.
+- Gemini's `find_files` is read-only and returns at most 8 matches. File names are outside text (a downloaded
+  file can be named anything), so after a `find_files` call every other action in that request asks first;
+  only `open_file` on one of the found ids runs straight away on a direct request. Opening files is logged in
+  the action history by kind only (no names).
+- Indexing runs on a background thread at low CPU and disk priority (`THREAD_MODE_BACKGROUND_BEGIN`), watches
+  the folders with `ReadDirectoryChangesW` (no polling) and re-walks them every 6 hours.
+- Quick PC answers ("battery", "disk space", "my ip") are read locally (`GetSystemPowerStatus`, the stats
+  already shown on the dashboard, and the local address of the outgoing interface: a UDP socket is connected but
+  no packet is sent). The public IP is never looked up.
+
 ## Voice recognition
 
 - Voice uses Windows' `SpeechRecognizer` (dictation topic) through continuous recognition, under Windows' own

@@ -68,6 +68,9 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             .db
             .prune_history(new.history_retention_days.max(1), false);
     }
+    if old.index_files != new.index_files || old.index_folders != new.index_folders {
+        app.state::<AppState>().files.reconfigure(new.index_files);
+    }
     if old.clipboard_history && !new.clipboard_history {
         // Turning history off forgets what it kept (pinned clips stay).
         let _ = app.state::<AppState>().db.clear_clips(false);

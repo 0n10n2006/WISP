@@ -12,6 +12,7 @@ mod commands;
 mod crash;
 mod desktop;
 mod errlog;
+mod fileindex;
 mod foreground;
 mod hotkeys;
 mod power;
@@ -110,6 +111,7 @@ pub fn run() {
                 cover: Mutex::new(wisp_core::screen::Cover::Show),
                 stats: Default::default(),
                 catalogue: Mutex::new(None),
+                files: fileindex::Indexer::open(&data_dir.join("files.db")),
                 highlights: Mutex::new(Vec::new()),
             });
 
@@ -151,6 +153,7 @@ pub fn run() {
                 selftest::mark("shortcuts");
             });
             watch::spawn(handle.clone());
+            fileindex::spawn(handle.clone());
             clipboard_history::spawn(handle.clone());
             hotkeys::set_enabled(settings.hold_to_talk && settings.voice_enabled);
             hotkeys::install(handle.clone());
@@ -171,7 +174,16 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                 housekeeping(&warm);
+                // The saved app list is ready at once; scan again quietly.
                 commands::dashboard::cached_catalogue(&warm, false).await;
+                let apps = warm.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        commands::dashboard::cached_catalogue(&apps, true).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                    }
+                });
                 // Installed builds only: a dev build shouldn't add itself to Start.
                 if !cfg!(debug_assertions) {
                     let _ = com_worker::run(startmenu::ensure_shortcut).await;
@@ -246,6 +258,14 @@ pub fn run() {
             commands::personalize::wallpaper_folder_add,
             commands::personalize::wallpaper_folder_remove,
             commands::personalize::wallpaper_next,
+            commands::files::files_search,
+            commands::files::file_open,
+            commands::files::file_reveal,
+            commands::files::files_status,
+            commands::files::files_rebuild,
+            commands::files::files_folder_add,
+            commands::files::files_folder_remove,
+            commands::system::pc_info,
             commands::ask::scheduled_list,
             commands::ask::scheduled_cancel,
             commands::settings::test_openrouter_key,

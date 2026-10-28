@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { Icon, type IconName } from "../../components/Icon";
 import { WispMark } from "../../components/WispMark";
 import { useOrbState } from "../../hooks/useOrbState";
-import { barResults, type BarResult } from "../../lib/commands";
+import { barResults, fileQuery, fileResults, type BarResult } from "../../lib/commands";
 import { invalidateCatalogue, useCatalogue } from "../../lib/catalogue";
 import { host } from "../../services/host";
 import { DEFAULT_SCREEN_PROMPT, useCapture } from "../../state/capture";
@@ -11,7 +11,7 @@ import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
 import { spokenQuery, useVoice } from "../../state/voice";
-import { chordLabel, type HoldChord, type OpenWindow } from "../../services/types";
+import { chordLabel, type FileHit, type HoldChord, type OpenWindow } from "../../services/types";
 import { runResult } from "./actions";
 
 export interface CommandBarHandle {
@@ -21,11 +21,30 @@ export interface CommandBarHandle {
 }
 
 const NO_STARS: string[] = [];
+const NO_FILES: FileHit[] = [];
+/** Wait this long after a keystroke before searching files. */
+const FILE_SEARCH_DELAY = 60;
+
+function fileIcon(kind: FileHit["kind"]): IconName {
+  switch (kind) {
+    case "folder":
+      return "folder";
+    case "image":
+      return "image";
+    case "video":
+      return "play";
+    case "audio":
+      return "headphones";
+    default:
+      return "file";
+  }
+}
 const holdTitle = (what: string, chord: HoldChord) =>
   chord === "off" ? what : `${what} (or tap ${chordLabel(chord)})`;
 function resultIcon(r: BarResult): IconName {
   if (r.kind === "ask") return "spark";
   if (r.kind === "window") return "external";
+  if (r.kind === "file") return fileIcon(r.file.kind);
   if (r.kind === "app")
     return r.item.kind === "game" ? "play" : r.item.kind === "system" ? "settings" : "grid";
   switch (r.command.type) {
@@ -145,6 +164,28 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
     };
   }, [awareness]);
 
+  // Files whose names match, from the host's index (a few ms per search).
+  const indexOn = useSettings((s) => s.snapshot?.settings.indexFiles ?? true);
+  const [found, setFound] = useState<{ query: string; files: FileHit[] }>({
+    query: "",
+    files: NO_FILES,
+  });
+  useEffect(() => {
+    const fq = indexOn && !pending ? fileQuery(query) : null;
+    if (!fq) return;
+    let live = true;
+    const t = setTimeout(() => {
+      host()
+        .filesSearch(fq, 8)
+        .then((files) => live && setFound({ query, files }))
+        .catch(() => {});
+    }, FILE_SEARCH_DELAY);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [query, indexOn, pending]);
+
   // Asking by voice: the words heard fill the input; when Windows hears a
   // pause, the question runs like pressing Enter.
   const listening = useVoice((v) => v.listening && v.target === "bar");
@@ -157,18 +198,28 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
     const q = spoken === null ? "" : spokenQuery(spoken);
     if (!q) return;
     setQuery(q);
-    const top = barResults(q, catalogue?.items ?? [], starred, catalogue?.recent ?? [], windows)[0];
-    if (top) void runResult(top, { web, think });
-  }, [finished, catalogue, starred, windows, web, think, setQuery]);
+    // "Open my resume": look the file up first, so the top result is right.
+    const fq = indexOn ? fileQuery(q) : null;
+    void (fq ? host().filesSearch(fq, 8) : Promise.resolve(NO_FILES))
+      .catch(() => NO_FILES)
+      .then((files) => {
+        const items = catalogue?.items ?? [];
+        const top = barResults(q, items, starred, catalogue?.recent ?? [], windows, files)[0];
+        if (top) void runResult(top, { web, think });
+      });
+  }, [finished, catalogue, starred, windows, web, think, setQuery, indexOn]);
   useEffect(() => () => useVoice.getState().cancel(), []);
 
-  const results = useMemo(
-    () =>
-      pending
-        ? []
-        : barResults(query, catalogue?.items ?? [], starred, catalogue?.recent ?? [], windows),
-    [query, catalogue, starred, pending, windows],
-  );
+  const results = useMemo(() => {
+    if (pending) return [];
+    const items = catalogue?.items ?? [];
+    const recent = catalogue?.recent ?? [];
+    const fresh = indexOn && found.query === query;
+    const list = barResults(query, items, starred, recent, windows, fresh ? found.files : NO_FILES);
+    // While the next search runs, the last matches stay at the bottom (no flicker).
+    const stale = indexOn && !fresh && query.trim() && fileQuery(query) ? found.files : NO_FILES;
+    return stale.length ? [...list, ...fileResults(stale)] : list;
+  }, [query, catalogue, starred, pending, windows, found, indexOn]);
 
   const submit = (r: BarResult | undefined) => {
     if (pending) {
@@ -214,6 +265,9 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
       const r = results[selected];
       // Shift+Enter asks with "think harder" for this one question.
       if (e.shiftKey && r?.kind === "ask") void runResult(r, { web, think: true });
+      // Ctrl+Enter shows a file in its folder instead of opening it.
+      else if ((e.ctrlKey || e.metaKey) && r?.kind === "file")
+        void runResult(r, { web, think, reveal: true });
       else submit(r);
     } else if (e.key === "Tab" && query.trim() && !e.shiftKey) {
       // Tab adds (or removes) the web for this question.
@@ -377,6 +431,19 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
                 <Icon name={resultIcon(r)} size={16} />
               </span>
               <span className="cmd-result-title">{r.title}</span>
+              {r.kind === "file" && i === selected && (
+                <button
+                  className="icon-btn icon-btn-small cmd-result-reveal"
+                  aria-label={`Show ${r.title} in its folder`}
+                  title="Show in folder (Ctrl+Enter)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void runResult(r, { web, think, reveal: true });
+                  }}
+                >
+                  <Icon name="folder" size={14} />
+                </button>
+              )}
               <span className="cmd-result-hint">
                 {r.kind === "ask" ? (
                   <>

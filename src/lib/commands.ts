@@ -3,6 +3,7 @@
 
 import type {
   AppUsage,
+  FileHit,
   LaunchItem,
   MediaCommand,
   OpenWindow,
@@ -45,7 +46,11 @@ export type Command =
   | { type: "selectArea" }
   | { type: "dictate" }
   | { type: "tuck" }
-  | { type: "clearChat" };
+  | { type: "clearChat" }
+  | { type: "pcInfo"; topic: PcTopic; question: string };
+
+/** Questions about this PC answered without the model. */
+export type PcTopic = "battery" | "disk" | "ip" | "memory" | "cpu" | "uptime";
 
 export interface CommandResult {
   kind: "command";
@@ -84,7 +89,16 @@ export interface WindowResult {
   score: number;
 }
 
-export type BarResult = CommandResult | AppResult | WindowResult | AskResultItem;
+/** A file or folder from the index. */
+export interface FileResult {
+  kind: "file";
+  id: string;
+  title: string;
+  hint: string;
+  file: FileHit;
+}
+
+export type BarResult = CommandResult | AppResult | WindowResult | FileResult | AskResultItem;
 
 const UNIT_MINUTES: Record<string, number> = {
   s: 1 / 60,
@@ -272,7 +286,49 @@ export function parseCommand(input: string): CommandResult[] {
   if (/^(tuck|hide|tuck away)$/.test(l)) add("tuck", "Tuck Wisp away", "Wisp", { type: "tuck" });
   if (/^(clear|new chat|new conversation|reset)$/.test(l))
     add("clear", "Start a new conversation", "Wisp", { type: "clearChat" });
+  const topic = pcTopic(l);
+  if (topic)
+    add(`pc-${topic}`, PC_TITLES[topic], "Answered on this PC", {
+      type: "pcInfo",
+      topic,
+      question: q,
+    });
   return out;
+}
+
+const PC_TITLES: Record<PcTopic, string> = {
+  battery: "Battery level",
+  disk: "Free disk space",
+  ip: "This PC's IP address",
+  memory: "Memory use",
+  cpu: "CPU use",
+  uptime: "Time since the PC started",
+};
+
+/** "battery", "how much disk space do I have?", "what's my ip"… */
+export function pcTopic(l: string): PcTopic | null {
+  const t = l
+    .trim()
+    .toLowerCase()
+    .replace(/[?.!]+$/, "")
+    .replace(/^(what'?s|what is|show|check|how'?s) (my |the )?/, "");
+  if (
+    /^(battery|battery level|battery life|charge|how much battery( is left| do i have)?( left)?)$/.test(
+      t,
+    )
+  )
+    return "battery";
+  if (
+    /^(disk space|disk|disks|drives?|storage|free space|space left|how much (disk |free )?(space|storage)( is left| do i have)?( left)?)$/.test(
+      t,
+    )
+  )
+    return "disk";
+  if (/^(ip|ip address|local ip|ip addr)$/.test(t)) return "ip";
+  if (/^(memory|ram|memory usage|ram usage|using (my )?(memory|ram))$/.test(t)) return "memory";
+  if (/^(cpu|cpu usage|processor|using (my )?cpu)$/.test(t)) return "cpu";
+  if (/^(uptime|how long has (my|the|this) pc been (on|running|up))$/.test(t)) return "uptime";
+  return null;
 }
 
 export function formatMinutes(minutes: number): string {
@@ -352,6 +408,50 @@ export function looksLikeQuestion(q: string): boolean {
 }
 
 const SWITCH_PREFIX = /^(?:switch to|go to|jump to|show)\s+(.+)$/i;
+/** "open my resume", "launch spotify": the best local match runs on Enter. */
+const OPEN_PREFIX = /^(?:open|launch|start|run|play)\s+(?:up\s+)?(?:my\s+|the\s+|a\s+)?(.+)$/i;
+/** "find invoice", "files budget": files only. */
+const FIND_PREFIX =
+  /^(?:find|files?|search(?: for)?|look for|where(?:'s| is) my)\s+(?:my\s+|the\s+)?(.+)$/i;
+
+/** What to look up in the file index for `query` (null: no file search). */
+export function fileQuery(query: string): string | null {
+  const q = query.trim();
+  const named = q.match(FIND_PREFIX)?.[1] ?? q.match(OPEN_PREFIX)?.[1];
+  const target = (named ?? (looksLikeQuestion(q) ? "" : q)).replace(/[?.!]+$/, "").trim();
+  if (target.length < 2 || pcTopic(q.toLowerCase())) return null;
+  return target;
+}
+
+const KIND_HINTS: Record<FileHit["kind"], string> = {
+  folder: "Folder",
+  pdf: "PDF",
+  document: "Document",
+  sheet: "Spreadsheet",
+  slides: "Slides",
+  image: "Image",
+  video: "Video",
+  audio: "Audio",
+  archive: "Archive",
+  other: "File",
+};
+
+export function fileResults(files: FileHit[], limit = 5): FileResult[] {
+  return files.slice(0, limit).map((file) => ({
+    kind: "file" as const,
+    id: `file:${file.id}`,
+    title: file.name,
+    hint: file.folder ? `${KIND_HINTS[file.kind]} · ${file.folder}` : KIND_HINTS[file.kind],
+    file,
+  }));
+}
+
+/** The name without its extension, lower case. */
+function stem(name: string): string {
+  const l = name.toLowerCase();
+  const dot = l.lastIndexOf(".");
+  return dot > 0 ? l.slice(0, dot) : l;
+}
 
 /** Friendly app label: "chrome" → "Chrome". */
 function appLabel(app: string): string {
@@ -390,34 +490,53 @@ export function barResults(
   starred: string[],
   recent: AppUsage[],
   windows: OpenWindow[] = [],
+  files: FileHit[] = [],
 ): BarResult[] {
   const q = query.trim();
   if (!q) return [];
+  const ask: AskResultItem = { kind: "ask", id: "ask", title: q, hint: "Ask Wisp", prompt: q };
   const switchTo = q.match(SWITCH_PREFIX)?.[1];
   if (switchTo) {
     const found = rankWindows(switchTo, windows);
     if (found.length) return found;
   }
   const commands = parseCommand(q);
+  if (commands.length) {
+    const question = looksLikeQuestion(q);
+    const apps = question ? [] : rankApps(q, items, starred, recent);
+    const open = question ? [] : rankWindows(q, windows).filter((w) => w.score >= 400);
+    return [...commands, ...open, ...apps, ask];
+  }
+  const fileRows = fileResults(files);
+  if (FIND_PREFIX.test(q)) return [...fileRows, ask];
+  const opening = q.match(OPEN_PREFIX)?.[1]?.replace(/[?.!]+$/, "");
+  if (opening) {
+    // An open window, then an installed app, then a file.
+    const open = rankWindows(opening, windows).filter((w) => w.score >= 600);
+    const apps = rankApps(opening, items, starred, recent);
+    const strongApp = apps.filter((a) => a.score >= 600);
+    const best: BarResult[] = open.length
+      ? open
+      : strongApp.length
+        ? strongApp
+        : fileRows.length
+          ? fileRows
+          : apps;
+    const rest = [...apps, ...fileRows].filter((r) => !best.includes(r));
+    return [...best, ...rest, ask];
+  }
   const question = looksLikeQuestion(q);
   const apps = question ? [] : rankApps(q, items, starred, recent);
   // Switching to an open window beats starting the app again.
   const open = question ? [] : rankWindows(q, windows).filter((w) => w.score >= 400);
-  if (open.length) {
-    const ask: AskResultItem = { kind: "ask", id: "ask", title: q, hint: "Ask Wisp", prompt: q };
-    return [...commands, ...open, ...apps, ask];
-  }
-  const ask: AskResultItem = {
-    kind: "ask",
-    id: "ask",
-    title: q,
-    hint: "Ask Wisp",
-    prompt: q,
-  };
+  if (open.length) return [...open, ...apps, ask, ...fileRows];
   const strongApp = apps[0] && apps[0].score >= 600;
-  if (commands.length) return [...commands, ...apps, ask];
-  if (strongApp) return [...apps, ask];
-  return [ask, ...apps];
+  if (strongApp) return [...apps, ask, ...fileRows];
+  // A file whose name starts with what was typed goes first.
+  const lq = q.toLowerCase();
+  if (lq.length >= 3 && fileRows[0] && stem(fileRows[0].title).startsWith(lq))
+    return [fileRows[0], ask, ...apps, ...fileRows.slice(1)];
+  return [ask, ...apps, ...fileRows];
 }
 
 const ACCENT_NAMES: Record<string, string> = {

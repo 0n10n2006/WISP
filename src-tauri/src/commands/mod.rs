@@ -5,6 +5,7 @@ pub mod ask;
 pub mod capture;
 pub mod dashboard;
 pub mod data;
+pub mod files;
 pub mod local;
 pub mod personalize;
 pub mod settings;

@@ -38,6 +38,7 @@ pub struct DiagnosticsInput<'a> {
 /// Settings copied into the report as they are: switches and choices only.
 const SAFE_SETTINGS: &[&str] = &[
     "onboardingComplete",
+    "indexFiles",
     "launchAtLogin",
     "alwaysOnTop",
     "startHidden",
@@ -112,6 +113,7 @@ fn summarised_settings(s: &Settings) -> serde_json::Map<String, serde_json::Valu
         serde_json::json!(s.wallpaper_folders.len()),
     );
     put("neverOverApps", serde_json::json!(s.never_over_apps.len()));
+    put("indexFolders", serde_json::json!(s.index_folders.len()));
     m
 }
 
@@ -122,6 +124,7 @@ const SUMMARISED_KEYS: &[&str] = &[
     "starredApps",
     "recentWallpapers",
     "wallpaperFolders",
+    "indexFolders",
     "weatherPlace",
     "persona",
     "neverOverApps",

@@ -434,7 +434,9 @@ export function PrivacyTab() {
             current conversation, and — only if you explicitly include them — a selected screen
             region or clipboard text. Enabled memory notes are included unless you turn memory off.
             With app awareness on (below), the names of the app in front, your open apps and
-            installed apps are included too; window titles only if you allow them.
+            installed apps are included too; window titles only if you allow them. When Gemini looks
+            for one of your files, it gets the names and folders of up to 8 matches (never full
+            paths or contents).
           </li>
           <li>
             <strong>Only when you use them:</strong> web answers and research briefs use Google
@@ -449,8 +451,9 @@ export function PrivacyTab() {
           </li>
           <li>
             <strong>Stays on this PC:</strong> settings, reminders, memory, clipboard history (off
-            by default), launcher and agent history, and request history (metadata only unless you
-            opt in below). Your API key is stored in Windows Credential Manager.
+            by default), launcher and agent history, the file-name index used by search, and request
+            history (metadata only unless you opt in below). Your API key is stored in Windows
+            Credential Manager.
           </li>
           <li>
             <strong>Never collected:</strong> Wisp has no analytics or telemetry. Nothing is sent to

@@ -210,3 +210,55 @@ mod tests {
         assert!(!snap.top.is_empty());
     }
 }
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Battery {
+    pub percent: u8,
+    pub charging: bool,
+    pub plugged_in: bool,
+    /// Estimated time left on battery, when Windows knows it.
+    pub secs_left: Option<u32>,
+}
+
+/// The battery, or `None` on a desktop PC.
+#[cfg(windows)]
+pub fn battery() -> Option<Battery> {
+    use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut s = SYSTEM_POWER_STATUS::default();
+    unsafe { GetSystemPowerStatus(&mut s) }.ok()?;
+    const NO_BATTERY: u8 = 128;
+    const CHARGING: u8 = 8;
+    if s.BatteryFlag == 255 || s.BatteryFlag & NO_BATTERY != 0 || s.BatteryLifePercent > 100 {
+        return None;
+    }
+    Some(Battery {
+        percent: s.BatteryLifePercent,
+        charging: s.BatteryFlag & CHARGING != 0,
+        plugged_in: s.ACLineStatus == 1,
+        secs_left: (s.BatteryLifeTime != u32::MAX && s.ACLineStatus != 1)
+            .then_some(s.BatteryLifeTime),
+    })
+}
+
+#[cfg(not(windows))]
+pub fn battery() -> Option<Battery> {
+    None
+}
+
+/// This PC's address on the local network. Connecting a UDP socket only
+/// picks the outgoing interface; no packet is sent.
+pub fn local_ip() -> Option<String> {
+    let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    s.connect("192.0.2.1:9").ok()?;
+    let ip = s.local_addr().ok()?.ip();
+    (!ip.is_unspecified() && !ip.is_loopback()).then(|| ip.to_string())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PcInfo {
+    pub battery: Option<Battery>,
+    pub local_ip: Option<String>,
+    pub stats: StatsSnapshot,
+}

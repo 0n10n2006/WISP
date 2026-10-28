@@ -88,6 +88,7 @@ pub async fn data_delete(
             state.secrets.delete()?;
             state.openrouter_key.delete()?;
             state.routing.clear();
+            state.files.clear();
             reset_settings(&state, false)?;
             if let Ok(dir) = app.path().app_data_dir() {
                 crate::cleanup::wipe_leftovers(&dir);

@@ -47,6 +47,7 @@ fn body_for(req: &AskRequest, model: &str) -> GenerateContentRequest {
             fast: true,
             persona: &PERSONA,
             desktop: None,
+            files: false,
         },
     )
 }

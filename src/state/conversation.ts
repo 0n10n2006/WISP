@@ -69,6 +69,8 @@ interface ConversationState {
   setMemoryForChat(v: boolean): void;
   setDraft(d: string): void;
   ask(prompt: string, opts?: AskOptions): Promise<void>;
+  /** Show a question answered on this PC (no model involved). */
+  localAnswer(question: string, answer: string): void;
   cancel(): void;
   retry(): Promise<void>;
   respondAction(confirmId: string, approved: boolean): void;
@@ -300,6 +302,19 @@ export const useConversation = create<ConversationState>((set, get) => ({
           })),
         }));
       });
+  },
+
+  localAnswer(question, answer) {
+    if (get().requestActive) active?.cancel();
+    const base = { status: "done" as const, contextKind: "text" as const };
+    set((s) => ({
+      error: null,
+      messages: [
+        ...s.messages,
+        { ...base, id: newId(), role: "user", text: question },
+        { ...base, id: newId(), role: "model", text: answer, note: "Answered on this PC" },
+      ],
+    }));
   },
 
   dismissError: () => set({ error: null }),

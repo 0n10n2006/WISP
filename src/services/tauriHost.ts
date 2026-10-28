@@ -18,6 +18,7 @@ import type {
   ShortcutAction,
   HoldEvent,
   Heard,
+  FilesStatus,
 } from "./types";
 
 /** Note a problem in the host's local error log (never throws). */
@@ -194,6 +195,15 @@ export function createTauriHost(): Host {
     clipCopy: (id) => call("clip_copy", { id }),
     launcherList: (refresh) => call("launcher_list", { refresh: refresh ?? false }),
     launchItem: (item) => call("launch_item", { item }),
+    filesSearch: (query, limit) => call("files_search", { query, limit }),
+    fileOpen: (id) => call("file_open", { id }),
+    fileReveal: (id) => call("file_reveal", { id }),
+    filesStatus: () => call("files_status"),
+    filesRebuild: () => call("files_rebuild"),
+    filesFolderAdd: () => call("files_folder_add"),
+    filesFolderRemove: (folder) => call("files_folder_remove", { folder }),
+    onFilesIndex: (cb) => subscribe<FilesStatus>("wisp://files-index", cb),
+    pcInfo: () => call("pc_info"),
     powerAction: (action) => call("power_action", { action }),
     wallpaperInfo: () => call("wallpaper_info"),
     wallpaperThumb: (path) => call("wallpaper_thumb", { path }),

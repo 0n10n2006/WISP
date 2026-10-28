@@ -148,6 +148,7 @@ pub async fn ask(
             fast: settings.fast_mode,
             persona: &settings.persona,
             desktop: desktop.as_ref(),
+            files: settings.index_files,
         };
         build_request(&r, &ctx)
     };
@@ -193,6 +194,9 @@ pub async fn ask(
     let mut finish_reason = None;
     let mut sources: Vec<Source> = Vec::new();
     let mut next = Some(first_out);
+    // File names from find_files are outside text: what the model proposes
+    // after reading them asks first (opening one of those files aside).
+    let mut saw_files = false;
     for _ in 0..MAX_TOOL_ROUNDS {
         let out = match next.take() {
             Some(out) => out,
@@ -231,10 +235,18 @@ pub async fn ask(
         for (i, call) in out.function_calls.iter().enumerate() {
             // A reply asking for many actions at once is a sign of injected
             // instructions; only the first few are considered.
-            let response = if i < wisp_core::tools::MAX_CALLS_PER_TURN {
-                handle_call(&app, &state, call, origin, &on_event, &cancel).await
-            } else {
+            let response = if i >= wisp_core::tools::MAX_CALLS_PER_TURN {
                 json!({ "ok": false, "error": "Too many actions at once; this one was not run." })
+            } else if call.name == "find_files" {
+                saw_files = true;
+                find_files(&state, &call.args).await
+            } else {
+                let origin = if saw_files && call.name != "open_file" {
+                    wisp_core::tools::Origin::Untrusted
+                } else {
+                    origin
+                };
+                handle_call(&app, &state, call, origin, &on_event, &cancel).await
             };
             responses.push(FunctionResponse {
                 name: call.name.clone(),
@@ -283,7 +295,21 @@ pub async fn prewarm(state: State<'_, AppState>) -> CmdResult<()> {
     Ok(())
 }
 
-/// Validate, confirm, execute and audit one model-proposed action.
+/// Answer a `find_files` call from the index (read-only: nothing to confirm).
+async fn find_files(state: &AppState, args: &Value) -> Value {
+    if !state.settings().index_files {
+        return json!({ "ok": false, "error": "File search is turned off in Wisp's settings." });
+    }
+    let query = match wisp_core::tools::find_files_query(args) {
+        Ok(q) => q,
+        Err(e) => return json!({ "ok": false, "error": e.message }),
+    };
+    let hits = state
+        .files
+        .search(&query, wisp_core::tools::MAX_FOUND_FILES);
+    wisp_core::tools::find_files_result(&hits)
+}
+
 /// The app the user came from, their open windows and installed apps, as
 /// names (titles only when the user allows it).
 async fn desktop_context(app: &AppHandle, state: &AppState, titles: bool) -> DesktopContext {
@@ -326,6 +352,7 @@ async fn desktop_context(app: &AppHandle, state: &AppState, titles: bool) -> Des
     }
 }
 
+/// Validate, confirm, execute and audit one model-proposed action.
 async fn handle_call(
     app: &AppHandle,
     state: &AppState,
@@ -366,10 +393,14 @@ async fn handle_call(
     } else {
         Vec::new()
     };
+    let find_file = |id: i64| state.files.get(id).map(|h| h.name);
     let env = ToolEnv {
         allowed_apps: &settings.allowed_apps,
         launchable: &launchable,
         windows: &windows,
+        files: settings
+            .index_files
+            .then_some(&find_file as &(dyn Fn(i64) -> Option<String> + Sync)),
     };
     let validated =
         wisp_core::tools::split_delay(&call.name, &call.args).and_then(|(args, delay)| {

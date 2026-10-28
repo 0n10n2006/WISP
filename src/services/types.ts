@@ -53,6 +53,10 @@ export interface Settings {
   wallpaperFolders: string[];
   /** `#rrggbb`, used when `accent` is "custom". */
   accentColor: string;
+  /** Keep an index of file names in the user's folders for instant search. */
+  indexFiles: boolean;
+  /** Extra folders to index (chosen in a folder picker). */
+  indexFolders: string[];
   notchPosition: NotchPosition;
   sliverStyle: SliverStyle;
   /** A notch along the top, or a floating ball in a corner. */
@@ -283,6 +287,8 @@ export const DEFAULT_SETTINGS: Settings = {
   recentWallpapers: [],
   wallpaperFolders: [],
   accentColor: "#78e4f2",
+  indexFiles: true,
+  indexFolders: [],
   notchPosition: "center",
   sliverStyle: "glow",
   notchStyle: "notch",
@@ -540,6 +546,61 @@ export interface StatsSnapshot {
   netUp: number;
   uptimeSecs: number;
   top: ProcessStat[];
+}
+
+export type FileKind =
+  | "folder"
+  | "pdf"
+  | "document"
+  | "sheet"
+  | "slides"
+  | "image"
+  | "video"
+  | "audio"
+  | "archive"
+  | "other";
+
+/** A file from the index. The host keeps the path; the UI opens by id. */
+export interface FileHit {
+  id: number;
+  name: string;
+  /** Where it is, e.g. "Downloads/Invoices". */
+  folder: string;
+  kind: FileKind;
+  size: number;
+  /** Unix ms. */
+  modified: number;
+}
+
+export interface IndexFolder {
+  path: string;
+  label: string;
+  /** Added by the user (not a standard Windows folder). */
+  user: boolean;
+}
+
+export interface FilesStatus {
+  enabled: boolean;
+  indexing: boolean;
+  count: number;
+  scanned: number;
+  /** When the last full pass finished (unix ms). */
+  updatedAt: number | null;
+  folders: IndexFolder[];
+}
+
+export interface Battery {
+  percent: number;
+  charging: boolean;
+  pluggedIn: boolean;
+  secsLeft: number | null;
+}
+
+/** For questions answered on this PC ("battery", "disk space"). */
+export interface PcInfo {
+  battery: Battery | null;
+  localIp: string | null;
+  stats: StatsSnapshot;
 }
 
 export interface SpeedResult {

@@ -193,6 +193,10 @@ pub struct Settings {
     pub wallpaper_folders: Vec<String>,
     /// Custom accent colour (`#rrggbb`) used when `accent` is `custom`.
     pub accent_color: String,
+    /// Keep an index of file names in the user's folders for instant search.
+    pub index_files: bool,
+    /// Extra folders to index (chosen in a native folder picker; host-only).
+    pub index_folders: Vec<String>,
     pub notch_position: NotchPosition,
     pub sliver_style: SliverStyle,
     pub notch_style: NotchStyle,
@@ -278,6 +282,8 @@ impl Default for Settings {
             recent_wallpapers: Vec::new(),
             wallpaper_folders: Vec::new(),
             accent_color: "#78e4f2".into(),
+            index_files: true,
+            index_folders: Vec::new(),
             notch_position: NotchPosition::Center,
             sliver_style: SliverStyle::Glow,
             notch_style: NotchStyle::Notch,
@@ -405,6 +411,11 @@ impl Settings {
         if s.wallpaper_folders.len() > 10 || s.wallpaper_folders.iter().any(|p| p.len() > 1000) {
             return Err(WispError::invalid("Too many wallpaper folders"));
         }
+        if s.index_folders.len() > crate::files::MAX_USER_FOLDERS
+            || s.index_folders.iter().any(|p| p.len() > 1000)
+        {
+            return Err(WispError::invalid("Too many indexed folders"));
+        }
         if s.recent_wallpapers.len() > 12 || s.recent_wallpapers.iter().any(|p| p.len() > 1000) {
             return Err(WispError::invalid("Too many recent wallpapers"));
         }
@@ -462,6 +473,7 @@ impl Settings {
         // so the UI must not be able to point them anywhere.
         s.recent_wallpapers = self.recent_wallpapers.clone();
         s.wallpaper_folders = self.wallpaper_folders.clone();
+        s.index_folders = self.index_folders.clone();
         s.settings_rev = self.settings_rev;
         s.validated()
     }
@@ -699,10 +711,11 @@ mod tests {
     #[test]
     fn patches_cannot_set_host_only_paths() {
         let s = Settings::default()
-            .patched(&json!({"recentWallpapers": ["\\\\attacker\\share\\x.png"], "wallpaperFolders": ["\\\\attacker\\share"]}))
+            .patched(&json!({"recentWallpapers": ["\\\\attacker\\share\\x.png"], "wallpaperFolders": ["\\\\attacker\\share"], "indexFolders": ["C:\\Windows"]}))
             .unwrap();
         assert!(s.recent_wallpapers.is_empty());
         assert!(s.wallpaper_folders.is_empty());
+        assert!(s.index_folders.is_empty());
     }
 
     #[test]

@@ -171,26 +171,64 @@ pub struct Catalogue {
     pub recent: Vec<AppUsage>,
 }
 
-/// The launcher catalogue, scanned once and then served from memory.
+/// Where the last scan of the launcher catalogue is kept, so the app list is
+/// ready the moment Wisp starts.
+fn catalogue_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("catalogue.json"))
+}
+
+/// Read the saved catalogue, keeping only entries that still validate.
+fn load_catalogue(path: &std::path::Path) -> Option<Vec<LaunchItem>> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let items: Vec<LaunchItem> = serde_json::from_str(&text).ok()?;
+    let items: Vec<LaunchItem> = items
+        .into_iter()
+        .filter(|i| launcher::validate_target(&i.target).is_ok())
+        .take(5000)
+        .collect();
+    (!items.is_empty()).then_some(items)
+}
+
+/// The launcher catalogue: from memory, else the saved copy, else a scan.
+/// `refresh` scans the Start menu and Steam again (and saves the result).
 pub async fn cached_catalogue(app: &AppHandle, refresh: bool) -> std::sync::Arc<Vec<LaunchItem>> {
     use tauri::Manager;
+    let state = app.state::<AppState>();
     if !refresh {
-        if let Some(c) = app
-            .state::<AppState>()
-            .catalogue
-            .lock()
-            .expect("catalogue")
-            .clone()
-        {
+        if let Some(c) = state.catalogue.lock().expect("catalogue").clone() {
             return c;
         }
+        let file = catalogue_file(app);
+        let saved =
+            tauri::async_runtime::spawn_blocking(move || file.and_then(|f| load_catalogue(&f)))
+                .await
+                .ok()
+                .flatten();
+        if let Some(items) = saved {
+            let items = std::sync::Arc::new(items);
+            *state.catalogue.lock().expect("catalogue") = Some(items.clone());
+            return items;
+        }
     }
+    let file = catalogue_file(app);
     let items = std::sync::Arc::new(
-        tauri::async_runtime::spawn_blocking(crate::apps::catalogue)
-            .await
-            .unwrap_or_default(),
+        tauri::async_runtime::spawn_blocking(move || {
+            let items = crate::apps::catalogue();
+            if let (Some(f), false) = (file, items.is_empty()) {
+                if let Ok(json) = serde_json::to_string(&items) {
+                    let _ = std::fs::write(f, json);
+                }
+            }
+            items
+        })
+        .await
+        .unwrap_or_default(),
     );
-    *app.state::<AppState>().catalogue.lock().expect("catalogue") = Some(items.clone());
+    *state.catalogue.lock().expect("catalogue") = Some(items.clone());
     items
 }
 
@@ -442,4 +480,34 @@ pub async fn switch_window(app: AppHandle, id: i64) -> CmdResult<()> {
 #[tauri::command]
 pub fn screen_status(state: State<'_, AppState>) -> wisp_core::screen::Cover {
     *state.cover.lock().expect("cover")
+}
+
+#[cfg(test)]
+mod catalogue_tests {
+    use super::*;
+
+    #[test]
+    fn saved_catalogue_round_trips_and_drops_bad_targets() {
+        let dir = std::env::temp_dir().join(format!("wisp-cat-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("catalogue.json");
+        assert!(load_catalogue(&f).is_none());
+        let good = LaunchItem {
+            id: "uri:ms-calculator:".into(),
+            name: "Calculator".into(),
+            kind: "system".into(),
+            target: "ms-calculator:".into(),
+        };
+        let bad = LaunchItem {
+            id: "uri:x".into(),
+            name: "Bad".into(),
+            kind: "app".into(),
+            target: "cmd.exe /c calc".into(),
+        };
+        std::fs::write(&f, serde_json::to_string(&vec![good.clone(), bad]).unwrap()).unwrap();
+        assert_eq!(load_catalogue(&f).unwrap(), vec![good]);
+        std::fs::write(&f, "not json").unwrap();
+        assert!(load_catalogue(&f).is_none());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

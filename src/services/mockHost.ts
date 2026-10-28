@@ -35,6 +35,9 @@ import {
   type WinSettingsState,
   type Heard,
   type VoiceTarget,
+  type FileHit,
+  type FilesStatus,
+  type StatsSnapshot,
 } from "./types";
 
 const STORAGE_KEY = "wisp.mock.settings";
@@ -65,6 +68,126 @@ export const MOCK_MODELS: ModelInfo[] = [
     inputTokenLimit: 1048576,
   },
 ];
+
+const DAY = 86_400_000;
+/** Files the browser preview pretends to have indexed. */
+export const MOCK_FILES: FileHit[] = [
+  {
+    id: 1,
+    name: "Resume.pdf",
+    folder: "Documents",
+    kind: "pdf",
+    size: 182e3,
+    modified: Date.now() - 20 * DAY,
+  },
+  {
+    id: 2,
+    name: "Resume 2023 old.docx",
+    folder: "Documents/Old",
+    kind: "document",
+    size: 48e3,
+    modified: Date.now() - 400 * DAY,
+  },
+  {
+    id: 3,
+    name: "Invoice_March.pdf",
+    folder: "Downloads/Invoices",
+    kind: "pdf",
+    size: 92e3,
+    modified: Date.now() - 5 * DAY,
+  },
+  {
+    id: 4,
+    name: "budget.xlsx",
+    folder: "Documents",
+    kind: "sheet",
+    size: 31e3,
+    modified: Date.now() - 2 * DAY,
+  },
+  {
+    id: 5,
+    name: "Holiday photos",
+    folder: "Pictures",
+    kind: "folder",
+    size: 0,
+    modified: Date.now() - 60 * DAY,
+  },
+  {
+    id: 6,
+    name: "IMG_2041.jpg",
+    folder: "Pictures/Holiday photos",
+    kind: "image",
+    size: 3.2e6,
+    modified: Date.now() - 60 * DAY,
+  },
+  {
+    id: 7,
+    name: "Quarterly deck.pptx",
+    folder: "Desktop",
+    kind: "slides",
+    size: 5.1e6,
+    modified: Date.now() - DAY,
+  },
+  { id: 8, name: "Downloads", folder: "", kind: "folder", size: 0, modified: Date.now() - DAY },
+];
+
+const FILE_FILLER = new Set(["my", "the", "a", "an", "file", "files", "called", "named", "of"]);
+
+/** A small stand-in for the host's index search (word prefixes). */
+export function mockFileSearch(files: FileHit[], query: string, limit = 8): FileHit[] {
+  const words = query
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w && !FILE_FILLER.has(w));
+  if (!words.length) return [];
+  const split = (s: string) =>
+    s
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean);
+  const q = words.join(" ");
+  return files
+    .map((f) => {
+      const name = split(f.name);
+      const all = [...name, ...split(f.folder)];
+      if (!words.every((w) => all.some((n) => n.startsWith(w)))) return null;
+      const lower = f.name.toLowerCase();
+      const score = lower.startsWith(q)
+        ? 3
+        : words.every((w) => name.some((n) => n.startsWith(w)))
+          ? 2
+          : 1;
+      return { f, score };
+    })
+    .filter((x): x is { f: FileHit; score: number } => x !== null)
+    .sort((a, b) => b.score - a.score || a.f.name.length - b.f.name.length)
+    .slice(0, limit)
+    .map((x) => x.f);
+}
+
+/** Made-up stats for the browser preview. */
+function mockStats(): StatsSnapshot {
+  const wobble = (base: number) => Math.max(0, Math.min(100, base + (Math.random() - 0.5) * 20));
+  const cores = Array.from({ length: 8 }, (_, i) => wobble(15 + i * 6));
+  return {
+    cpu: cores.reduce((a, b) => a + b, 0) / cores.length,
+    cores,
+    cpuName: "Preview CPU @ 3.6GHz",
+    memoryTotal: 16 * 1024 ** 3,
+    memoryUsed: 9.4 * 1024 ** 3,
+    disks: [{ mount: "C:\\", totalBytes: 512e9, freeBytes: 188e9 }],
+    netDown: 1.8e6 + Math.random() * 4e5,
+    netUp: 2.2e5,
+    uptimeSecs: 3 * 86400 + 4 * 3600,
+    top: [
+      { name: "chrome", count: 14, memoryBytes: 2.1e9, cpu: 6.2 },
+      { name: "Code", count: 6, memoryBytes: 1.2e9, cpu: 3.1 },
+      { name: "Discord", count: 4, memoryBytes: 6.1e8, cpu: 0.8 },
+      { name: "explorer", count: 1, memoryBytes: 2.2e8, cpu: 0.2 },
+      { name: "wisp", count: 1, memoryBytes: 9.0e7, cpu: 0.1 },
+    ],
+  };
+}
 
 function safeGet(key: string): string | null {
   try {
@@ -180,6 +303,8 @@ export interface MockHostOptions {
   persist?: boolean;
   /** What Windows voice typing "types" into Wisp's bar when asked by voice. */
   voice?: string;
+  /** Indexed files (defaults to a small sample). */
+  files?: FileHit[];
 }
 
 export function createMockHost(opts: MockHostOptions = {}): Host {
@@ -257,6 +382,29 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     speechHeard = "";
     listeners.speechDone.forEach((cb) => cb(h));
   };
+  const files = opts.files ?? MOCK_FILES;
+  const filesListeners = new Set<(s: FilesStatus) => void>();
+  const filesStatus = (): FilesStatus => ({
+    enabled: settings.indexFiles,
+    indexing: false,
+    count: settings.indexFiles ? files.length : 0,
+    scanned: files.length,
+    updatedAt: settings.indexFiles ? Date.now() - 120_000 : null,
+    folders: settings.indexFiles
+      ? [
+          ...["Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos"].map((label) => ({
+            path: `C:\\Users\\you\\${label}`,
+            label,
+            user: false,
+          })),
+          ...settings.indexFolders.map((path) => ({
+            path,
+            label: path.split("\\").pop() ?? path,
+            user: true,
+          })),
+        ]
+      : [],
+  });
   const errors: string[] = [];
   const selfTestReports: { section: string; steps: SelfTestStep[] }[] = [];
   let layout: IslandLayout = { mode: "sliver", expanded: false, height: 0 };
@@ -1058,29 +1206,45 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     setDarkMode: async (dark) => {
       controls = { ...controls, darkMode: dark };
     },
-    statsSnapshot: async () => {
-      const wobble = (base: number) =>
-        Math.max(0, Math.min(100, base + (Math.random() - 0.5) * 20));
-      const cores = Array.from({ length: 8 }, (_, i) => wobble(15 + i * 6));
-      return {
-        cpu: cores.reduce((a, b) => a + b, 0) / cores.length,
-        cores,
-        cpuName: "Preview CPU @ 3.6GHz",
-        memoryTotal: 16 * 1024 ** 3,
-        memoryUsed: 9.4 * 1024 ** 3,
-        disks: [{ mount: "C:\\", totalBytes: 512e9, freeBytes: 188e9 }],
-        netDown: 1.8e6 + Math.random() * 4e5,
-        netUp: 2.2e5,
-        uptimeSecs: 3 * 86400 + 4 * 3600,
-        top: [
-          { name: "chrome", count: 14, memoryBytes: 2.1e9, cpu: 6.2 },
-          { name: "Code", count: 6, memoryBytes: 1.2e9, cpu: 3.1 },
-          { name: "Discord", count: 4, memoryBytes: 6.1e8, cpu: 0.8 },
-          { name: "explorer", count: 1, memoryBytes: 2.2e8, cpu: 0.2 },
-          { name: "wisp", count: 1, memoryBytes: 9.0e7, cpu: 0.1 },
-        ],
-      };
+    filesSearch: async (query, limit) =>
+      settings.indexFiles && query.trim().length >= 2 ? mockFileSearch(files, query, limit) : [],
+    fileOpen: async (id) => {
+      const f = files.find((x) => x.id === id);
+      if (!f || !settings.indexFiles)
+        throw err("invalid", "That file isn't in the index any more.");
+      return `Opened ${f.name}.`;
     },
+    fileReveal: async (id) => {
+      const f = files.find((x) => x.id === id);
+      if (!f) throw err("invalid", "That file isn't in the index any more.");
+      return `Showed ${f.name} in its folder.`;
+    },
+    filesStatus: async () => filesStatus(),
+    filesRebuild: async () => filesStatus(),
+    filesFolderAdd: async () => {
+      const f = `D:\\Projects${settings.indexFolders.length || ""}`;
+      settings = { ...settings, indexFolders: [...settings.indexFolders, f] };
+      save();
+      emit();
+      const st = filesStatus();
+      filesListeners.forEach((cb) => cb(st));
+      return st;
+    },
+    filesFolderRemove: async (folder) => {
+      settings = { ...settings, indexFolders: settings.indexFolders.filter((f) => f !== folder) };
+      save();
+      emit();
+      const st = filesStatus();
+      filesListeners.forEach((cb) => cb(st));
+      return st;
+    },
+    onFilesIndex: (cb) => on(filesListeners, cb),
+    pcInfo: async () => ({
+      battery: { percent: 76, charging: false, pluggedIn: false, secsLeft: 3 * 3600 + 600 },
+      localIp: "192.168.1.24",
+      stats: mockStats(),
+    }),
+    statsSnapshot: async () => mockStats(),
     speedTest: async () => {
       await new Promise((r) => setTimeout(r, 900));
       return { mbps: 212.4, bytes: 25_000_000, millis: 940, latencyMs: 18 };

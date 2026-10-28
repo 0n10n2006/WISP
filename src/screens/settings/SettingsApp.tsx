@@ -9,6 +9,7 @@ import { ActionsTab, MemoryTab, RemindersTab } from "./LocalTabs";
 import { Onboarding } from "./Onboarding";
 import { FocusTab } from "./FocusTab";
 import { NotchTab } from "./NotchTab";
+import { SearchTab } from "./SearchTab";
 import { VoiceTab } from "./VoiceTab";
 import { AboutTab, GeneralTab, ModelTab, PrivacyTab, ShortcutsTab } from "./tabs";
 
@@ -28,6 +29,7 @@ const BASE_TABS: TabDef[] = [
   { id: "voice", label: "Voice & dictation", component: VoiceTab },
   { id: "focus", label: "Games & focus", component: FocusTab },
   { id: "shortcuts", label: "Shortcuts", component: ShortcutsTab },
+  { id: "search", label: "Search", component: SearchTab },
   { id: "actions", label: "Actions", component: ActionsTab },
   { id: "reminders", label: "Reminders", component: RemindersTab },
   { id: "memory", label: "Memory", component: MemoryTab },

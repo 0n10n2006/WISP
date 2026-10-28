@@ -55,6 +55,7 @@ export type IconName =
   | "lasso"
   | "target"
   | "folder"
+  | "file"
   | "today"
   | "sliders"
   | "logout"
@@ -137,6 +138,7 @@ const PATHS: Record<IconName, string> = {
   target:
     "M10 2.5a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15zM10 6.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7zM10 10v.01",
   folder: "M3 5.5h5l1.5 1.5H17v9H3z",
+  file: "M5 2.5h6.5L15 6v11.5H5zM11.5 2.5V6H15M7.5 10h5M7.5 13h5",
   today: "M3.5 5h13v11.5h-13zM3.5 8.5h13M7 3v3.5M13 3v3.5M8 12h4",
   sliders: "M4 6h7M15 6h1M4 14h1M9 14h7M13 4v4M7 12v4",
   logout: "M8 4H4v12h4M12 6.5L15.5 10 12 13.5M15.5 10H8",

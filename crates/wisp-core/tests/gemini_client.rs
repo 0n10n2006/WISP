@@ -41,6 +41,7 @@ fn ctx() -> PromptContext<'static> {
         fast: true,
         persona: &PERSONA,
         desktop: None,
+        files: false,
     }
 }
 

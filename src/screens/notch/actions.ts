@@ -2,6 +2,7 @@
 
 import type { BarResult, Command } from "../../lib/commands";
 import { formatMinutes } from "../../lib/commands";
+import { pcAnswer } from "../../lib/pcinfo";
 import { toWispError } from "../../services/errors";
 import { host } from "../../services/host";
 import { useConversation } from "../../state/conversation";
@@ -109,13 +110,18 @@ export async function runCommand(cmd: Command): Promise<void> {
     case "clearChat":
       useConversation.getState().clear();
       return;
+    case "pcInfo":
+      return guarded(async () => {
+        const info = await h.pcInfo();
+        useConversation.getState().localAnswer(cmd.question, pcAnswer(cmd.topic, info));
+      });
   }
 }
 
 /** Run a bar result (Enter or click). */
 export async function runResult(
   r: BarResult,
-  opts: { web: boolean; think: boolean },
+  opts: { web: boolean; think: boolean; reveal?: boolean },
 ): Promise<void> {
   const notch = useNotch.getState();
   if (r.kind === "ask") {
@@ -136,6 +142,17 @@ export async function runResult(
   if (r.kind === "window") {
     notch.setQuery("");
     await guarded(() => host().switchWindow(r.window.id));
+    return;
+  }
+  if (r.kind === "file") {
+    notch.setQuery("");
+    await guarded(
+      async () => {
+        await (opts.reveal ? host().fileReveal(r.file.id) : host().fileOpen(r.file.id));
+        await host().hideIsland();
+      },
+      opts.reveal ? `Showing ${r.title}` : `Opening ${r.title}`,
+    );
     return;
   }
   notch.setQuery("");

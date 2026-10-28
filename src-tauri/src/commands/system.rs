@@ -117,3 +117,25 @@ pub fn report_ui_error(window: tauri::WebviewWindow, message: String) {
 pub fn ui_ready() {
     crate::selftest::UI_READY.store(true, std::sync::atomic::Ordering::SeqCst);
 }
+
+/// Battery, disks, memory, CPU, uptime and the local address, for questions
+/// answered on this PC ("battery", "disk space") without asking Gemini.
+#[tauri::command]
+pub async fn pc_info(app: AppHandle) -> CmdResult<crate::stats::PcInfo> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let stats = &app.state::<crate::state::AppState>().stats;
+        let mut snap = stats.snapshot();
+        if snap.cpu == 0.0 {
+            // CPU use needs two samples.
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            snap = stats.snapshot();
+        }
+        crate::stats::PcInfo {
+            battery: crate::stats::battery(),
+            local_ip: crate::stats::local_ip(),
+            stats: snap,
+        }
+    })
+    .await
+    .map_err(|e| WispError::internal(e.to_string()))
+}

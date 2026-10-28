@@ -58,6 +58,8 @@ pub struct AppState {
     pub stats: crate::stats::Stats,
     /// Launcher catalogue, built once in the background.
     pub catalogue: Mutex<Option<std::sync::Arc<Vec<wisp_core::launcher::LaunchItem>>>>,
+    /// Names and places of the user's files, for instant search.
+    pub files: crate::fileindex::Indexer,
     /// Regions for the Show-me overlay.
     pub highlights: Mutex<Vec<wisp_core::capture::Highlight>>,
 }

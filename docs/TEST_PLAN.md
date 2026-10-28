@@ -43,6 +43,19 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Instant local search (v0.2.13)
+
+- [ ] On first start, Settings → Search shows "Indexing…" with a growing count, then "N items · updated just now"; Task Manager shows Wisp at low CPU while it runs and the PC stays responsive.
+- [ ] Type part of a file name in the bar (e.g. `resu`): the file shows at once with its folder; Enter opens it; `Ctrl+Enter` (or the folder button) shows it in Explorer.
+- [ ] `open my resume`, `find invoice`, `open downloads` do the expected thing; `open spotify` still opens the app and `open chrome` switches to the open window.
+- [ ] Tap `Win+Alt` and say "open my resume": it opens with no wait and no Gemini call.
+- [ ] Save a new file to the Desktop: it's searchable within a few seconds. Delete it: it's gone from results.
+- [ ] Add a folder in Settings → Search: it's listed and its files appear; remove it: they disappear. Turn "Index my files" off: no file rows, and the count is gone.
+- [ ] `.exe`, `.bat`, `.ps1` and `.lnk` files never appear; hidden folders, `node_modules` and `AppData` aren't listed.
+- [ ] `battery`, `disk space`, `my ip`, `memory`, `cpu`, `uptime` answer instantly, marked "Answered on this PC".
+- [ ] Restart Wisp: the app list is ready the moment the bar opens.
+- [ ] Ask Gemini "find my budget spreadsheet and open it": it finds and opens it; asking it to also open a link asks first.
+
 ### Seamless voice (v0.2.12)
 
 - [ ] In Notepad, tap `Ctrl+Win` and talk: no Windows pop-up appears; the notch shows the words as you speak and each phrase is typed into Notepad; about a second after you stop, listening ends and the notch tucks back.

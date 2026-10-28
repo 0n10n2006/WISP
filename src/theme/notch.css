@@ -387,8 +387,18 @@ html:not([data-motion="reduced"]) .mark-listening .mark-core {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 55%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: var(--text-xs);
   color: var(--color-text-muted);
+}
+.cmd-result-hint kbd {
+  flex-shrink: 0;
+}
+.cmd-result-reveal {
+  flex-shrink: 0;
 }
 
 .bar-body {

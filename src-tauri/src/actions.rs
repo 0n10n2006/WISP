@@ -68,6 +68,7 @@ pub fn execute(app: &AppHandle, action: &ValidatedAction) -> Result<String> {
             Ok(format!("Opened {}.", item.name))
         }
         ValidatedAction::ChangeSetting { change } => crate::winsettings::apply(change),
+        ValidatedAction::OpenFile { id, .. } => crate::fileindex::open(app, *id, false),
         ValidatedAction::SwitchTo { id, app: name } => {
             if crate::desktop::focus_window(*id) {
                 Ok(format!("Switched to {name}."))
