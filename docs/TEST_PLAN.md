@@ -43,6 +43,17 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Fluent-style search (v0.2.14)
+
+- [ ] `t:` lists the tabs open in Chrome, Edge and Firefox; Enter brings the right window forward with that tab selected.
+- [ ] `h: <site you visited today>` finds it; Enter opens it. Turn off "Search browser tabs and history": no tabs or pages appear.
+- [ ] `12*7`, `12% of 80`, `5 km in miles`, `72f to c` answer as you type; Enter copies. `30 usd to eur` shows today's rate date; disconnect the network and it still works with the saved rates.
+- [ ] `p: notepad`, Ctrl+Enter, confirm: Notepad closes. `p: csrss`, Ctrl+Enter: refused. Enter on a program with a window switches to it.
+- [ ] `g cats` opens a Google search; add a shortcut in Settings → Search and use it.
+- [ ] Select a PDF, a photo, a Word file and a text file in the results: each shows a preview; a folder shows its contents.
+- [ ] Type `tabs` then Tab: the Tabs chip appears; Backspace removes it. Typing `weather` then Tab still toggles Web.
+- [ ] `spotfy` finds Spotify; `resmue` finds Resume.pdf.
+
 ### Instant local search (v0.2.13)
 
 - [ ] On first start, Settings → Search shows "Indexing…" with a growing count, then "N items · updated just now"; Task Manager shows Wisp at low CPU while it runs and the PC stays responsive.

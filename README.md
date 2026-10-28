@@ -40,6 +40,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2.10: notifications with Wisp's logo, reminders pop down from the notch, UI polish    | ✅    |
 | v0.2.11–12: voice with Windows' own speech recognition, no pop-up                        | ✅    |
 | v0.2.13: instant file search, quick PC answers, instant app list                         | ✅    |
+| v0.2.14: tags, tabs and history, calculator, programs, web shortcuts, file preview       | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -125,6 +126,14 @@ Type anything:
 - **A file or folder** — Wisp keeps an index of the names of the files in your folders, so `resu` shows
   `Resume.pdf` instantly. Enter opens it, `Ctrl+Enter` shows it in Explorer. `open my budget`,
   `open downloads` and `find invoice` work too (also by voice). See [Instant file search](#instant-file-search).
+- **A sum or conversion** — `12*7`, `12% of 80`, `5 km in miles`, `72f to c`, `30 usd to eur` (rates from the
+  European Central Bank, fetched at most twice a day). Enter copies the answer.
+- **A browser tab or page** — open tabs, bookmarks and history from Chrome, Edge, Brave, Vivaldi, Opera and
+  Firefox. Enter switches to the tab or opens the page.
+- **A running program** — `p: chrome` shows memory and CPU; Enter switches to it, `Ctrl+Enter` ends it
+  (asks first; Windows' own processes are never ended).
+- **A web search** — `g cats`, `yt lofi`, `wiki rust`, `maps cafe`, `gh tauri`… (edit them in
+  **Settings → Search**).
 - **A question about this PC** — `battery`, `disk space`, `my ip`, `memory`, `cpu`, `uptime` are answered on
   this PC instantly, without Gemini.
 - **A command** — `timer 25`, `stop timer`, `remind me to stretch in 20 min`, `volume 30`, `mute`, `next`,
@@ -199,6 +208,14 @@ to download; Wisp never records audio itself.
 
 Recognition uses Microsoft's speech service: turn on **Settings → Privacy & security → Speech → Online speech
 recognition** (**Settings → Voice & dictation** has a button). The language follows Windows' speech language.
+
+## Search tags and previews
+
+Start with a tag to search one thing only: `f:` files, `a:` apps, `w:` windows, `t:` tabs, `h:` history and
+bookmarks, `p:` programs, `=` calculator (or type `tabs`, `files`, `history`… and press Tab). The tag shows as
+a chip; Backspace removes it. Selecting a file shows a preview beside the results: Windows' own thumbnail for
+pictures, PDFs, documents and videos, the first lines of text files, or what's in a folder. Typos are
+forgiven (`spotfy`, `resmue`).
 
 ## Instant file search
 

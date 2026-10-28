@@ -2,7 +2,20 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { Icon, type IconName } from "../../components/Icon";
 import { WispMark } from "../../components/WispMark";
 import { useOrbState } from "../../hooks/useOrbState";
-import { barResults, fileQuery, fileResults, type BarResult } from "../../lib/commands";
+import { calculate } from "../../lib/calc";
+import {
+  barResults,
+  fileQuery,
+  fileResults,
+  looksLikeQuestion,
+  parseTag,
+  TAG_LABELS,
+  TAG_PREFIX,
+  tagForWord,
+  type BarExtras,
+  type BarResult,
+  type SearchTag,
+} from "../../lib/commands";
 import { invalidateCatalogue, useCatalogue } from "../../lib/catalogue";
 import { host } from "../../services/host";
 import { DEFAULT_SCREEN_PROMPT, useCapture } from "../../state/capture";
@@ -11,7 +24,17 @@ import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
 import { spokenQuery, useVoice } from "../../state/voice";
-import { chordLabel, type FileHit, type HoldChord, type OpenWindow } from "../../services/types";
+import {
+  chordLabel,
+  type BrowserItem,
+  type BrowserTab,
+  type CurrencyRates,
+  type FileHit,
+  type FilePreview,
+  type HoldChord,
+  type OpenWindow,
+  type ProcInfo,
+} from "../../services/types";
 import { runResult } from "./actions";
 
 export interface CommandBarHandle {
@@ -22,6 +45,10 @@ export interface CommandBarHandle {
 
 const NO_STARS: string[] = [];
 const NO_FILES: FileHit[] = [];
+const NO_PAGES: BrowserItem[] = [];
+const NO_TABS: BrowserTab[] = [];
+const NO_WINDOWS: OpenWindow[] = [];
+const NO_SHORTCUTS: never[] = [];
 /** Wait this long after a keystroke before searching files. */
 const FILE_SEARCH_DELAY = 60;
 
@@ -45,6 +72,11 @@ function resultIcon(r: BarResult): IconName {
   if (r.kind === "ask") return "spark";
   if (r.kind === "window") return "external";
   if (r.kind === "file") return fileIcon(r.file.kind);
+  if (r.kind === "calc") return "grid";
+  if (r.kind === "web") return "search";
+  if (r.kind === "tab") return "globe";
+  if (r.kind === "history") return r.item.kind === "bookmark" ? "star" : "link";
+  if (r.kind === "process") return "cpu";
   if (r.kind === "app")
     return r.item.kind === "game" ? "play" : r.item.kind === "system" ? "settings" : "grid";
   switch (r.command.type) {
@@ -126,6 +158,16 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   }));
   const query = useNotch((n) => n.query);
   const setQuery = useNotch((n) => n.setQuery);
+  // A search tag ("t:", "f:"…) shows as a chip; the input holds the rest.
+  const [tag, setTag] = useState<SearchTag | null>(null);
+  const full = tag ? `${TAG_PREFIX[tag]} ${query}` : query;
+  const onInput = (value: string) => {
+    const parsed = tag ? null : parseTag(value);
+    if (parsed?.tag) {
+      setTag(parsed.tag);
+      setQuery(parsed.rest);
+    } else setQuery(value);
+  };
   const web = useNotch((n) => n.web);
   const think = useNotch((n) => n.think);
   const setWeb = useNotch((n) => n.setWeb);
@@ -142,7 +184,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   const catalogue = useCatalogue();
   // The highlighted row resets whenever the query changes.
   const [sel, setSel] = useState({ query: "", index: 0 });
-  const selected = sel.query === query ? sel.index : 0;
+  const selected = sel.query === full ? sel.index : 0;
 
   const awareness = useSettings((s) => s.snapshot?.settings.appAwareness ?? true);
   const holdOn = useSettings((s) => s.snapshot?.settings.holdToTalk ?? true);
@@ -151,9 +193,10 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   );
   const holdAsk = useSettings((s) => (holdOn ? s.snapshot?.settings.holdAsk : "off") ?? "win+alt");
   // Windows that are open right now, fetched once per bar open.
-  const [windows, setWindows] = useState<OpenWindow[]>([]);
+  const [openWindows, setWindows] = useState<OpenWindow[]>([]);
+  const windows = awareness ? openWindows : NO_WINDOWS;
   useEffect(() => {
-    if (!awareness) return setWindows([]);
+    if (!awareness) return;
     let live = true;
     host()
       .openWindows()
@@ -170,21 +213,107 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
     query: "",
     files: NO_FILES,
   });
+  const fileText =
+    !indexOn || pending
+      ? null
+      : tag === "files"
+        ? query.trim() || null
+        : tag
+          ? null
+          : fileQuery(query);
   useEffect(() => {
-    const fq = indexOn && !pending ? fileQuery(query) : null;
-    if (!fq) return;
+    if (!fileText) return;
     let live = true;
     const t = setTimeout(() => {
       host()
-        .filesSearch(fq, 8)
-        .then((files) => live && setFound({ query, files }))
+        .filesSearch(fileText, 8)
+        .then((files) => live && setFound({ query: full, files }))
         .catch(() => {});
     }, FILE_SEARCH_DELAY);
     return () => {
       live = false;
       clearTimeout(t);
     };
-  }, [query, indexOn, pending]);
+  }, [fileText, full]);
+
+  // Browser tabs (once per open), history and bookmarks (as you type),
+  // running programs (when asked for) and exchange rates (when converting).
+  const browserOn = useSettings((s) => s.snapshot?.settings.browserSearch ?? true);
+  const webShortcuts = useSettings((s) => s.snapshot?.settings.webShortcuts ?? NO_SHORTCUTS);
+  const [openTabs, setTabs] = useState<BrowserTab[]>([]);
+  const tabs = browserOn ? openTabs : NO_TABS;
+  useEffect(() => {
+    if (!browserOn) return;
+    let live = true;
+    host()
+      .browserTabs()
+      .then((t) => live && setTabs(t))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [browserOn, tag]);
+  const [pages, setPages] = useState<{ query: string; pages: BrowserItem[] }>({
+    query: "",
+    pages: NO_PAGES,
+  });
+  const pageText = !browserOn
+    ? null
+    : tag === "history"
+      ? query.trim() || null
+      : !tag && query.trim().length >= 3 && !looksLikeQuestion(query)
+        ? query.trim()
+        : null;
+  useEffect(() => {
+    if (!pageText) return;
+    let live = true;
+    const t = setTimeout(() => {
+      host()
+        .browserSearch(pageText, 6)
+        .then((p) => live && setPages({ query: full, pages: p }))
+        .catch(() => {});
+    }, FILE_SEARCH_DELAY + 20);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [pageText, full]);
+  const [procs, setProcs] = useState<ProcInfo[] | null>(null);
+  const wantProcs = tag === "processes" || (!tag && query.trim().length >= 3);
+  useEffect(() => {
+    if (!wantProcs || procs) return;
+    let live = true;
+    host()
+      .processesList()
+      .then((p) => live && setProcs(p))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [wantProcs, procs]);
+  const [rates, setRates] = useState<CurrencyRates | null>(null);
+  const needRates = !rates && /getting today's rates/.test(calculate(full)?.hint ?? "");
+  useEffect(() => {
+    if (!needRates) return;
+    let live = true;
+    host()
+      .currencyRates()
+      .then((r) => live && setRates(r))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [needRates]);
+  const extras: BarExtras = useMemo(
+    () => ({
+      tabs,
+      history: pages.query === full ? pages.pages : NO_PAGES,
+      processes: procs ?? [],
+      shortcuts: webShortcuts,
+      rates,
+    }),
+    [tabs, pages, full, procs, webShortcuts, rates],
+  );
 
   // Asking by voice: the words heard fill the input; when Windows hears a
   // pause, the question runs like pressing Enter.
@@ -204,22 +333,45 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
       .catch(() => NO_FILES)
       .then((files) => {
         const items = catalogue?.items ?? [];
-        const top = barResults(q, items, starred, catalogue?.recent ?? [], windows, files)[0];
+        const recent = catalogue?.recent ?? [];
+        const top = barResults(q, items, starred, recent, windows, files, extras)[0];
         if (top) void runResult(top, { web, think });
       });
-  }, [finished, catalogue, starred, windows, web, think, setQuery, indexOn]);
+  }, [finished, catalogue, starred, windows, web, think, setQuery, indexOn, extras]);
   useEffect(() => () => useVoice.getState().cancel(), []);
 
   const results = useMemo(() => {
     if (pending) return [];
     const items = catalogue?.items ?? [];
     const recent = catalogue?.recent ?? [];
-    const fresh = indexOn && found.query === query;
-    const list = barResults(query, items, starred, recent, windows, fresh ? found.files : NO_FILES);
+    const fresh = indexOn && found.query === full;
+    const files = fresh ? found.files : NO_FILES;
+    const list = barResults(full, items, starred, recent, windows, files, extras);
     // While the next search runs, the last matches stay at the bottom (no flicker).
-    const stale = indexOn && !fresh && query.trim() && fileQuery(query) ? found.files : NO_FILES;
+    const stale = !fresh && fileText ? found.files : NO_FILES;
     return stale.length ? [...list, ...fileResults(stale)] : list;
-  }, [query, catalogue, starred, pending, windows, found, indexOn]);
+  }, [full, catalogue, starred, pending, windows, found, indexOn, fileText, extras]);
+
+  // A preview of the selected file, a moment after it's selected.
+  const current = results[selected];
+  const previewId = current?.kind === "file" ? current.file.id : null;
+  const [preview, setPreview] = useState<{ id: number; data: FilePreview } | null>(null);
+  useEffect(() => {
+    if (previewId === null) return;
+    let live = true;
+    const t = setTimeout(() => {
+      host()
+        .filePreview(previewId)
+        .then((data) => live && setPreview({ id: previewId, data }))
+        .catch(() => {});
+    }, 150);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [previewId]);
+  const shownPreview =
+    current?.kind === "file" && preview?.id === current.file.id ? preview.data : null;
 
   const submit = (r: BarResult | undefined) => {
     if (pending) {
@@ -254,21 +406,30 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
         return;
       }
     }
-    if (e.key === "ArrowDown" && results.length) {
+    if (e.key === "Backspace" && tag && !query) {
+      // Backspace on an empty search removes the tag.
       e.preventDefault();
-      setSel({ query, index: (selected + 1) % results.length });
+      setTag(null);
+    } else if (e.key === "ArrowDown" && results.length) {
+      e.preventDefault();
+      setSel({ query: full, index: (selected + 1) % results.length });
     } else if (e.key === "ArrowUp" && results.length) {
       e.preventDefault();
-      setSel({ query, index: (selected - 1 + results.length) % results.length });
+      setSel({ query: full, index: (selected - 1 + results.length) % results.length });
     } else if (e.key === "Enter") {
       e.preventDefault();
       const r = results[selected];
       // Shift+Enter asks with "think harder" for this one question.
       if (e.shiftKey && r?.kind === "ask") void runResult(r, { web, think: true });
-      // Ctrl+Enter shows a file in its folder instead of opening it.
-      else if ((e.ctrlKey || e.metaKey) && r?.kind === "file")
-        void runResult(r, { web, think, reveal: true });
+      // Ctrl+Enter: show a file in its folder, or end a program.
+      else if ((e.ctrlKey || e.metaKey) && (r?.kind === "file" || r?.kind === "process"))
+        void runResult(r, { web, think, alt: true });
       else submit(r);
+    } else if (e.key === "Tab" && !tag && tagForWord(query) && !e.shiftKey) {
+      // "tabs" + Tab searches tabs only.
+      e.preventDefault();
+      setTag(tagForWord(query));
+      setQuery("");
     } else if (e.key === "Tab" && query.trim() && !e.shiftKey) {
       // Tab adds (or removes) the web for this question.
       e.preventDefault();
@@ -296,11 +457,25 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
         <span className="cmd-mark" title={ORB_LABELS[state]}>
           <WispMark state={state} size={22} />
         </span>
+        {tag && (
+          <button
+            className="cmd-tag"
+            onClick={() => {
+              setTag(null);
+              input.current?.focus();
+            }}
+            aria-label={`Searching ${TAG_LABELS[tag]}. Remove`}
+            title="Remove (Backspace)"
+          >
+            {TAG_LABELS[tag]}
+            <Icon name="close" size={12} />
+          </button>
+        )}
         <input
           ref={input}
           className="cmd-input"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => onInput(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
           aria-label="Ask Wisp or search"
@@ -415,52 +590,96 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
         </p>
       )}
       {results.length > 0 && (
-        <ul className="cmd-results" id={listId} role="listbox" aria-label="Results">
-          {results.map((r, i) => (
-            <li
-              key={`${r.kind}-${r.id}`}
-              id={`bar-r-${i}`}
-              role="option"
-              aria-selected={i === selected}
-              className={`cmd-result ${i === selected ? "selected" : ""}`}
-              onMouseMove={() => i !== selected && setSel({ query, index: i })}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => submit(r)}
-            >
-              <span className={`cmd-result-icon kind-${r.kind}`}>
-                <Icon name={resultIcon(r)} size={16} />
-              </span>
-              <span className="cmd-result-title">{r.title}</span>
-              {r.kind === "file" && i === selected && (
-                <button
-                  className="icon-btn icon-btn-small cmd-result-reveal"
-                  aria-label={`Show ${r.title} in its folder`}
-                  title="Show in folder (Ctrl+Enter)"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void runResult(r, { web, think, reveal: true });
-                  }}
-                >
-                  <Icon name="folder" size={14} />
-                </button>
-              )}
-              <span className="cmd-result-hint">
-                {r.kind === "ask" ? (
-                  <>
-                    {web ? "Ask with web" : think ? "Ask, thinking harder" : "Ask Wisp"}
-                    {i === selected && <kbd>Enter</kbd>}
-                  </>
-                ) : (
-                  <>
-                    {r.hint}
-                    {i === selected && <kbd>Enter</kbd>}
-                  </>
+        <div className="cmd-body">
+          <ul className="cmd-results" id={listId} role="listbox" aria-label="Results">
+            {results.map((r, i) => (
+              <li
+                key={`${r.kind}-${r.id}`}
+                id={`bar-r-${i}`}
+                role="option"
+                aria-selected={i === selected}
+                className={`cmd-result ${i === selected ? "selected" : ""}`}
+                onMouseMove={() => i !== selected && setSel({ query: full, index: i })}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => submit(r)}
+              >
+                <span className={`cmd-result-icon kind-${r.kind}`}>
+                  <Icon name={resultIcon(r)} size={16} />
+                </span>
+                <span className="cmd-result-title">{r.title}</span>
+                {r.kind === "file" && i === selected && (
+                  <button
+                    className="icon-btn icon-btn-small cmd-result-reveal"
+                    aria-label={`Show ${r.title} in its folder`}
+                    title="Show in folder (Ctrl+Enter)"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void runResult(r, { web, think, alt: true });
+                    }}
+                  >
+                    <Icon name="folder" size={14} />
+                  </button>
                 )}
-              </span>
-            </li>
-          ))}
-        </ul>
+                <span className="cmd-result-hint">
+                  {r.kind === "ask" ? (
+                    <>
+                      {web ? "Ask with web" : think ? "Ask, thinking harder" : "Ask Wisp"}
+                      {i === selected && <kbd>Enter</kbd>}
+                    </>
+                  ) : (
+                    <>
+                      {r.hint}
+                      {i === selected && <kbd>Enter</kbd>}
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {current?.kind === "file" && (
+            <FilePreviewPane file={current.file} preview={shownPreview} />
+          )}
+        </div>
       )}
     </div>
   );
 });
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+/** What the selected file looks like, beside the results. */
+function FilePreviewPane({ file, preview }: { file: FileHit; preview: FilePreview | null }) {
+  const date = new Date(file.modified).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  return (
+    <aside className="cmd-preview" aria-label={`Preview of ${file.name}`}>
+      {preview?.kind === "image" && preview.image && (
+        <img className="cmd-preview-img" src={preview.image} alt="" />
+      )}
+      {preview?.kind === "text" && <pre className="cmd-preview-text">{preview.text}</pre>}
+      {preview?.kind === "folder" && (
+        <ul className="cmd-preview-list">
+          {(preview.entries ?? []).map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+          {!preview.entries?.length && <li className="muted">Empty folder</li>}
+        </ul>
+      )}
+      {!preview && <div className="cmd-preview-placeholder" aria-hidden />}
+      <p className="cmd-preview-name">{file.name}</p>
+      <p className="cmd-preview-meta">
+        {file.folder || "Folder"}
+        <br />
+        {file.kind === "folder" ? date : `${formatSize(file.size)} · ${date}`}
+      </p>
+    </aside>
+  );
+}

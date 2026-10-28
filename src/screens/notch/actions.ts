@@ -121,7 +121,7 @@ export async function runCommand(cmd: Command): Promise<void> {
 /** Run a bar result (Enter or click). */
 export async function runResult(
   r: BarResult,
-  opts: { web: boolean; think: boolean; reveal?: boolean },
+  opts: { web: boolean; think: boolean; alt?: boolean },
 ): Promise<void> {
   const notch = useNotch.getState();
   if (r.kind === "ask") {
@@ -148,11 +148,57 @@ export async function runResult(
     notch.setQuery("");
     await guarded(
       async () => {
-        await (opts.reveal ? host().fileReveal(r.file.id) : host().fileOpen(r.file.id));
+        await (opts.alt ? host().fileReveal(r.file.id) : host().fileOpen(r.file.id));
         await host().hideIsland();
       },
-      opts.reveal ? `Showing ${r.title}` : `Opening ${r.title}`,
+      opts.alt ? `Showing ${r.title}` : `Opening ${r.title}`,
     );
+    return;
+  }
+  if (r.kind === "calc") {
+    if (!r.calc.copy) return;
+    await guarded(() => host().copyText(r.calc.copy), `Copied ${r.calc.copy}`);
+    return;
+  }
+  if (r.kind === "web") {
+    notch.setQuery("");
+    await guarded(async () => {
+      await host().openExternal(r.url);
+      await host().hideIsland();
+    });
+    return;
+  }
+  if (r.kind === "tab") {
+    notch.setQuery("");
+    await guarded(() => host().browserTabSwitch(r.tab.id));
+    return;
+  }
+  if (r.kind === "history") {
+    notch.setQuery("");
+    await guarded(async () => {
+      await host().browserOpen(r.item.id);
+      await host().hideIsland();
+    });
+    return;
+  }
+  if (r.kind === "process") {
+    const p = r.proc;
+    if (!opts.alt) {
+      if (p.window !== null) await guarded(() => host().switchWindow(p.window!));
+      else toast(`${p.name} has no window. Ctrl+Enter ends it.`, "neutral", 3000);
+      return;
+    }
+    if (p.protected) {
+      toast(`Wisp won't end ${p.name}: Windows needs it.`, "warning", 3500);
+      return;
+    }
+    const warn =
+      p.name.toLowerCase() === "explorer"
+        ? "End Explorer? The taskbar and desktop disappear until it restarts."
+        : `End ${p.name}${p.count > 1 ? ` (${p.count} processes)` : ""}? Unsaved work in it is lost.`;
+    useConfirm.getState().ask(warn, `End ${p.name}`, async () => {
+      await guarded(() => host().processEnd(p.name), `Ended ${p.name}`);
+    });
     return;
   }
   notch.setQuery("");

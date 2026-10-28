@@ -60,6 +60,8 @@ pub struct AppState {
     pub catalogue: Mutex<Option<std::sync::Arc<Vec<wisp_core::launcher::LaunchItem>>>>,
     /// Names and places of the user's files, for instant search.
     pub files: crate::fileindex::Indexer,
+    /// Browser history read on demand (memory only) and the last tab list.
+    pub browsers: crate::browsers::Browsers,
     /// Regions for the Show-me overlay.
     pub highlights: Mutex<Vec<wisp_core::capture::Highlight>>,
 }

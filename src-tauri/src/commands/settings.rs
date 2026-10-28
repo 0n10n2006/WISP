@@ -68,6 +68,9 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) {
             .db
             .prune_history(new.history_retention_days.max(1), false);
     }
+    if old.browser_search && !new.browser_search {
+        app.state::<AppState>().browsers.forget();
+    }
     if old.index_files != new.index_files || old.index_folders != new.index_folders {
         app.state::<AppState>().files.reconfigure(new.index_files);
     }

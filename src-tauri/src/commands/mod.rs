@@ -8,6 +8,7 @@ pub mod data;
 pub mod files;
 pub mod local;
 pub mod personalize;
+pub mod search;
 pub mod settings;
 pub mod system;
 pub mod voice;

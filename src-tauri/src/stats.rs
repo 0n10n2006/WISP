@@ -262,3 +262,201 @@ pub struct PcInfo {
     pub local_ip: Option<String>,
     pub stats: StatsSnapshot,
 }
+
+/// Programs Wisp never ends: Windows itself, security software, and Wisp.
+const PROTECTED: &[&str] = &[
+    "system",
+    "idle",
+    "system idle process",
+    "registry",
+    "secure system",
+    "memory compression",
+    "smss",
+    "csrss",
+    "wininit",
+    "winlogon",
+    "services",
+    "lsass",
+    "lsaiso",
+    "svchost",
+    "fontdrvhost",
+    "dwm",
+    "sihost",
+    "ctfmon",
+    "msmpeng",
+    "nissrv",
+    "securityhealthservice",
+    "wisp",
+];
+
+/// Process name as shown and compared: "Chrome.exe" → "chrome".
+pub fn process_key(name: &str) -> String {
+    name.trim()
+        .to_lowercase()
+        .trim_end_matches(".exe")
+        .to_string()
+}
+
+pub fn is_protected(name: &str) -> bool {
+    PROTECTED.contains(&process_key(name).as_str())
+}
+
+/// Running programs, grouped by name, for the bar.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcGroup {
+    pub name: String,
+    pub count: u32,
+    /// The biggest process of the group.
+    pub pid: u32,
+    pub memory_bytes: u64,
+    pub cpu: f32,
+    /// One of its windows (for switching to it).
+    pub window: Option<i64>,
+    pub protected: bool,
+}
+
+/// Group `(name, pid, memory, cpu)` by name, heaviest first; `windows` are
+/// `(process name, window id)` pairs.
+pub fn group_processes(
+    items: impl IntoIterator<Item = (String, u32, u64, f32)>,
+    windows: &[(String, i64)],
+) -> Vec<ProcGroup> {
+    let mut by: HashMap<String, (ProcGroup, u64)> = HashMap::new();
+    for (name, pid, mem, cpu) in items {
+        let shown = name.trim().trim_end_matches(".exe").to_string();
+        if shown.is_empty() {
+            continue;
+        }
+        let key = process_key(&shown);
+        let e = by.entry(key.clone()).or_insert_with(|| {
+            (
+                ProcGroup {
+                    name: shown.clone(),
+                    count: 0,
+                    pid,
+                    memory_bytes: 0,
+                    cpu: 0.0,
+                    window: windows.iter().find(|(a, _)| *a == key).map(|(_, w)| *w),
+                    protected: is_protected(&key),
+                },
+                0,
+            )
+        });
+        e.0.count += 1;
+        e.0.memory_bytes += mem;
+        e.0.cpu += cpu;
+        if mem > e.1 {
+            e.1 = mem;
+            e.0.pid = pid;
+        }
+    }
+    let mut v: Vec<ProcGroup> = by.into_values().map(|(g, _)| g).collect();
+    v.sort_by(|a, b| {
+        b.memory_bytes
+            .cmp(&a.memory_bytes)
+            .then(a.name.cmp(&b.name))
+    });
+    v
+}
+
+impl Stats {
+    /// Every running program, grouped by name.
+    pub fn processes(&self, windows: &[(String, i64)]) -> Vec<ProcGroup> {
+        let _ = self.snapshot();
+        let mut guard = self.inner.lock().expect("stats");
+        let Some(inner) = guard.as_mut() else {
+            return Vec::new();
+        };
+        inner.sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_memory().with_cpu(),
+        );
+        let cores = inner.sys.cpus().len().max(1) as f32;
+        group_processes(
+            inner.sys.processes().iter().map(|(pid, p)| {
+                (
+                    p.name().to_string_lossy().into_owned(),
+                    pid.as_u32(),
+                    p.memory(),
+                    p.cpu_usage() / cores,
+                )
+            }),
+            windows,
+        )
+    }
+}
+
+/// End every process called `name` (never a protected one, never Wisp,
+/// never with more rights than Wisp has). Returns how many were ended.
+pub fn end_processes(name: &str) -> wisp_core::Result<usize> {
+    let key = process_key(name);
+    if key.is_empty() || key.len() > 120 {
+        return Err(wisp_core::WispError::invalid("Which program?"));
+    }
+    if is_protected(&key) {
+        return Err(wisp_core::WispError::new(
+            wisp_core::ErrorCode::PermissionDenied,
+            format!("Wisp won't end {name}: Windows needs it."),
+        ));
+    }
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+    let me = std::process::id();
+    let targets: Vec<_> = sys
+        .processes()
+        .iter()
+        .filter(|(pid, p)| pid.as_u32() != me && process_key(&p.name().to_string_lossy()) == key)
+        .collect();
+    if targets.is_empty() {
+        return Err(wisp_core::WispError::invalid(format!(
+            "{name} isn't running."
+        )));
+    }
+    let ended = targets.iter().filter(|(_, p)| p.kill()).count();
+    if ended == 0 {
+        return Err(wisp_core::WispError::new(
+            wisp_core::ErrorCode::PermissionDenied,
+            format!("Windows didn't let Wisp end {name} (it may be running as administrator)."),
+        ));
+    }
+    Ok(ended)
+}
+
+#[cfg(test)]
+mod process_tests {
+    use super::*;
+
+    #[test]
+    fn groups_by_name_and_guards_windows_itself() {
+        let g = group_processes(
+            [
+                ("chrome.exe".to_string(), 10, 100, 1.0),
+                ("chrome.exe".to_string(), 11, 300, 2.0),
+                ("csrss.exe".to_string(), 600, 5, 0.0),
+                ("Notepad.exe".to_string(), 20, 50, 0.0),
+                (String::new(), 1, 1, 0.0),
+            ],
+            &[("chrome".to_string(), 77), ("notepad".to_string(), 88)],
+        );
+        assert_eq!(g.len(), 3);
+        assert_eq!(g[0].name, "chrome");
+        assert_eq!(
+            (g[0].count, g[0].pid, g[0].memory_bytes, g[0].window),
+            (2, 11, 400, Some(77))
+        );
+        assert!(!g[0].protected);
+        let csrss = g.iter().find(|p| p.name == "csrss").unwrap();
+        assert!(csrss.protected && csrss.window.is_none());
+        assert_eq!(
+            g.iter().find(|p| p.name == "Notepad").unwrap().window,
+            Some(88)
+        );
+        assert!(is_protected("LSASS.EXE") && is_protected("wisp") && !is_protected("explorer"));
+        assert!(end_processes("csrss").is_err());
+        assert!(end_processes("Wisp.exe").is_err());
+        assert!(end_processes("").is_err());
+        assert!(end_processes("no-such-program-wisp-test").is_err());
+    }
+}

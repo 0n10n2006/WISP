@@ -3,6 +3,11 @@
 
 import type { WispError } from "./errors";
 import type {
+  BrowserItem,
+  BrowserTab,
+  CurrencyRates,
+  FilePreview,
+  ProcInfo,
   FileHit,
   FilesStatus,
   PcInfo,
@@ -228,6 +233,22 @@ export interface Host {
   filesFolderAdd(): Promise<FilesStatus>;
   filesFolderRemove(folder: string): Promise<FilesStatus>;
   onFilesIndex(cb: (s: FilesStatus) => void): Unsubscribe;
+  /** A preview of an indexed file: thumbnail, first lines or folder contents. */
+  filePreview(id: number): Promise<FilePreview>;
+  /** Browsers with a profile on this PC. */
+  browsersInstalled(): Promise<string[]>;
+  /** Tabs open in browser windows right now. */
+  browserTabs(): Promise<BrowserTab[]>;
+  browserTabSwitch(id: number): Promise<void>;
+  /** History and bookmarks matching `query`, best first. */
+  browserSearch(query: string, limit?: number): Promise<BrowserItem[]>;
+  browserOpen(id: number): Promise<void>;
+  /** Running programs grouped by name. */
+  processesList(): Promise<ProcInfo[]>;
+  /** End every process with this name (the UI confirms first). */
+  processEnd(name: string): Promise<string>;
+  /** Exchange rates, fetched at most once a day. */
+  currencyRates(): Promise<CurrencyRates>;
   /** Battery, disks, memory and the local address, read on this PC. */
   pcInfo(): Promise<PcInfo>;
   /** Dashboard: power (the UI confirms first). */

@@ -37,7 +37,9 @@ describe("instant file search", () => {
     const reveal = vi.spyOn(h, "fileReveal");
     const user = await openBar();
     await user.type(await box(), "find invoice");
-    await screen.findByText("Invoice_March.pdf");
+    await within(await screen.findByRole("listbox", { name: "Results" })).findByText(
+      "Invoice_March.pdf",
+    );
     await user.keyboard("{Control>}{Enter}{/Control}");
     await waitFor(() => expect(reveal).toHaveBeenCalledWith(3));
   });
@@ -47,7 +49,7 @@ describe("instant file search", () => {
     const open = vi.spyOn(h, "fileOpen");
     const user = await openBar();
     await user.type(await box(), "open my budget");
-    await screen.findByText("budget.xlsx");
+    await within(await screen.findByRole("listbox", { name: "Results" })).findByText("budget.xlsx");
     await user.keyboard("{Enter}");
     await waitFor(() => expect(open).toHaveBeenCalledWith(4));
   });

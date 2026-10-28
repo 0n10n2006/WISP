@@ -3,6 +3,7 @@
 //! Nothing in this crate touches windows, global shortcuts or other OS
 //! integration, so all of it can be unit-tested on any platform.
 
+pub mod browsers;
 pub mod capture;
 pub mod diagnostics;
 pub mod error;

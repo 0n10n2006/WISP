@@ -446,14 +446,16 @@ export function PrivacyTab() {
             questions and clipboard help go to OpenRouter's free models (text only, never
             screenshots); voice uses Windows' speech recognition, so what you say is recognised by
             Microsoft's speech service under Windows' own privacy settings (Wisp never records or
-            uploads audio); weather sends the place you picked to Open-Meteo; the speed test
+            uploads audio); weather sends the place you picked to Open-Meteo; currency conversions
+            get exchange rates from frankfurter.dev (nothing about you is sent); the speed test
             downloads from speed.cloudflare.com; update checks contact GitHub.
           </li>
           <li>
             <strong>Stays on this PC:</strong> settings, reminders, memory, clipboard history (off
-            by default), launcher and agent history, the file-name index used by search, and request
-            history (metadata only unless you opt in below). Your API key is stored in Windows
-            Credential Manager.
+            by default), launcher and agent history, the file-name index used by search (browser
+            history and tabs are read only when you search and never kept), and request history
+            (metadata only unless you opt in below). Your API key is stored in Windows Credential
+            Manager.
           </li>
           <li>
             <strong>Never collected:</strong> Wisp has no analytics or telemetry. Nothing is sent to

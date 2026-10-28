@@ -57,6 +57,10 @@ export interface Settings {
   indexFiles: boolean;
   /** Extra folders to index (chosen in a folder picker). */
   indexFolders: string[];
+  /** Search open browser tabs, history and bookmarks from the bar. */
+  browserSearch: boolean;
+  /** "g cats" style site searches. */
+  webShortcuts: WebShortcut[];
   notchPosition: NotchPosition;
   sliverStyle: SliverStyle;
   /** A notch along the top, or a floating ball in a corner. */
@@ -289,6 +293,17 @@ export const DEFAULT_SETTINGS: Settings = {
   accentColor: "#78e4f2",
   indexFiles: true,
   indexFolders: [],
+  browserSearch: true,
+  webShortcuts: [
+    { prefix: "g", name: "Google", url: "https://www.google.com/search?q=%s" },
+    { prefix: "yt", name: "YouTube", url: "https://www.youtube.com/results?search_query=%s" },
+    { prefix: "wiki", name: "Wikipedia", url: "https://en.wikipedia.org/w/index.php?search=%s" },
+    { prefix: "maps", name: "Google Maps", url: "https://www.google.com/maps/search/%s" },
+    { prefix: "gh", name: "GitHub", url: "https://github.com/search?q=%s" },
+    { prefix: "ddg", name: "DuckDuckGo", url: "https://duckduckgo.com/?q=%s" },
+    { prefix: "amz", name: "Amazon", url: "https://www.amazon.com/s?k=%s" },
+    { prefix: "r", name: "Reddit", url: "https://www.reddit.com/search/?q=%s" },
+  ],
   notchPosition: "center",
   sliverStyle: "glow",
   notchStyle: "notch",
@@ -587,6 +602,62 @@ export interface FilesStatus {
   /** When the last full pass finished (unix ms). */
   updatedAt: number | null;
   folders: IndexFolder[];
+}
+
+export interface WebShortcut {
+  prefix: string;
+  name: string;
+  /** https address with %s where the words go. */
+  url: string;
+}
+
+/** A tab open in a browser window. */
+export interface BrowserTab {
+  id: number;
+  title: string;
+  browser: string;
+}
+
+/** A page from browser history or bookmarks. */
+export interface BrowserItem {
+  id: number;
+  title: string;
+  url: string;
+  browser: string;
+  kind: "history" | "bookmark";
+  visits: number;
+  /** Unix ms (0 if never visited). */
+  lastVisit: number;
+}
+
+/** Running programs, grouped by name. */
+export interface ProcInfo {
+  name: string;
+  /** How many processes have this name. */
+  count: number;
+  /** The biggest one. */
+  pid: number;
+  memoryBytes: number;
+  cpu: number;
+  /** One of its windows, if it has any. */
+  window: number | null;
+  /** Wisp won't end it (Windows itself, or Wisp). */
+  protected: boolean;
+}
+
+export interface FilePreview {
+  kind: "image" | "text" | "folder" | "none";
+  /** Data URL for images, PDFs, documents and videos. */
+  image?: string;
+  text?: string;
+  entries?: string[];
+}
+
+/** Exchange rates (ECB, via frankfurter.dev). */
+export interface CurrencyRates {
+  base: string;
+  date: string;
+  rates: Record<string, number>;
 }
 
 export interface Battery {

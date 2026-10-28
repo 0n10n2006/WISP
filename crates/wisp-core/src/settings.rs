@@ -197,6 +197,10 @@ pub struct Settings {
     pub index_files: bool,
     /// Extra folders to index (chosen in a native folder picker; host-only).
     pub index_folders: Vec<String>,
+    /// Search open browser tabs, history and bookmarks from the bar.
+    pub browser_search: bool,
+    /// "g cats" style shortcuts that search a site.
+    pub web_shortcuts: Vec<WebShortcut>,
     pub notch_position: NotchPosition,
     pub sliver_style: SliverStyle,
     pub notch_style: NotchStyle,
@@ -243,6 +247,88 @@ pub struct Settings {
     pub allowed_apps: Vec<AllowedApp>,
 }
 
+/// A site search the bar can run: `prefix` then the words, e.g. "g cats".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebShortcut {
+    pub prefix: String,
+    pub name: String,
+    /// https URL with `%s` where the search words go.
+    pub url: String,
+}
+
+pub const MAX_WEB_SHORTCUTS: usize = 30;
+
+pub fn default_web_shortcuts() -> Vec<WebShortcut> {
+    [
+        ("g", "Google", "https://www.google.com/search?q=%s"),
+        (
+            "yt",
+            "YouTube",
+            "https://www.youtube.com/results?search_query=%s",
+        ),
+        (
+            "wiki",
+            "Wikipedia",
+            "https://en.wikipedia.org/w/index.php?search=%s",
+        ),
+        (
+            "maps",
+            "Google Maps",
+            "https://www.google.com/maps/search/%s",
+        ),
+        ("gh", "GitHub", "https://github.com/search?q=%s"),
+        ("ddg", "DuckDuckGo", "https://duckduckgo.com/?q=%s"),
+        ("amz", "Amazon", "https://www.amazon.com/s?k=%s"),
+        ("r", "Reddit", "https://www.reddit.com/search/?q=%s"),
+    ]
+    .into_iter()
+    .map(|(p, n, u)| WebShortcut {
+        prefix: p.into(),
+        name: n.into(),
+        url: u.into(),
+    })
+    .collect()
+}
+
+/// Tidy and check web shortcuts: short lowercase prefixes, unique, and
+/// public https addresses with a `%s`.
+pub fn validate_web_shortcuts(list: &mut [WebShortcut]) -> Result<()> {
+    if list.len() > MAX_WEB_SHORTCUTS {
+        return Err(WispError::invalid("Up to 30 search shortcuts"));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for w in list.iter_mut() {
+        w.prefix = w.prefix.trim().to_lowercase();
+        w.name = w.name.trim().chars().take(40).collect();
+        w.url = w.url.trim().to_string();
+        if w.prefix.is_empty()
+            || w.prefix.len() > 10
+            || !w.prefix.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            return Err(WispError::invalid(
+                "A shortcut is 1–10 letters or digits, like \"g\" or \"yt\"",
+            ));
+        }
+        if !seen.insert(w.prefix.clone()) {
+            return Err(WispError::invalid(format!(
+                "\"{}\" is used by two shortcuts",
+                w.prefix
+            )));
+        }
+        if w.name.is_empty() {
+            return Err(WispError::invalid("Give the shortcut a name"));
+        }
+        if w.url.len() > 500 || w.url.matches("%s").count() != 1 || !w.url.starts_with("https://") {
+            return Err(WispError::invalid(
+                "The address must start with https:// and contain %s once",
+            ));
+        }
+        crate::tools::validate_public_url(&w.url.replace("%s", "test"))?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AllowedApp {
@@ -284,6 +370,8 @@ impl Default for Settings {
             accent_color: "#78e4f2".into(),
             index_files: true,
             index_folders: Vec::new(),
+            browser_search: true,
+            web_shortcuts: default_web_shortcuts(),
             notch_position: NotchPosition::Center,
             sliver_style: SliverStyle::Glow,
             notch_style: NotchStyle::Notch,
@@ -411,6 +499,7 @@ impl Settings {
         if s.wallpaper_folders.len() > 10 || s.wallpaper_folders.iter().any(|p| p.len() > 1000) {
             return Err(WispError::invalid("Too many wallpaper folders"));
         }
+        validate_web_shortcuts(&mut s.web_shortcuts)?;
         if s.index_folders.len() > crate::files::MAX_USER_FOLDERS
             || s.index_folders.iter().any(|p| p.len() > 1000)
         {
@@ -703,9 +792,26 @@ mod tests {
             json!({"ballCorner": "middle"}),
             json!({"openrouterModel": "../../etc"}),
             json!({"openrouterModel": "Bad Model"}),
+            json!({"webShortcuts": [{"prefix": "g", "name": "G", "url": "http://x.com/?q=%s"}]}),
+            json!({"webShortcuts": [{"prefix": "g", "name": "G", "url": "https://x.com/"}]}),
+            json!({"webShortcuts": [{"prefix": "g", "name": "G", "url": "https://localhost/?q=%s"}]}),
+            json!({"webShortcuts": [{"prefix": "g g", "name": "G", "url": "https://x.com/?q=%s"}]}),
+            json!({"webShortcuts": [{"prefix": "g", "name": "A", "url": "https://a.com/?q=%s"}, {"prefix": "G", "name": "B", "url": "https://b.com/?q=%s"}]}),
         ] {
             assert!(Settings::default().patched(&bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn web_shortcuts_are_tidied() {
+        let s = Settings::default()
+            .patched(&json!({"webShortcuts": [{"prefix": " NPM ", "name": " npm ", "url": "https://www.npmjs.com/search?q=%s"}]}))
+            .unwrap();
+        assert_eq!(s.web_shortcuts[0].prefix, "npm");
+        assert_eq!(s.web_shortcuts[0].name, "npm");
+        assert_eq!(Settings::default().web_shortcuts.len(), 8);
+        let mut defaults = default_web_shortcuts();
+        assert!(validate_web_shortcuts(&mut defaults).is_ok());
     }
 
     #[test]

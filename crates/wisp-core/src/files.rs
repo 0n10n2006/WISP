@@ -838,6 +838,9 @@ impl FileIndex {
             }
             Ok(out)
         })?;
+        if hits.is_empty() {
+            hits = self.typo_matches(&q, kind)?;
+        }
         let mut scored: Vec<(f64, FileHit)> =
             hits.drain(..).map(|h| (score(&h, &q, now), h)).collect();
         scored.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -847,6 +850,76 @@ impl FileIndex {
             .map(|(_, h)| h)
             .collect())
     }
+}
+
+impl FileIndex {
+    /// Names one typo away from the query ("resmue" → "Resume"): candidates
+    /// share the first two letters of each word.
+    fn typo_matches(&self, q: &Query, kind: Option<&str>) -> Result<Vec<FileHit>> {
+        if q.words.iter().all(|w| w.chars().count() < 4) {
+            return Ok(Vec::new());
+        }
+        let heads: Vec<String> = q
+            .words
+            .iter()
+            .map(|w| w.chars().take(2).collect())
+            .collect();
+        let m = format!("name : {}", fts_query(&heads));
+        let rows = self.with(|c| {
+            let mut stmt = c.prepare_cached(&format!(
+                "SELECT {HIT_COLS} FROM files_fts JOIN files f ON f.id = files_fts.rowid
+                 WHERE files_fts MATCH ?1 AND (?2 IS NULL OR f.kind = ?2) LIMIT 2000"
+            ))?;
+            let rows = stmt.query_map(params![m, kind], hit_from)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })?;
+        Ok(rows
+            .into_iter()
+            .filter(|h| {
+                let names = words_of(&h.name);
+                q.words.iter().all(|w| {
+                    names.iter().any(|n| {
+                        n.starts_with(w.as_str()) || (w.chars().count() >= 4 && near_prefix(w, n))
+                    })
+                })
+            })
+            .take(50)
+            .collect())
+    }
+}
+
+/// Edit distance, counting a swap of neighbours as one edit.
+fn edit_distance(a: &[char], b: &[char]) -> usize {
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let mut v = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                v = v.min(d[i - 2][j - 2] + 1);
+            }
+            d[i][j] = v;
+        }
+    }
+    d[a.len()][b.len()]
+}
+
+/// Whether `word` is the start of `name` give or take one typo.
+pub fn near_prefix(word: &str, name: &str) -> bool {
+    let w: Vec<char> = word.chars().collect();
+    let n: Vec<char> = name.chars().collect();
+    [w.len().saturating_sub(1), w.len(), w.len() + 1]
+        .into_iter()
+        .filter(|&len| len > 0 && len <= n.len())
+        .any(|len| edit_distance(&w, &n[..len]) <= 1)
 }
 
 fn like_escape(s: &str) -> String {
@@ -1029,6 +1102,11 @@ mod tests {
         assert_eq!(sheets[0].name, "budget.xlsx");
         assert_eq!(idx.search("budget", 5, now).unwrap().len(), 2);
         assert!(idx.search("nothing-like-it", 5, now).unwrap().is_empty());
+        // One typo still finds it.
+        assert_eq!(idx.search("resmue", 5, now).unwrap()[0].name, "Resume.pdf");
+        assert_eq!(idx.search("budgte", 5, now).unwrap().len(), 2);
+        assert!(idx.search("rxyz", 5, now).unwrap().is_empty());
+        assert!(near_prefix("invocie", "invoice") && !near_prefix("inxxie", "invoice"));
         // Quotes and FTS syntax in a query are just text.
         assert!(idx.search("\" OR * NEAR(", 5, now).is_ok());
 

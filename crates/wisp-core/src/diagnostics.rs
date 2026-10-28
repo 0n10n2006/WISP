@@ -39,6 +39,7 @@ pub struct DiagnosticsInput<'a> {
 const SAFE_SETTINGS: &[&str] = &[
     "onboardingComplete",
     "indexFiles",
+    "browserSearch",
     "launchAtLogin",
     "alwaysOnTop",
     "startHidden",
@@ -114,6 +115,7 @@ fn summarised_settings(s: &Settings) -> serde_json::Map<String, serde_json::Valu
     );
     put("neverOverApps", serde_json::json!(s.never_over_apps.len()));
     put("indexFolders", serde_json::json!(s.index_folders.len()));
+    put("webShortcuts", serde_json::json!(s.web_shortcuts.len()));
     m
 }
 
@@ -125,6 +127,7 @@ const SUMMARISED_KEYS: &[&str] = &[
     "recentWallpapers",
     "wallpaperFolders",
     "indexFolders",
+    "webShortcuts",
     "weatherPlace",
     "persona",
     "neverOverApps",

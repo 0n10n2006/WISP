@@ -351,9 +351,76 @@ pub async fn lens_upload(base: &str, png: &[u8]) -> Result<String> {
     lens_url_in_body(&String::from_utf8_lossy(&buf)).ok_or_else(unexpected)
 }
 
+/// Exchange rates from the European Central Bank (via Frankfurter, no key).
+pub const RATES_BASE: &str = "https://api.frankfurter.dev";
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Rates {
+    pub base: String,
+    pub date: String,
+    pub rates: std::collections::BTreeMap<String, f64>,
+}
+
+/// Check rates from the network (or a cache file) before using them.
+pub fn valid_rates(r: &Rates) -> bool {
+    r.base.len() == 3
+        && r.date.len() == 10
+        && !r.rates.is_empty()
+        && r.rates.len() <= 100
+        && r.rates.iter().all(|(k, v)| {
+            k.len() == 3 && k.chars().all(|c| c.is_ascii_uppercase()) && v.is_finite() && *v > 0.0
+        })
+}
+
+/// Today's euro reference rates.
+pub async fn fetch_rates(base: &str) -> Result<Rates> {
+    let resp = client(Duration::from_secs(15))?
+        .get(format!("{}/v1/latest", base.trim_end_matches('/')))
+        .send()
+        .await
+        .map_err(net_err)?;
+    if !resp.status().is_success() {
+        return Err(WispError::new(
+            ErrorCode::ServerError,
+            "The exchange-rate service didn't answer. Try again later.",
+        ));
+    }
+    let r: Rates = resp.json().await.map_err(|_| {
+        WispError::new(
+            ErrorCode::MalformedResponse,
+            "Couldn't read the exchange rates.",
+        )
+    })?;
+    if !valid_rates(&r) {
+        return Err(WispError::new(
+            ErrorCode::MalformedResponse,
+            "The exchange rates looked wrong.",
+        ));
+    }
+    Ok(r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rates_are_checked() {
+        let ok: Rates = serde_json::from_str(
+            r#"{"amount":1.0,"base":"EUR","date":"2026-10-27","rates":{"USD":1.08,"GBP":0.85}}"#,
+        )
+        .unwrap();
+        assert!(valid_rates(&ok));
+        let mut bad = ok.clone();
+        bad.rates.insert("usd".into(), 1.0);
+        assert!(!valid_rates(&bad));
+        let mut bad = ok.clone();
+        bad.rates.insert("XXX".into(), -1.0);
+        assert!(!valid_rates(&bad));
+        let mut bad = ok;
+        bad.rates.clear();
+        assert!(!valid_rates(&bad));
+    }
 
     #[test]
     fn lens_urls_are_only_lens_pages() {

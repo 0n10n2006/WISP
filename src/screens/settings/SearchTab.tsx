@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { toWispError } from "../../services/errors";
 import { host } from "../../services/host";
-import type { FilesStatus } from "../../services/types";
+import { DEFAULT_WEB_SHORTCUTS, TAG_LABELS, TAG_PREFIX, type SearchTag } from "../../lib/commands";
+import type { FilesStatus, WebShortcut } from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { StatusLine, Toggle, useStatus } from "./common";
 
@@ -122,6 +123,161 @@ export function SearchTab() {
           <StatusLine status={status} />
         </section>
       )}
+      <BrowserSection />
+      <ShortcutsSection />
+      <section className="group">
+        <h3>Search tags</h3>
+        <p className="setting-desc">
+          Start with a tag to search just one thing, or type the word and press Tab. Backspace
+          removes it.
+        </p>
+        <ul className="plain-list tag-list">
+          {(Object.keys(TAG_LABELS) as SearchTag[]).map((t) => (
+            <li key={t}>
+              <kbd>{TAG_PREFIX[t]}</kbd> {TAG_LABELS[t]}
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
+  );
+}
+
+function BrowserSection() {
+  const on = useSettings((st) => st.snapshot?.settings.browserSearch ?? true);
+  const update = useSettings((st) => st.update);
+  const [found, setFound] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void host()
+      .browsersInstalled()
+      .then((b) => live && setFound(b))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <section className="group">
+      <Toggle
+        id="browser-search"
+        label="Search browser tabs and history"
+        description={
+          <>
+            Open tabs, bookmarks and pages you've visited show in the bar. Wisp reads them from your
+            browsers when you search, keeps nothing and never sends them anywhere.
+            {found && (
+              <> {found.length ? `Found: ${found.join(", ")}.` : "No supported browser found."}</>
+            )}
+          </>
+        }
+        checked={on}
+        onChange={(browserSearch) => void update({ browserSearch })}
+      />
+    </section>
+  );
+}
+
+function ShortcutsSection() {
+  const list = useSettings((st) => st.snapshot?.settings.webShortcuts ?? DEFAULT_WEB_SHORTCUTS);
+  const update = useSettings((st) => st.update);
+  const { status, ok, fail, clear } = useStatus();
+  const [draft, setDraft] = useState<WebShortcut>({ prefix: "", name: "", url: "" });
+  const save = async (webShortcuts: WebShortcut[], done: string) => {
+    clear();
+    const err = await update({ webShortcuts });
+    if (err) fail(err);
+    else ok(done);
+    return !err;
+  };
+  return (
+    <section className="group">
+      <h3>Web search shortcuts</h3>
+      <p className="setting-desc">
+        Type a shortcut and your search, like <kbd>g</kbd> cats or <kbd>yt</kbd> lofi, and Enter
+        opens it in your browser.
+      </p>
+      <ul className="item-list" aria-label="Web search shortcuts">
+        {list.map((w) => (
+          <li key={w.prefix} className="item">
+            <kbd>{w.prefix}</kbd>
+            <div className="item-main">
+              <span className="item-title">{w.name}</span>
+              <span className="item-sub cell-mono">{w.url}</span>
+            </div>
+            <button
+              className="icon-btn"
+              aria-label={`Remove ${w.name}`}
+              onClick={() =>
+                void save(
+                  list.filter((x) => x.prefix !== w.prefix),
+                  `Removed ${w.name}.`,
+                )
+              }
+            >
+              <Icon name="trash" size={16} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save([...list, draft], `Added ${draft.name}.`).then(
+            (saved) => saved && setDraft({ prefix: "", name: "", url: "" }),
+          );
+        }}
+      >
+        <div className="form-grid">
+          <div>
+            <label htmlFor="ws-prefix">Shortcut</label>
+            <input
+              id="ws-prefix"
+              type="text"
+              value={draft.prefix}
+              placeholder="e.g. npm"
+              maxLength={10}
+              onChange={(e) => setDraft({ ...draft, prefix: e.target.value })}
+            />
+          </div>
+          <div>
+            <label htmlFor="ws-name">Name</label>
+            <input
+              id="ws-name"
+              type="text"
+              value={draft.name}
+              placeholder="e.g. npm"
+              maxLength={40}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            />
+          </div>
+        </div>
+        <label htmlFor="ws-url">Address, with %s for the search</label>
+        <input
+          id="ws-url"
+          type="url"
+          value={draft.url}
+          placeholder="https://www.npmjs.com/search?q=%s"
+          maxLength={500}
+          onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+        />
+        <div className="row-start">
+          <button
+            className="btn btn-primary"
+            disabled={!draft.prefix.trim() || !draft.name.trim() || !draft.url.trim()}
+          >
+            <Icon name="plus" size={14} /> Add shortcut
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void save(DEFAULT_WEB_SHORTCUTS, "Shortcuts reset.")}
+          >
+            Reset to defaults
+          </button>
+        </div>
+      </form>
+      <StatusLine status={status} />
+    </section>
   );
 }

@@ -1,9 +1,14 @@
 // Command bar brain: turns what the user typed into ranked results.
 // Pure functions only, so every rule here is unit-tested.
 
+import { calculate, type CalcResult, type Rates } from "./calc";
 import type {
   AppUsage,
+  BrowserItem,
+  BrowserTab,
   FileHit,
+  ProcInfo,
+  WebShortcut,
   LaunchItem,
   MediaCommand,
   OpenWindow,
@@ -98,7 +103,152 @@ export interface FileResult {
   file: FileHit;
 }
 
-export type BarResult = CommandResult | AppResult | WindowResult | FileResult | AskResultItem;
+/** A calculation or conversion; Enter copies the answer. */
+export interface CalcResultItem {
+  kind: "calc";
+  id: "calc";
+  title: string;
+  hint: string;
+  calc: CalcResult;
+}
+
+/** "g cats": a search on another site. */
+export interface WebResult {
+  kind: "web";
+  id: string;
+  title: string;
+  hint: string;
+  url: string;
+}
+
+/** A tab open in a browser. */
+export interface TabResult {
+  kind: "tab";
+  id: string;
+  title: string;
+  hint: string;
+  tab: BrowserTab;
+}
+
+/** A page from browser history or bookmarks. */
+export interface HistoryResult {
+  kind: "history";
+  id: string;
+  title: string;
+  hint: string;
+  item: BrowserItem;
+}
+
+/** A running program. */
+export interface ProcessResult {
+  kind: "process";
+  id: string;
+  title: string;
+  hint: string;
+  proc: ProcInfo;
+}
+
+export type BarResult =
+  | CommandResult
+  | AppResult
+  | WindowResult
+  | FileResult
+  | CalcResultItem
+  | WebResult
+  | TabResult
+  | HistoryResult
+  | ProcessResult
+  | AskResultItem;
+
+/** What a tag limits the bar to. */
+export type SearchTag = "files" | "apps" | "windows" | "tabs" | "history" | "processes" | "calc";
+
+export const TAG_LABELS: Record<SearchTag, string> = {
+  files: "Files",
+  apps: "Apps",
+  windows: "Windows",
+  tabs: "Tabs",
+  history: "History",
+  processes: "Processes",
+  calc: "Calculator",
+};
+
+/** The short prefix for each tag ("f:"). */
+export const TAG_PREFIX: Record<SearchTag, string> = {
+  files: "f:",
+  apps: "a:",
+  windows: "w:",
+  tabs: "t:",
+  history: "h:",
+  processes: "p:",
+  calc: "=",
+};
+
+const SHORT_TAGS: Record<string, SearchTag> = {
+  f: "files",
+  a: "apps",
+  w: "windows",
+  t: "tabs",
+  h: "history",
+  b: "history",
+  p: "processes",
+  c: "calc",
+};
+
+/** Words that become a tag when followed by a search, or on Tab. */
+const TAG_WORDS: Record<string, SearchTag> = {
+  files: "files",
+  apps: "apps",
+  tabs: "tabs",
+  history: "history",
+  bookmarks: "history",
+  processes: "processes",
+  calc: "calc",
+};
+
+/** "t: github" → tabs + "github"; "= 2+2" → calc. */
+export function parseTag(query: string): { tag: SearchTag | null; rest: string } {
+  const q = query.replace(/^\s+/, "");
+  let m = q.match(/^([fawthbpc]):\s*/i);
+  if (m) return { tag: SHORT_TAGS[m[1]!.toLowerCase()]!, rest: q.slice(m[0].length) };
+  if (q.startsWith("=")) return { tag: "calc", rest: q.slice(1).trimStart() };
+  m = q.match(/^(files|apps|tabs|history|bookmarks|processes|calc)\s+(?=\S)/i);
+  if (m) return { tag: TAG_WORDS[m[1]!.toLowerCase()]!, rest: q.slice(m[0].length) };
+  return { tag: null, rest: query };
+}
+
+/** The tag a bare word names ("tabs"), for Tab to turn into a chip. */
+export function tagForWord(word: string): SearchTag | null {
+  return TAG_WORDS[word.trim().toLowerCase()] ?? null;
+}
+
+/** Shortcuts the bar starts with (users can edit them in Settings → Search). */
+export const DEFAULT_WEB_SHORTCUTS: WebShortcut[] = [
+  { prefix: "g", name: "Google", url: "https://www.google.com/search?q=%s" },
+  { prefix: "yt", name: "YouTube", url: "https://www.youtube.com/results?search_query=%s" },
+  { prefix: "wiki", name: "Wikipedia", url: "https://en.wikipedia.org/w/index.php?search=%s" },
+  { prefix: "maps", name: "Google Maps", url: "https://www.google.com/maps/search/%s" },
+  { prefix: "gh", name: "GitHub", url: "https://github.com/search?q=%s" },
+  { prefix: "ddg", name: "DuckDuckGo", url: "https://duckduckgo.com/?q=%s" },
+  { prefix: "amz", name: "Amazon", url: "https://www.amazon.com/s?k=%s" },
+  { prefix: "r", name: "Reddit", url: "https://www.reddit.com/search/?q=%s" },
+];
+
+/** "g cats" → a Google search for cats. */
+export function webShortcut(query: string, shortcuts: WebShortcut[]): WebResult | null {
+  const m = query.trim().match(/^(\S+)\s+(.+)$/);
+  if (!m) return null;
+  const s = shortcuts.find((x) => x.prefix.toLowerCase() === m[1]!.toLowerCase());
+  if (!s) return null;
+  const terms = m[2]!.trim();
+  return {
+    kind: "web",
+    id: `web:${s.prefix}`,
+    title: `Search ${s.name} for “${terms}”`,
+    hint: "Opens in your browser",
+    url: s.url.replace("%s", encodeURIComponent(terms)),
+  };
+}
 
 const UNIT_MINUTES: Record<string, number> = {
   s: 1 / 60,
@@ -354,6 +504,9 @@ export function fuzzyScore(query: string, name: string): number {
   const initials = words.map((w) => w[0]).join("");
   if (q.length >= 2 && initials.startsWith(q)) return 500;
   if (n.includes(q)) return 400 - n.indexOf(q);
+  // One typo in a longer word ("spotfy", "chorme").
+  if (q.length >= 4 && words.some((w) => w.length >= 4 && withinOneEdit(q, w)))
+    return 300 - Math.min(n.length, 100);
   // In-order subsequence with a penalty for gaps.
   let i = 0;
   let gaps = 0;
@@ -367,6 +520,32 @@ export function fuzzyScore(query: string, name: string): number {
   }
   if (i < q.length || q.length < 2) return 0;
   return Math.max(1, 200 - gaps * 8);
+}
+
+/** Edit distance with swaps of neighbours counted as one edit. */
+function editDistance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(d[i - 1]![j]! + 1, d[i]![j - 1]! + 1, d[i - 1]![j - 1]! + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        v = Math.min(v, d[i - 2]![j - 2]! + 1);
+      d[i]![j] = v;
+    }
+  }
+  return d[a.length]![b.length]!;
+}
+
+/** Whether `a` is the start of `b` (or `b`) give or take one typo. */
+export function withinOneEdit(a: string, b: string): boolean {
+  for (const len of [a.length - 1, a.length, a.length + 1]) {
+    if (len <= 0 || len > b.length) continue;
+    if (editDistance(a, b.slice(0, len)) <= 1) return true;
+  }
+  return false;
 }
 
 export function rankApps(
@@ -483,6 +662,76 @@ export function rankWindows(query: string, windows: OpenWindow[], limit = 4): Wi
     }));
 }
 
+/** Everything else the bar can search, when the host has it. */
+export interface BarExtras {
+  tabs?: BrowserTab[];
+  history?: BrowserItem[];
+  processes?: ProcInfo[];
+  shortcuts?: WebShortcut[];
+  rates?: Rates | null;
+}
+
+export function tabResults(query: string, tabs: BrowserTab[], limit = 6): TabResult[] {
+  const q = query.trim();
+  return tabs
+    .map((tab, i) => ({ tab, score: q ? fuzzyScore(q, tab.title) : 1000 - i }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ tab }) => ({
+      kind: "tab" as const,
+      id: `tab:${tab.id}`,
+      title: tab.title || "Untitled tab",
+      hint: `Tab · ${tab.browser}`,
+      tab,
+    }));
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+export function historyResults(items: BrowserItem[], limit = 6): HistoryResult[] {
+  return items.slice(0, limit).map((item) => ({
+    kind: "history" as const,
+    id: `history:${item.id}`,
+    title: item.title || hostOf(item.url),
+    hint: `${item.kind === "bookmark" ? "Bookmark" : "History"} · ${hostOf(item.url)}`,
+    item,
+  }));
+}
+
+const GB = 1024 ** 3;
+function memory(bytes: number): string {
+  return bytes >= GB ? `${(bytes / GB).toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
+export function processResults(query: string, procs: ProcInfo[], limit = 8): ProcessResult[] {
+  const q = query.trim();
+  return procs
+    .map((proc) => ({ proc, score: q ? fuzzyScore(q, proc.name) : proc.memoryBytes / GB }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ proc, score }) => ({
+      kind: "process" as const,
+      id: `process:${proc.pid}`,
+      title: proc.count > 1 ? `${proc.name} (${proc.count})` : proc.name,
+      hint: `${memory(proc.memoryBytes)} · ${Math.round(proc.cpu)}% CPU`,
+      proc,
+      score,
+    }))
+    .map(({ score: _score, ...r }) => r);
+}
+
+function calcRow(calc: CalcResult): CalcResultItem {
+  return { kind: "calc", id: "calc", title: `= ${calc.display}`, hint: calc.hint, calc };
+}
+
 /** Everything the bar shows for `query`, best first. */
 export function barResults(
   query: string,
@@ -491,8 +740,65 @@ export function barResults(
   recent: AppUsage[],
   windows: OpenWindow[] = [],
   files: FileHit[] = [],
+  extras: BarExtras = {},
 ): BarResult[] {
+  const { tag, rest } = parseTag(query);
+  const tabs = extras.tabs ?? [];
+  const history = extras.history ?? [];
+  const procs = extras.processes ?? [];
+  if (tag) {
+    switch (tag) {
+      case "files":
+        return fileResults(files, 8);
+      case "apps":
+        return rest.trim() ? rankApps(rest, items, starred, recent, 8) : [];
+      case "windows":
+        return rest.trim()
+          ? rankWindows(rest, windows, 8)
+          : windows.slice(0, 8).flatMap((w) => rankWindows(w.title || w.app, [w], 1));
+      case "tabs":
+        return tabResults(rest, tabs, 8);
+      case "history":
+        return historyResults(history, 8);
+      case "processes":
+        return processResults(rest, procs, 8);
+      case "calc": {
+        const c = calculate(rest, extras.rates ?? null);
+        return c ? [calcRow(c)] : [];
+      }
+    }
+  }
   const q = query.trim();
+  if (!q) return [];
+  const calc = calculate(q, extras.rates ?? null);
+  if (calc)
+    return [calcRow(calc), { kind: "ask", id: "ask", title: q, hint: "Ask Wisp", prompt: q }];
+  const web = webShortcut(q, extras.shortcuts ?? []);
+  const base = baseResults(q, items, starred, recent, windows, files);
+  // Tabs, recent pages and running programs that match well, before "ask".
+  const more: BarResult[] = looksLikeQuestion(q)
+    ? []
+    : [
+        ...tabResults(q, tabs, 3).filter((t) => fuzzyScore(q, t.tab.title) >= 400),
+        ...historyResults(history, 3),
+        ...processResults(q, procs, 2).filter((p) => fuzzyScore(q, p.proc.name) >= 700),
+      ];
+  const askAt = base.findIndex((r) => r.kind === "ask");
+  const merged =
+    askAt > 0 && !web
+      ? [...base.slice(0, askAt), ...more, ...base.slice(askAt)]
+      : [...base, ...more];
+  return web ? [web, ...merged] : merged;
+}
+
+function baseResults(
+  q: string,
+  items: LaunchItem[],
+  starred: string[],
+  recent: AppUsage[],
+  windows: OpenWindow[],
+  files: FileHit[],
+): BarResult[] {
   if (!q) return [];
   const ask: AskResultItem = { kind: "ask", id: "ask", title: q, hint: "Ask Wisp", prompt: q };
   const switchTo = q.match(SWITCH_PREFIX)?.[1];

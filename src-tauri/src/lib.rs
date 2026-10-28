@@ -3,6 +3,7 @@
 mod actions;
 mod agents;
 mod apps;
+mod browsers;
 mod capture;
 mod chrome;
 mod cleanup;
@@ -16,6 +17,7 @@ mod fileindex;
 mod foreground;
 mod hotkeys;
 mod power;
+mod preview;
 mod reminders;
 mod routing;
 mod secrets;
@@ -112,6 +114,7 @@ pub fn run() {
                 stats: Default::default(),
                 catalogue: Mutex::new(None),
                 files: fileindex::Indexer::open(&data_dir.join("files.db")),
+                browsers: Default::default(),
                 highlights: Mutex::new(Vec::new()),
             });
 
@@ -266,6 +269,15 @@ pub fn run() {
             commands::files::files_folder_add,
             commands::files::files_folder_remove,
             commands::system::pc_info,
+            commands::search::file_preview,
+            commands::search::browsers_installed,
+            commands::search::browser_tabs,
+            commands::search::browser_tab_switch,
+            commands::search::browser_search,
+            commands::search::browser_open,
+            commands::search::processes_list,
+            commands::search::process_end,
+            commands::search::currency_rates,
             commands::ask::scheduled_list,
             commands::ask::scheduled_cancel,
             commands::settings::test_openrouter_key,

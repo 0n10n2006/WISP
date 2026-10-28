@@ -37,6 +37,9 @@ import {
   type VoiceTarget,
   type FileHit,
   type FilesStatus,
+  type BrowserItem,
+  type BrowserTab,
+  type ProcInfo,
   type StatsSnapshot,
 } from "./types";
 
@@ -129,6 +132,73 @@ export const MOCK_FILES: FileHit[] = [
     modified: Date.now() - DAY,
   },
   { id: 8, name: "Downloads", folder: "", kind: "folder", size: 0, modified: Date.now() - DAY },
+];
+
+export const MOCK_TABS: BrowserTab[] = [
+  { id: 1, title: "Inbox (3) - Gmail", browser: "Chrome" },
+  { id: 2, title: "0n10n2006/WISP: Wisp, an AI companion for Windows - GitHub", browser: "Chrome" },
+  { id: 3, title: "Rust Programming Language", browser: "Edge" },
+];
+
+export const MOCK_PAGES: BrowserItem[] = [
+  {
+    id: 11,
+    title: "GitHub",
+    url: "https://github.com/",
+    browser: "Chrome",
+    kind: "bookmark",
+    visits: 40,
+    lastVisit: Date.now() - 3_600_000,
+  },
+  {
+    id: 12,
+    title: "Hacker News",
+    url: "https://news.ycombinator.com/",
+    browser: "Firefox",
+    kind: "history",
+    visits: 25,
+    lastVisit: Date.now() - DAY,
+  },
+  {
+    id: 13,
+    title: "Tauri 2 docs",
+    url: "https://v2.tauri.app/start/",
+    browser: "Chrome",
+    kind: "history",
+    visits: 6,
+    lastVisit: Date.now() - 2 * DAY,
+  },
+];
+
+export const MOCK_PROCS: ProcInfo[] = [
+  {
+    name: "chrome",
+    count: 14,
+    pid: 4100,
+    memoryBytes: 2.1e9,
+    cpu: 6.2,
+    window: 101,
+    protected: false,
+  },
+  {
+    name: "Code",
+    count: 6,
+    pid: 5200,
+    memoryBytes: 1.2e9,
+    cpu: 3.1,
+    window: 102,
+    protected: false,
+  },
+  {
+    name: "notepad",
+    count: 1,
+    pid: 6100,
+    memoryBytes: 2.4e7,
+    cpu: 0,
+    window: 103,
+    protected: false,
+  },
+  { name: "csrss", count: 2, pid: 600, memoryBytes: 5e6, cpu: 0.1, window: null, protected: true },
 ];
 
 const FILE_FILLER = new Set(["my", "the", "a", "an", "file", "files", "called", "named", "of"]);
@@ -1239,6 +1309,46 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
       return st;
     },
     onFilesIndex: (cb) => on(filesListeners, cb),
+    filePreview: async (id) => {
+      const f = files.find((x) => x.id === id);
+      if (!f) throw err("invalid", "That file isn't in the index any more.");
+      if (f.kind === "folder") return { kind: "folder", entries: ["IMG_2041.jpg", "IMG_2042.jpg"] };
+      if (f.kind === "document" && f.name.endsWith(".txt")) return { kind: "text", text: "Notes" };
+      return {
+        kind: "image",
+        image: `data:image/svg+xml;base64,${btoa(sampleCaptureSvg(320, 180))}`,
+      };
+    },
+    browsersInstalled: async () => ["Chrome", "Edge", "Firefox"],
+    browserTabs: async () => (settings.browserSearch ? MOCK_TABS : []),
+    browserTabSwitch: async (id) => {
+      if (!MOCK_TABS.some((t) => t.id === id)) throw err("invalid", "That tab is closed.");
+    },
+    browserSearch: async (query, limit = 6) => {
+      if (!settings.browserSearch) return [];
+      const q = query.toLowerCase().trim();
+      if (!q) return [];
+      return MOCK_PAGES.filter((p) => p.title.toLowerCase().includes(q) || p.url.includes(q)).slice(
+        0,
+        limit,
+      );
+    },
+    browserOpen: async (id) => {
+      if (!MOCK_PAGES.some((p) => p.id === id))
+        throw err("invalid", "That page isn't in your history any more.");
+    },
+    processesList: async () => MOCK_PROCS,
+    processEnd: async (name) => {
+      const p = MOCK_PROCS.find((x) => x.name === name);
+      if (!p) throw err("invalid", `${name} isn't running.`);
+      if (p.protected) throw err("permission_denied", `Wisp won't end ${name}: Windows needs it.`);
+      return `Ended ${name}.`;
+    },
+    currencyRates: async () => ({
+      base: "EUR",
+      date: "2026-10-27",
+      rates: { USD: 1.08, GBP: 0.85, JPY: 162.4, INR: 90.1 },
+    }),
     pcInfo: async () => ({
       battery: { percent: 76, charging: false, pluggedIn: false, secsLeft: 3 * 3600 + 600 },
       localIp: "192.168.1.24",

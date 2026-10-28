@@ -65,6 +65,27 @@ code; if you change one of the boundaries below, update this file in the same ch
   already shown on the dashboard, and the local address of the outgoing interface: a UDP socket is connected but
   no packet is sent). The public IP is never looked up.
 
+## Browser data, programs and conversions
+
+- Browser history and bookmarks are read from **copies** of the browsers' own files (`History`, `Bookmarks`,
+  `places.sqlite`) in a temporary folder that is deleted right after, only when the bar searches and at most
+  once a minute. They're kept in memory only, never written by Wisp, never sent anywhere (Gemini included),
+  and forgotten when "Search browser tabs and history" is turned off. Only `http`/`https` pages are listed;
+  opening one goes by id, and the address is taken from the host's copy and checked again
+  (`validate_public_url`). The action log records the site's host only.
+- Open tabs are read with UI Automation from the browser's own tab strip. Web page content is never walked
+  (document elements are skipped), and switching selects the tab item; nothing is typed or clicked in pages.
+- Programs are ended by name only after the user confirms. Windows' own processes (System, csrss, lsass,
+  services, svchost, dwm, winlogon…), Defender and Wisp itself are refused, and Wisp never asks for higher
+  rights, so programs running as administrator can't be ended. Ending a program is in the action log.
+- The calculator is a hand-written parser: nothing typed is evaluated as code. Exchange rates come from
+  `api.frankfurter.dev` (European Central Bank data, no key, nothing about the user is sent), fetched only when
+  a currency conversion is typed and at most every 12 hours, and checked before use.
+- Web search shortcuts must be public `https://` addresses containing `%s`; the words are URL-encoded and
+  opened in the default browser like any link.
+- File previews go by id like opening, and are re-checked the same way. Thumbnails come from Windows' own
+  thumbnail handlers (as in Explorer); text previews read at most 256 KB of known text types.
+
 ## Voice recognition
 
 - Voice uses Windows' `SpeechRecognizer` (dictation topic) through continuous recognition, under Windows' own
