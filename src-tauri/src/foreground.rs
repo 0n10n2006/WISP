@@ -10,7 +10,6 @@ mod imp {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId, IsWindow,
-        SetForegroundWindow,
     };
 
     fn hwnd(t: Target) -> HWND {
@@ -72,10 +71,6 @@ mod imp {
         let n = unsafe { GetWindowTextW(hwnd(t), &mut buf) };
         (n > 0).then(|| String::from_utf16_lossy(&buf[..n as usize]))
     }
-
-    pub fn focus(t: Target) -> bool {
-        unsafe { SetForegroundWindow(hwnd(t)).as_bool() }
-    }
 }
 
 #[cfg(not(windows))]
@@ -93,9 +88,6 @@ mod imp {
     pub fn title(_t: Target) -> Option<String> {
         None
     }
-    pub fn focus(_t: Target) -> bool {
-        false
-    }
 }
 
-pub use imp::{current, focus, is_valid, process_name, title};
+pub use imp::{current, is_valid, process_name, title};

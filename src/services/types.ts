@@ -500,6 +500,14 @@ export type WinChange =
   | { setting: "powerMode"; value: PowerMode }
   | { setting: "outputDevice"; value: string };
 
+export type VoiceTarget = "app" | "bar";
+
+/** Words heard by Windows' speech recognizer. */
+export interface Heard {
+  target: VoiceTarget;
+  text: string;
+}
+
 /** A confirmed action waiting to run ("open Chrome in 20 seconds"). */
 export interface ScheduledAction {
   id: string;

@@ -3,8 +3,8 @@ import { chordLabel } from "../../services/types";
 import { useSettings } from "../../state/settings";
 import { Toggle } from "./common";
 
-/** Windows' speech settings (online speech recognition, voice typing). */
-const SPEECH_SETTINGS = "ms-settings:speech";
+/** Windows' speech privacy page (online speech recognition). */
+const SPEECH_SETTINGS = "ms-settings:privacy-speech";
 
 export function VoiceTab() {
   const s = useSettings((st) => st.snapshot?.settings);
@@ -15,9 +15,10 @@ export function VoiceTab() {
     <div className="tab">
       <h2>Voice &amp; dictation</h2>
       <p className="setting-desc">
-        Voice uses Windows voice typing: words appear as you speak, punctuated, and it stops by
-        itself when you pause. Dictation types into the app you're in; asking by voice types into
-        Wisp's bar and asks when you stop. Wisp never records audio itself.
+        Wisp listens with Windows' speech recognition: no pop-up, the words show in the notch as you
+        speak, and it stops by itself when you pause. Dictation types into the app you're in; asking
+        by voice fills Wisp's bar and asks when you stop. Tap the keys again to stop early. Wisp
+        never records audio itself.
       </p>
       <section className="group">
         <Toggle
@@ -51,11 +52,10 @@ export function VoiceTab() {
         />
       </section>
       <section className="group">
-        <h3>Windows voice typing</h3>
+        <h3>Windows speech recognition</h3>
         <p className="setting-desc">
-          If Windows says voice typing isn't available, turn on{" "}
-          <strong>Online speech recognition</strong> in Windows' speech settings. Your language,
-          microphone and automatic punctuation are set in Windows too (press Win+H, then the gear).
+          Voice needs <strong>Online speech recognition</strong> turned on in Windows. The language
+          follows Windows' speech language, and the microphone is Windows' default one.
         </p>
         <div className="row-start">
           <button

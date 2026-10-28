@@ -20,6 +20,7 @@ mod routing;
 mod secrets;
 mod selftest;
 mod shortcuts;
+mod speech;
 mod startmenu;
 mod state;
 mod stats;
@@ -154,6 +155,12 @@ pub fn run() {
             hotkeys::set_enabled(settings.hold_to_talk && settings.voice_enabled);
             hotkeys::install(handle.clone());
             hotkeys::configure(&settings.hold_dictate, &settings.hold_ask);
+            // Get the speech recognizer ready so the first word isn't lost.
+            if settings.voice_enabled {
+                std::thread::spawn(|| {
+                    let _ = speech::prepare();
+                });
+            }
             // Last session ended without a clean exit (crash, power cut):
             // still honour "clear history when Wisp closes".
             if settings.clear_history_on_exit {
@@ -229,7 +236,9 @@ pub fn run() {
             commands::settings::remove_api_key,
             commands::settings::list_models,
             commands::settings::test_connection,
-            commands::voice::voice_typing,
+            commands::voice::voice_start,
+            commands::voice::voice_stop,
+            commands::voice::voice_cancel,
             commands::personalize::win_settings_get,
             commands::personalize::win_setting_set,
             commands::personalize::win_settings_page,

@@ -10,7 +10,7 @@ import { useConversation } from "../../state/conversation";
 import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
-import { spokenQuery, useVoice, VOICE_SEND_MS } from "../../state/voice";
+import { spokenQuery, useVoice } from "../../state/voice";
 import { chordLabel, type HoldChord, type OpenWindow } from "../../services/types";
 import { runResult } from "./actions";
 
@@ -145,33 +145,22 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
     };
   }, [awareness]);
 
-  // Asking by voice: Windows types the words in; once they stop for a
-  // moment, the question is asked (like pressing Enter).
-  const listening = useVoice((v) => v.listening);
-  const [composing, setComposing] = useState(false);
-  // Windows types into whatever has focus: make that the input.
+  // Asking by voice: the words heard fill the input; when Windows hears a
+  // pause, the question runs like pressing Enter.
+  const listening = useVoice((v) => v.listening && v.target === "bar");
+  const finished = useVoice((v) => v.finished);
   useEffect(() => {
     if (listening) input.current?.focus();
   }, [listening]);
   useEffect(() => {
-    if (!listening || composing || !spokenQuery(query)) return;
-    const t = setTimeout(() => {
-      const q = spokenQuery(useNotch.getState().query);
-      useVoice.getState().stop();
-      if (!q) return;
-      setQuery(q);
-      const top = barResults(
-        q,
-        catalogue?.items ?? [],
-        starred,
-        catalogue?.recent ?? [],
-        windows,
-      )[0];
-      if (top) void runResult(top, { web, think });
-    }, VOICE_SEND_MS);
-    return () => clearTimeout(t);
-  }, [listening, composing, query, catalogue, starred, windows, web, think, setQuery]);
-  useEffect(() => () => useVoice.getState().stop(), []);
+    const spoken = finished === null ? null : useVoice.getState().takeFinished();
+    const q = spoken === null ? "" : spokenQuery(spoken);
+    if (!q) return;
+    setQuery(q);
+    const top = barResults(q, catalogue?.items ?? [], starred, catalogue?.recent ?? [], windows)[0];
+    if (top) void runResult(top, { web, think });
+  }, [finished, catalogue, starred, windows, web, think, setQuery]);
+  useEffect(() => () => useVoice.getState().cancel(), []);
 
   const results = useMemo(
     () =>
@@ -205,16 +194,15 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   });
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Keys the user types (not Windows' voice typing) mean they're editing.
-    if (listening && !e.nativeEvent.isComposing && e.key !== "Process" && e.key !== "Enter") {
-      useVoice.getState().stop();
+    // Typing while Wisp listens means editing: stop listening, keep the words.
+    if (listening) {
+      useVoice.getState().cancel();
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
         return;
       }
     }
-    if (e.key === "Enter") useVoice.getState().stop();
     if (e.key === "ArrowDown" && results.length) {
       e.preventDefault();
       setSel({ query, index: (selected + 1) % results.length });
@@ -260,8 +248,6 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
-          onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={() => setComposing(false)}
           placeholder={placeholder}
           aria-label="Ask Wisp or search"
           role="combobox"
@@ -367,14 +353,11 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
       {listening && (
         <p className="voice-hint" role="status">
           <Icon name="mic" size={14} />
-          {spokenQuery(query) ? (
-            <>
-              <span>Asking when you stop… Enter asks now, typing lets you edit.</span>
-              <span key={query} className="voice-countdown" aria-hidden />
-            </>
-          ) : (
-            <span>Listening — Windows voice typing writes what you say here.</span>
-          )}
+          <span>
+            {query.trim()
+              ? "Listening… Wisp asks when you pause. Type to edit instead."
+              : "Listening — just speak."}
+          </span>
         </p>
       )}
       {results.length > 0 && (

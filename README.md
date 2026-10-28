@@ -180,19 +180,18 @@ where that is, and rings it with a label for a few seconds (the overlay is click
 
 ## Voice and dictation
 
-Voice uses Windows 11's own voice typing (the same as `Win+H`): words appear as you speak, punctuated, and
-it stops by itself when you pause. There's nothing to download and no wait after you finish; Wisp never
-records audio itself.
+Wisp listens with Windows' built-in speech recognition, with no pop-up: what you say shows in the notch as
+you speak, and listening stops by itself a moment after you pause (or tap the keys again). There's nothing
+to download; Wisp never records audio itself.
 
-- **Dictate:** tap `Ctrl+Win` (or press `Ctrl+Shift+D`, or the mic button) and talk: the words are typed
-  straight into the app you're in.
-- **Ask by voice:** tap `Win+Alt` (or press `Ctrl+Alt+V`, or the talk button): the words appear in Wisp's bar
-  and the question is asked a moment after you stop. Press Enter to ask straight away, or type to edit first.
-  Spoken commands like "timer 25" or "night light on" run instantly.
+- **Dictate:** tap `Ctrl+Win` (or press `Ctrl+Shift+D`, or the mic button) and talk: each phrase is typed
+  into the app you're in as soon as it's recognised.
+- **Ask by voice:** tap `Win+Alt` (or press `Ctrl+Alt+V`, or the talk button): the words fill Wisp's bar and
+  the question is asked when you pause. Type to edit instead. Spoken commands like "timer 25" or "night light
+  on" run instantly.
 
-Voice typing uses Microsoft's speech service. If Windows says it isn't available, turn on **Settings → Time &
-language → Speech → Online speech recognition** (**Settings → Voice & dictation** has a button). Language,
-microphone and automatic punctuation are set in Windows (press `Win+H`, then the gear).
+Recognition uses Microsoft's speech service: turn on **Settings → Privacy & security → Speech → Online speech
+recognition** (**Settings → Voice & dictation** has a button). The language follows Windows' speech language.
 
 ## Knows your PC
 

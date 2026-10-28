@@ -33,6 +33,8 @@ import {
   type FreeModel,
   type ModelUsage,
   type WinSettingsState,
+  type Heard,
+  type VoiceTarget,
 } from "./types";
 
 const STORAGE_KEY = "wisp.mock.settings";
@@ -240,7 +242,20 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     tucked: new Set<(t: boolean) => void>(),
     blur: new Set<() => void>(),
     hold: new Set<(e: HoldEvent) => void>(),
+    speech: new Set<(h: Heard) => void>(),
+    speechDone: new Set<(h: Heard) => void>(),
     selfTest: new Set<(section: string) => void>(),
+  };
+  let speechTimer: ReturnType<typeof setInterval> | null = null;
+  let speechTarget: VoiceTarget = "app";
+  let speechHeard = "";
+  const endSpeech = () => {
+    if (!speechTimer) return;
+    clearInterval(speechTimer);
+    speechTimer = null;
+    const h = { target: speechTarget, text: speechHeard };
+    speechHeard = "";
+    listeners.speechDone.forEach((cb) => cb(h));
   };
   const errors: string[] = [];
   const selfTestReports: { section: string; steps: SelfTestStep[] }[] = [];
@@ -834,18 +849,29 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     onCaptureReady: (cb) => on(listeners.captureReady, cb),
     onCaptureError: (cb) => on(listeners.captureError, cb),
 
-    // Windows voice typing, simulated: in the bar, the spoken words appear in
-    // the focused input as if typed.
-    voiceTyping: async (target) => {
-      const text = opts.voice ?? (persist ? "What's the weather like tomorrow?" : null);
-      if (target !== "bar" || !text || typeof document === "undefined") return;
-      setTimeout(() => {
-        const el = document.activeElement;
-        if (!(el instanceof HTMLInputElement)) return;
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(el, text);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      }, 120);
+    // Windows speech recognition, simulated: the words arrive one by one,
+    // then listening ends after a short pause.
+    voiceStart: async (target) => {
+      const text = opts.voice ?? (persist ? "What's the weather like tomorrow?" : "");
+      const words = text.split(" ").filter(Boolean);
+      if (speechTimer) clearInterval(speechTimer);
+      let n = 0;
+      speechTarget = target;
+      speechTimer = setInterval(() => {
+        if (n < words.length) {
+          n += 1;
+          speechHeard = words.slice(0, n).join(" ");
+          listeners.speech.forEach((cb) => cb({ target, text: speechHeard }));
+        } else endSpeech();
+      }, 60);
     },
+    voiceStop: async () => endSpeech(),
+    voiceCancel: async () => {
+      if (speechTimer) clearInterval(speechTimer);
+      speechTimer = null;
+    },
+    onSpeech: (cb) => on(listeners.speech, cb),
+    onSpeechDone: (cb) => on(listeners.speechDone, cb),
 
     respondAction: async (id, approved) => {
       pendingActions.get(id)?.(approved);

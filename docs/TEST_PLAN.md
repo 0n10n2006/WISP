@@ -43,6 +43,14 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Seamless voice (v0.2.12)
+
+- [ ] In Notepad, tap `Ctrl+Win` and talk: no Windows pop-up appears; the notch shows the words as you speak and each phrase is typed into Notepad; about a second after you stop, listening ends and the notch tucks back.
+- [ ] Tap `Ctrl+Win` and say nothing: listening ends after about 6 s. Tap `Ctrl+Win` twice quickly: it stops at once.
+- [ ] Tap `Win+Alt` and ask a question: the words fill the bar and it's asked when you pause. Say "timer 25": the timer starts. Start typing while it listens: it stops and waits for Enter.
+- [ ] In Windows Terminal, dictate two sentences: they arrive on one line and nothing runs.
+- [ ] Turn off Online speech recognition: Wisp says so; the Voice settings button opens the right page.
+
 ### Voice = Windows voice typing (v0.2.11)
 
 - [ ] In Notepad, tap `Ctrl+Win` and speak: Windows voice typing opens and the words appear as you talk, punctuated; it stops by itself after a pause. Start doesn't open. `Ctrl+Shift+D` and the bar's mic button do the same in the app you came from.

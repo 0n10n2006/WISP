@@ -50,6 +50,8 @@ import type {
   WallpaperInfo,
   Weather,
   WeatherPlace,
+  Heard,
+  VoiceTarget,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -136,9 +138,17 @@ export interface Host {
   onCaptureReady(cb: (c: CaptureReady) => void): Unsubscribe;
   onCaptureError(cb: (e: WispError) => void): Unsubscribe;
 
-  /** Start Windows voice typing (Win+H) in the app you were using, or in
-   * Wisp's bar for a spoken question. */
-  voiceTyping(target: "app" | "bar"): Promise<void>;
+  /** Listen with Windows' speech recognizer: dictation is typed into the app
+   * you were using; a spoken question fills Wisp's bar. */
+  voiceStart(target: VoiceTarget): Promise<void>;
+  /** Stop listening now, keeping what was heard. */
+  voiceStop(): Promise<void>;
+  /** Stop listening and forget what was heard. */
+  voiceCancel(): Promise<void>;
+  /** The words heard so far. */
+  onSpeech(cb: (h: Heard) => void): Unsubscribe;
+  /** Listening ended (after a pause, or when stopped). */
+  onSpeechDone(cb: (h: Heard) => void): Unsubscribe;
 
   /** Reminders, memory, clipboard (local). */
   tasksList(includeCompleted: boolean): Promise<Task[]>;

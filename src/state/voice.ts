@@ -1,28 +1,37 @@
-// Voice uses Windows' own voice typing (Win+H): it types what you say, live
-// and punctuated, into the focused text box. Dictating starts it in the app
-// you were using; asking by voice starts it in Wisp's bar, which asks once
-// you stop talking. Wisp never records audio itself.
+// Voice: Wisp listens with Windows' speech recognizer, with no window of its
+// own. Dictating types each phrase into the app you're in as it's
+// recognised; asking by voice fills Wisp's bar and asks once you pause.
+// Wisp never records audio itself.
 
 import { create } from "zustand";
 import { toWispError } from "../services/errors";
 import { host } from "../services/host";
+import type { Heard, VoiceTarget } from "../services/types";
 import { useActivity } from "./activity";
 import { useNotch } from "./notch";
 import { useSettings } from "./settings";
 import { toast } from "./toast";
 
-/** Quiet time after the last words before a spoken question is asked. */
-export const VOICE_SEND_MS = 1500;
-
 interface VoiceState {
-  /** The bar is waiting for a spoken question. */
+  /** Windows is listening. */
   listening: boolean;
-  /** Voice typing into the app you were using. */
+  /** Where the words are going. */
+  target: VoiceTarget | null;
+  /** The words heard so far. */
+  live: string;
+  /** A spoken question that just finished, for the bar to ask (then cleared). */
+  finished: string | null;
+  /** Dictate into the app you're in (again: stop). */
   dictate(): Promise<void>;
-  /** Open the bar and voice-type a question into it. */
+  /** Ask by voice in Wisp's bar (again: stop). */
   ask(): Promise<void>;
-  /** Leave listening mode (the question was sent, or the user is editing). */
+  /** Stop listening now, keeping what was heard. */
   stop(): void;
+  /** Stop listening and drop it (e.g. the user started typing). */
+  cancel(): void;
+  heard(h: Heard): void;
+  done(h: Heard): void;
+  takeFinished(): string | null;
 }
 
 function allowed(): boolean {
@@ -35,47 +44,95 @@ function allowed(): boolean {
 
 const listen = (on: boolean) => useActivity.getState().setListening(on);
 
-export const useVoice = create<VoiceState>((set) => ({
-  listening: false,
+function setMode(mode: "sliver" | "peek" | "open") {
+  useNotch.getState().setMode(mode);
+  void host()
+    .setIslandMode(mode)
+    .catch(() => {});
+}
 
-  async dictate() {
-    if (!allowed()) return;
-    set({ listening: false });
-    listen(false);
-    try {
-      await host().voiceTyping("app");
-    } catch (e) {
-      toast(toWispError(e).message, "warning", 5000);
-    }
-  },
-
-  async ask() {
-    if (!allowed()) return;
-    useNotch.getState().setQuery("");
-    if (useNotch.getState().mode !== "open") {
-      useNotch.getState().setMode("open");
-      void host()
-        .setIslandMode("open")
-        .catch(() => {});
-    }
-    set({ listening: true });
+export const useVoice = create<VoiceState>((set, get) => {
+  const begin = async (target: VoiceTarget) => {
+    set({ listening: true, target, live: "", finished: null });
     listen(true);
     try {
-      await host().voiceTyping("bar");
+      await host().voiceStart(target);
     } catch (e) {
-      set({ listening: false });
+      set({ listening: false, target: null });
       listen(false);
-      toast(toWispError(e).message, "warning", 5000);
+      if (target === "app" && useNotch.getState().mode === "peek") setMode("sliver");
+      toast(toWispError(e).message, "warning", 6000);
     }
-  },
+  };
+  return {
+    listening: false,
+    target: null,
+    live: "",
+    finished: null,
 
-  stop() {
-    set({ listening: false });
-    listen(false);
-  },
-}));
+    async dictate() {
+      if (get().listening) return get().stop();
+      if (!allowed()) return;
+      // Show what's heard in the notch without taking focus from the app.
+      if (useNotch.getState().mode === "sliver") setMode("peek");
+      await begin("app");
+    },
 
-/** A spoken question as typed by Windows, ready to run: no trailing full stop. */
+    async ask() {
+      if (get().listening) return get().stop();
+      if (!allowed()) return;
+      useNotch.getState().setQuery("");
+      if (useNotch.getState().mode !== "open") setMode("open");
+      await begin("bar");
+    },
+
+    stop() {
+      if (!get().listening) return;
+      void host()
+        .voiceStop()
+        .catch(() => {});
+    },
+
+    cancel() {
+      if (!get().listening) return;
+      set({ listening: false, target: null, live: "" });
+      listen(false);
+      void host()
+        .voiceCancel()
+        .catch(() => {});
+    },
+
+    heard(h) {
+      if (!get().listening) return;
+      set({ live: h.text });
+      if (h.target === "bar") useNotch.getState().setQuery(h.text);
+    },
+
+    done(h) {
+      if (!get().listening) return;
+      set({ listening: false, target: null, live: "" });
+      listen(false);
+      if (h.target === "bar") {
+        if (h.text.trim()) {
+          useNotch.getState().setQuery(h.text);
+          set({ finished: h.text });
+        }
+      } else if (useNotch.getState().mode === "peek") {
+        const hovered =
+          typeof document !== "undefined" && document.querySelector(".notch-idle:hover") !== null;
+        if (!hovered) setMode("sliver");
+      }
+    },
+
+    takeFinished() {
+      const f = get().finished;
+      if (f !== null) set({ finished: null });
+      return f;
+    },
+  };
+});
+
+/** A spoken question as recognised, ready to run: no trailing full stop. */
 export function spokenQuery(text: string): string {
   return text
     .trim()

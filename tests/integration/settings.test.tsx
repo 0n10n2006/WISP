@@ -110,16 +110,18 @@ describe("settings window", () => {
     );
   });
 
-  it("voice settings point to Windows voice typing", async () => {
+  it("voice settings point to Windows speech recognition", async () => {
     const h = await setupMockHost({ windowKind: "settings", withKey: true, onboarded: true });
     const launch = vi.spyOn(h, "launchItem");
     const user = userEvent.setup();
     render(<App />);
     await user.click(await screen.findByRole("tab", { name: "Voice & dictation" }));
-    expect(screen.getByText(/uses Windows voice typing/i)).toBeInTheDocument();
+    expect(screen.getByText(/listens with Windows' speech recognition/i)).toBeInTheDocument();
     expect(screen.queryByText(/whisper/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open Windows speech settings" }));
-    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ target: "ms-settings:speech" }));
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "ms-settings:privacy-speech" }),
+    );
   });
 
   it("chooses when Wisp asks before acting", async () => {

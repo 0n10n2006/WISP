@@ -442,7 +442,7 @@ export function PrivacyTab() {
             screen to Gemini; “Google Lens” on a circled area sends just that area to Google Lens
             and opens the results in your browser; with an OpenRouter key (optional), simple text
             questions and clipboard help go to OpenRouter's free models (text only, never
-            screenshots); voice uses Windows voice typing, so what you say is recognised by
+            screenshots); voice uses Windows' speech recognition, so what you say is recognised by
             Microsoft's speech service under Windows' own privacy settings (Wisp never records or
             uploads audio); weather sends the place you picked to Open-Meteo; the speed test
             downloads from speed.cloudflare.com; update checks contact GitHub.

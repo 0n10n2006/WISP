@@ -54,7 +54,11 @@ function Idle() {
       onPointerEnter={peek}
       onPointerLeave={unpeek}
       onFocus={peek}
-      onClick={open}
+      onClick={() => {
+        // While dictating, a click on the notch stops listening.
+        if (useVoice.getState().listening) useVoice.getState().stop();
+        else open();
+      }}
       aria-label={`Open Wisp — ${ORB_LABELS[state]}`}
       title="Open Wisp"
     >
@@ -106,8 +110,8 @@ function SliverGlow() {
   );
 }
 
-/** Voice keys: once Ctrl+Win (dictate) or Win+Alt (ask) is tapped, or
- * held and let go, Windows voice typing starts. */
+/** Voice keys: tapping Ctrl+Win (dictate) or Win+Alt (ask), or holding and
+ * letting go, starts listening; doing it again stops. */
 function onHold(e: HoldEvent) {
   if (e.phase !== "tap" && e.phase !== "stop") return;
   if (e.chord === "dictate") void useVoice.getState().dictate();
@@ -167,6 +171,8 @@ export function Notch() {
         open();
       }),
       h.onHold(onHold),
+      h.onSpeech((s) => useVoice.getState().heard(s)),
+      h.onSpeechDone((s) => useVoice.getState().done(s)),
       h.onScheduledRan((r) =>
         toast(
           r.outcome === "done" ? r.message : `Couldn't run "${r.description}": ${r.message}`,

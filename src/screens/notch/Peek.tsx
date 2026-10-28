@@ -5,6 +5,7 @@ import { useOrbState } from "../../hooks/useOrbState";
 import { host } from "../../services/host";
 import type { AgentJob, NowPlaying } from "../../services/types";
 import { useDueReminders } from "../../state/assist";
+import { useVoice } from "../../state/voice";
 import { formatCountdown, useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 
@@ -32,6 +33,12 @@ function useRunningJobs(): AgentJob[] {
   return jobs;
 }
 
+/** The end of what's been said, so the newest words stay in view. */
+export function lastWords(text: string, max = 48): string {
+  const t = text.trim();
+  return t.length <= max ? t : `…${t.slice(t.length - max + 1).trimStart()}`;
+}
+
 /** What the hover notch shows: the most relevant live thing, else the time. */
 export function Peek() {
   const state = useOrbState();
@@ -39,6 +46,8 @@ export function Peek() {
   const timer = useNotch((n) => n.timer);
   const jobs = useRunningJobs();
   const reminder = useDueReminders((r) => r.due[0]);
+  const dictating = useVoice((v) => v.listening && v.target === "app");
+  const live = useVoice((v) => v.live);
   const [playing, setPlaying] = useState<NowPlaying | null>(null);
 
   useEffect(() => {
@@ -53,7 +62,14 @@ export function Peek() {
   }, []);
 
   let main: React.ReactNode;
-  if (state === "thinking") main = <span>Thinking…</span>;
+  if (dictating)
+    main = (
+      <span className="peek-listening">
+        <Icon name="mic" size={14} />
+        <span className="peek-ellipsis">{live ? lastWords(live) : "Listening…"}</span>
+      </span>
+    );
+  else if (state === "thinking") main = <span>Thinking…</span>;
   else if (reminder)
     main = (
       <span className="peek-reminder">

@@ -17,6 +17,7 @@ import type {
   SettingsSnapshot,
   ShortcutAction,
   HoldEvent,
+  Heard,
 } from "./types";
 
 /** Note a problem in the host's local error log (never throws). */
@@ -138,7 +139,11 @@ export function createTauriHost(): Host {
     onCaptureReady: (cb) => subscribe<CaptureReady>("wisp://capture-ready", cb),
     onCaptureError: (cb) => subscribe<WispError>("wisp://capture-error", cb),
 
-    voiceTyping: (target) => call("voice_typing", { target }),
+    voiceStart: (target) => call("voice_start", { target }),
+    voiceStop: () => call("voice_stop"),
+    voiceCancel: () => call("voice_cancel"),
+    onSpeech: (cb) => subscribe<Heard>("wisp://speech", cb),
+    onSpeechDone: (cb) => subscribe<Heard>("wisp://speech-done", cb),
 
     respondAction: (id, approved) => call("action_respond", { id, approved }),
     tasksList: (includeCompleted) => call("tasks_list", { includeCompleted }),

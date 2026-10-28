@@ -44,12 +44,14 @@ code; if you change one of the boundaries below, update this file in the same ch
 
 ## Voice recognition
 
-- Voice uses Windows 11's own voice typing. The `voice_typing` command waits until the user's modifier keys
-  are released (up to 1.5 s), puts focus back in the app the user came from (or in Wisp's bar), and sends
-  Win+H with `SendInput`. Windows does the recognition under its own speech privacy settings, using
-  Microsoft's speech service. Wisp never opens the microphone, records, stores or uploads audio, and has no
-  speech model or recogniser of its own. Older versions' recordings and downloaded models are deleted at
-  startup.
+- Voice uses Windows' `SpeechRecognizer` (dictation topic) through continuous recognition, under Windows' own
+  speech privacy settings (online speech recognition, Microsoft's speech service). Wisp receives text only:
+  it never opens the microphone itself, records, stores or uploads audio. Listening starts only on the user's
+  key, shortcut or button, and ends after ~1.3 s of silence, 6 s with nothing said, or when the user stops it.
+- When dictating, each recognised phrase is typed into the app that was in front with `SendInput`
+  (`KEYEVENTF_UNICODE`, no clipboard), only while that app is still in front and after any held modifier keys
+  are released. Control characters are dropped, and into terminals line breaks are removed, so dictation can
+  never run a command by itself. Older versions' recordings and downloaded models are deleted at startup.
 - A spoken question is just text typed into the bar; it's asked like a typed one (no different trust).
 
 ## Model routing
