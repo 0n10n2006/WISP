@@ -93,7 +93,7 @@ fn shell_thumbnail(path: &Path) -> Option<String> {
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
     use windows::Win32::UI::Shell::{
         IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK,
-        SIIGBF_RESIZETOFIT,
+        SIIGBF_RESIZETOFIT, SIIGBF_THUMBNAILONLY,
     };
     unsafe {
         // Thumbnail handlers expect a single-threaded apartment.
@@ -104,7 +104,7 @@ fn shell_thumbnail(path: &Path) -> Option<String> {
             let bmp = factory
                 .GetImage(
                     SIZE { cx: 320, cy: 320 },
-                    SIIGBF_RESIZETOFIT | SIIGBF_BIGGERSIZEOK,
+                    SIIGBF_RESIZETOFIT | SIIGBF_BIGGERSIZEOK | SIIGBF_THUMBNAILONLY,
                 )
                 .ok()?;
             let mut bm = BITMAP::default();
