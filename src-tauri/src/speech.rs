@@ -8,9 +8,11 @@ use std::time::{Duration, Instant};
 use wisp_core::Result;
 
 /// Silence after speech that ends the session.
-pub const END_SILENCE: Duration = Duration::from_millis(1300);
+pub const END_SILENCE: Duration = Duration::from_millis(1200);
 /// How long to wait for the first word before giving up.
 pub const START_SILENCE: Duration = Duration::from_secs(6);
+/// Longest a session may run, whatever Windows thinks it hears.
+pub const MAX_SESSION: Duration = Duration::from_secs(60);
 
 /// Callbacks for one listening session (called on Windows' threads).
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -19,8 +21,9 @@ pub struct Events {
     pub live: Box<dyn Fn(String) + Send + Sync>,
     /// A finished phrase, tidied, as it should be typed after the previous one.
     pub phrase: Box<dyn Fn(String) + Send + Sync>,
-    /// The session ended: everything that was heard.
-    pub done: Box<dyn Fn(String) + Send + Sync>,
+    /// The session ended: everything that was heard, and why it ended if
+    /// something went wrong (no network, no microphone…).
+    pub done: Box<dyn Fn(String, Option<String>) + Send + Sync>,
 }
 
 /// The phrases heard in one session.
@@ -73,12 +76,32 @@ impl Transcript {
     pub fn text(&self) -> &str {
         &self.text
     }
+
+    /// The words still being spoken when listening stops count as said.
+    pub fn flush(&mut self) -> Option<String> {
+        let p = std::mem::take(&mut self.partial);
+        self.push(&p)
+    }
+
+    /// A new guess at the words being spoken; true if it changed (only a
+    /// change means the user is still talking, not background noise).
+    pub fn guess(&mut self, text: &str) -> bool {
+        let t = text.trim();
+        if t.is_empty() || t == self.partial {
+            return false;
+        }
+        self.partial = t.to_string();
+        true
+    }
 }
 
 /// When to end a session: after a pause once something was said, or when
 /// nothing is said at all.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn should_end(started: Instant, last_word: Option<Instant>, now: Instant) -> bool {
+    if now.duration_since(started) >= MAX_SESSION {
+        return true;
+    }
     match last_word {
         Some(t) => now.duration_since(t) >= END_SILENCE,
         None => now.duration_since(started) >= START_SILENCE,
@@ -96,12 +119,14 @@ mod imp {
         SpeechContinuousRecognitionResultGeneratedEventArgs, SpeechContinuousRecognitionSession,
         SpeechRecognitionConfidence, SpeechRecognitionHypothesisGeneratedEventArgs,
         SpeechRecognitionResultStatus, SpeechRecognitionScenario, SpeechRecognitionTopicConstraint,
-        SpeechRecognizer,
+        SpeechRecognizer, SpeechRecognizerState,
     };
     use wisp_core::{ErrorCode, WispError};
 
     /// HRESULT Windows returns when online speech recognition is turned off.
     const PRIVACY_DECLINED: i32 = 0x8004_5509_u32 as i32;
+    /// Access denied: desktop apps may not use the microphone.
+    const ACCESS_DENIED: i32 = 0x8007_0005_u32 as i32;
 
     struct Shared {
         transcript: Transcript,
@@ -128,24 +153,47 @@ mod imp {
     }
 
     fn explain(e: &windows::core::Error) -> WispError {
-        if e.code().0 == PRIVACY_DECLINED {
-            WispError::new(
+        match e.code().0 {
+            PRIVACY_DECLINED => WispError::new(
                 ErrorCode::PermissionDenied,
                 "Voice needs \"Online speech recognition\" turned on in Windows Settings → Privacy & security → Speech.",
-            )
-        } else {
-            WispError::new(
+            ),
+            ACCESS_DENIED => WispError::new(
+                ErrorCode::PermissionDenied,
+                "Windows isn't letting apps use the microphone. Turn on \"Let desktop apps access your microphone\" in Settings → Privacy & security → Microphone.",
+            ),
+            _ => WispError::new(
                 ErrorCode::Unsupported,
-                format!("Windows speech recognition isn't available ({}).", e.code()),
-            )
+                format!(
+                    "Windows speech recognition couldn't start ({}). Check that a microphone is connected, then try again.",
+                    e.code()
+                ),
+            ),
         }
     }
 
-    fn compile() -> Result<SpeechRecognizer> {
-        let mut ready = READY.lock().expect("speech");
-        if let Some(r) = ready.as_ref() {
-            return Ok(r.clone());
-        }
+    /// Why a session ended early, in words (None: it ended normally).
+    fn ended_because(status: SpeechRecognitionResultStatus) -> Option<String> {
+        let why = match status {
+            SpeechRecognitionResultStatus::Success
+            | SpeechRecognitionResultStatus::UserCanceled
+            | SpeechRecognitionResultStatus::TimeoutExceeded
+            | SpeechRecognitionResultStatus::PauseLimitExceeded => return None,
+            SpeechRecognitionResultStatus::NetworkFailure => {
+                "Couldn't reach Microsoft's speech service. Check your internet connection."
+            }
+            SpeechRecognitionResultStatus::MicrophoneUnavailable => {
+                "No microphone is available. Plug one in or pick one in Windows Settings → Sound."
+            }
+            SpeechRecognitionResultStatus::AudioQualityFailure => {
+                "Windows couldn't hear clearly. Try speaking a little closer to the microphone."
+            }
+            _ => "Windows stopped listening unexpectedly. Try again.",
+        };
+        Some(why.to_string())
+    }
+
+    fn compile_new() -> Result<SpeechRecognizer> {
         let rec = SpeechRecognizer::new().map_err(|e| explain(&e))?;
         let topic = SpeechRecognitionTopicConstraint::Create(
             SpeechRecognitionScenario::Dictation,
@@ -165,6 +213,9 @@ mod imp {
                 ErrorCode::Unsupported,
                 if status == SpeechRecognitionResultStatus::TopicLanguageNotSupported {
                     "Windows has no speech recognition for your speech language. Add it in Settings → Time & language → Speech.".to_string()
+                } else if status == SpeechRecognitionResultStatus::NetworkFailure {
+                    "Couldn't reach Microsoft's speech service. Check your internet connection."
+                        .to_string()
                 } else {
                     format!("Windows speech recognition isn't ready ({}).", status.0)
                 },
@@ -175,108 +226,55 @@ mod imp {
         if let Ok(s) = rec.ContinuousRecognitionSession() {
             let _ = s.SetAutoStopSilenceTimeout(Duration::from_secs(30).into());
         }
-        *ready = Some(rec.clone());
+        Ok(rec)
+    }
+
+    /// The kept recognizer, once it's idle; a fresh one if it isn't (a
+    /// previous session still winding down, or a changed microphone).
+    fn recognizer(fresh: bool) -> Result<SpeechRecognizer> {
+        let kept = if fresh {
+            None
+        } else {
+            READY.lock().expect("speech").clone()
+        };
+        if let Some(rec) = kept {
+            for _ in 0..15 {
+                if rec.State().is_ok_and(|s| s == SpeechRecognizerState::Idle) {
+                    return Ok(rec);
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        let rec = compile_new()?;
+        if let Some(old) = READY.lock().expect("speech").replace(rec.clone()) {
+            let _ = old.Close();
+        }
         Ok(rec)
     }
 
     /// Compile the recognizer ahead of time so the first start is instant.
     pub fn prepare() -> Result<()> {
         init_com();
-        compile().map(|_| ())
+        recognizer(false).map(|_| ())
     }
 
     pub fn start(events: Events) -> Result<()> {
         init_com();
         cancel();
-        let rec = compile()?;
-        let session = rec
-            .ContinuousRecognitionSession()
-            .map_err(|e| explain(&e))?;
-        let started = Instant::now();
         let shared = Arc::new(Mutex::new(Shared {
             transcript: Transcript::default(),
             last_word: None,
             events: Some(events),
         }));
-
-        let s = shared.clone();
-        let hyp = rec
-            .HypothesisGenerated(&TypedEventHandler::<
-                SpeechRecognizer,
-                SpeechRecognitionHypothesisGeneratedEventArgs,
-            >::new(move |_, args| {
-                if let Some(text) = args
-                    .as_ref()
-                    .and_then(|a| a.Hypothesis().ok())
-                    .and_then(|h| h.Text().ok())
-                {
-                    let mut s = s.lock().expect("speech");
-                    s.transcript.partial = text.to_string();
-                    s.last_word = Some(Instant::now());
-                    let live = s.transcript.live();
-                    if let Some(e) = &s.events {
-                        (e.live)(live);
-                    }
-                }
-                Ok(())
-            }))
-            .map_err(|e| explain(&e))?;
-
-        let s = shared.clone();
-        let res = session
-            .ResultGenerated(&TypedEventHandler::<
-                SpeechContinuousRecognitionSession,
-                SpeechContinuousRecognitionResultGeneratedEventArgs,
-            >::new(move |_, args| {
-                if let Some(r) = args.as_ref().and_then(|a| a.Result().ok()) {
-                    let rejected = r
-                        .Confidence()
-                        .map(|c| c == SpeechRecognitionConfidence::Rejected)
-                        .unwrap_or(true);
-                    let text = r.Text().map(|t| t.to_string()).unwrap_or_default();
-                    let mut s = s.lock().expect("speech");
-                    s.last_word = Some(Instant::now());
-                    let piece = if rejected {
-                        s.transcript.partial.clear();
-                        None
-                    } else {
-                        s.transcript.push(&text)
-                    };
-                    let live = s.transcript.live();
-                    if let Some(e) = &s.events {
-                        if let Some(p) = piece {
-                            (e.phrase)(p);
-                        }
-                        (e.live)(live);
-                    }
-                }
-                Ok(())
-            }))
-            .map_err(|e| explain(&e))?;
-
-        let s = shared.clone();
-        let completed = session
-            .Completed(&TypedEventHandler::<
-                SpeechContinuousRecognitionSession,
-                SpeechContinuousRecognitionCompletedEventArgs,
-            >::new(move |_, _| {
-                finish(&s);
-                Ok(())
-            }))
-            .map_err(|e| explain(&e))?;
-
-        session
-            .StartAsync()
-            .and_then(|op| op.join())
-            .map_err(|e| explain(&e))?;
-        *LIVE.lock().expect("speech") = Some(Live {
-            recognizer: rec,
-            session,
-            shared: shared.clone(),
-            tokens: (hyp, res, completed),
-        });
+        // A recognizer that won't start is replaced and tried once more.
+        let live = match begin(recognizer(false)?, &shared) {
+            Ok(l) => l,
+            Err(_) => begin(recognizer(true)?, &shared).map_err(|e| explain(&e))?,
+        };
+        *LIVE.lock().expect("speech") = Some(live);
 
         // End the session after a pause (or if nothing is said).
+        let started = Instant::now();
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(100));
             let (done, end) = {
@@ -297,18 +295,113 @@ mod imp {
         Ok(())
     }
 
-    /// Report the end once (whichever of Completed / stop / cancel comes first).
-    fn finish(shared: &Arc<Mutex<Shared>>) {
-        let (events, text) = {
+    fn begin(rec: SpeechRecognizer, shared: &Arc<Mutex<Shared>>) -> windows::core::Result<Live> {
+        let session = rec.ContinuousRecognitionSession()?;
+        let s = shared.clone();
+        let hyp = rec.HypothesisGenerated(&TypedEventHandler::<
+            SpeechRecognizer,
+            SpeechRecognitionHypothesisGeneratedEventArgs,
+        >::new(move |_, args| {
+            if let Some(text) = args
+                .as_ref()
+                .and_then(|a| a.Hypothesis().ok())
+                .and_then(|h| h.Text().ok())
+            {
+                let mut s = s.lock().expect("speech");
+                // Only new words mean the user is still talking.
+                if s.transcript.guess(&text.to_string()) {
+                    s.last_word = Some(Instant::now());
+                    let live = s.transcript.live();
+                    if let Some(e) = &s.events {
+                        (e.live)(live);
+                    }
+                }
+            }
+            Ok(())
+        }))?;
+
+        let s = shared.clone();
+        let res = session.ResultGenerated(&TypedEventHandler::<
+            SpeechContinuousRecognitionSession,
+            SpeechContinuousRecognitionResultGeneratedEventArgs,
+        >::new(move |_, args| {
+            if let Some(r) = args.as_ref().and_then(|a| a.Result().ok()) {
+                let rejected = r
+                    .Confidence()
+                    .map(|c| c == SpeechRecognitionConfidence::Rejected)
+                    .unwrap_or(true);
+                let text = r.Text().map(|t| t.to_string()).unwrap_or_default();
+                let mut s = s.lock().expect("speech");
+                // Noise Windows rejects doesn't keep the session going.
+                let piece = if rejected {
+                    s.transcript.partial.clear();
+                    None
+                } else {
+                    s.last_word = Some(Instant::now());
+                    s.transcript.push(&text)
+                };
+                let live = s.transcript.live();
+                if let Some(e) = &s.events {
+                    if let Some(p) = piece {
+                        (e.phrase)(p);
+                    }
+                    (e.live)(live);
+                }
+            }
+            Ok(())
+        }))?;
+
+        let s = shared.clone();
+        let completed = session.Completed(&TypedEventHandler::<
+            SpeechContinuousRecognitionSession,
+            SpeechContinuousRecognitionCompletedEventArgs,
+        >::new(move |_, args| {
+            let why = args
+                .as_ref()
+                .and_then(|a| a.Status().ok())
+                .and_then(ended_because);
+            finish(&s, why);
+            Ok(())
+        }))?;
+
+        let started = session.StartAsync().and_then(|op| op.join());
+        if let Err(e) = started {
+            let _ = rec.RemoveHypothesisGenerated(hyp);
+            let _ = session.RemoveResultGenerated(res);
+            let _ = session.RemoveCompleted(completed);
+            return Err(e);
+        }
+        Ok(Live {
+            recognizer: rec,
+            session,
+            shared: shared.clone(),
+            tokens: (hyp, res, completed),
+        })
+    }
+
+    /// Report the end once (whichever of Completed / stop / cancel comes
+    /// first). Words still being spoken count as said.
+    fn finish(shared: &Arc<Mutex<Shared>>, why: Option<String>) {
+        let (events, text, last) = {
             let mut s = shared.lock().expect("speech");
-            (s.events.take(), s.transcript.text().to_string())
+            let last = s.transcript.flush();
+            (s.events.take(), s.transcript.text().to_string(), last)
         };
         if let Some(e) = events {
-            (e.done)(text);
+            if let Some(p) = last {
+                (e.phrase)(p);
+            }
+            (e.live)(text.clone());
+            (e.done)(text, why);
         }
         let live = LIVE.lock().expect("speech").take();
         if let Some(live) = live {
             detach(&live);
+            // Windows may take a few seconds to wind down; don't wait for it.
+            std::thread::spawn(move || {
+                init_com();
+                let _ = live.session.CancelAsync().and_then(|op| op.join());
+            });
         }
     }
 
@@ -318,17 +411,15 @@ mod imp {
         let _ = live.session.RemoveCompleted(live.tokens.2);
     }
 
-    /// Stop listening, keeping what was heard (the last phrase is flushed).
+    /// Stop listening now, keeping what was heard.
     pub fn stop() {
-        init_com();
-        let current = LIVE
+        let shared = LIVE
             .lock()
             .expect("speech")
             .as_ref()
-            .map(|l| (l.session.clone(), l.shared.clone()));
-        if let Some((session, shared)) = current {
-            let _ = session.StopAsync().and_then(|op| op.join());
-            finish(&shared);
+            .map(|l| l.shared.clone());
+        if let Some(shared) = shared {
+            finish(&shared, None);
         }
     }
 
@@ -393,6 +484,20 @@ mod tests {
     }
 
     #[test]
+    fn noise_and_unfinished_words() {
+        let mut t = Transcript::default();
+        assert!(t.guess("open"));
+        // The same guess again is noise, not more talking.
+        assert!(!t.guess("open"));
+        assert!(!t.guess("  "));
+        assert!(t.guess("open spotify"));
+        // Stopping mid-sentence keeps the words.
+        assert_eq!(t.flush().as_deref(), Some("Open spotify"));
+        assert_eq!(t.flush(), None);
+        assert_eq!(t.text(), "Open spotify");
+    }
+
+    #[test]
     fn ends_after_a_pause_or_when_nothing_is_said() {
         let t0 = Instant::now();
         assert!(!should_end(t0, None, t0 + Duration::from_secs(3)));
@@ -404,5 +509,8 @@ mod tests {
             spoke + Duration::from_millis(800)
         ));
         assert!(should_end(t0, Some(spoke), spoke + END_SILENCE));
+        // However much Windows thinks it hears, a session has a limit.
+        let busy = t0 + MAX_SESSION;
+        assert!(should_end(t0, Some(busy), busy));
     }
 }

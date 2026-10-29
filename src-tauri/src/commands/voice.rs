@@ -25,6 +25,9 @@ pub enum VoiceTarget {
 struct Heard {
     target: VoiceTarget,
     text: String,
+    /// Why listening ended early (no network, no microphone…).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 /// A phrase as it should be typed into `process`: safe for terminals, with
@@ -61,7 +64,15 @@ pub async fn voice_start(
     let (a, b, c) = (app.clone(), app.clone(), app.clone());
     let events = speech::Events {
         live: Box::new(move |text| {
-            let _ = a.emit_to(windows::ISLAND, "wisp://speech", Heard { target, text });
+            let _ = a.emit_to(
+                windows::ISLAND,
+                "wisp://speech",
+                Heard {
+                    target,
+                    text,
+                    error: None,
+                },
+            );
         }),
         phrase: Box::new(move |piece| {
             if target != VoiceTarget::App {
@@ -83,11 +94,15 @@ pub async fn voice_start(
             );
             voicetyping::type_text(&text);
         }),
-        done: Box::new(move |text| {
+        done: Box::new(move |text, error| {
             let _ = c.emit_to(
                 windows::ISLAND,
                 "wisp://speech-done",
-                Heard { target, text },
+                Heard {
+                    target,
+                    text,
+                    error,
+                },
             );
         }),
     };

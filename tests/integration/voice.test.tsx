@@ -4,7 +4,13 @@ import { App } from "../../src/App";
 import { lastWords } from "../../src/screens/notch/Peek";
 import { useNotch } from "../../src/state/notch";
 import { useSettings } from "../../src/state/settings";
-import { spokenQuery, useVoice } from "../../src/state/voice";
+import {
+  SPEAKING_MS,
+  spokenQuery,
+  STOP_GRACE_MS,
+  useVoice,
+  voicePhase,
+} from "../../src/state/voice";
 import { setupMockHost } from "../helpers";
 
 async function openBar() {
@@ -125,6 +131,74 @@ describe("voice (Windows speech recognition, no pop-up)", () => {
     expect(lastWords("short")).toBe("short");
     expect(lastWords("a".repeat(30) + " the newest words at the end", 20)).toBe(
       "…st words at the end",
+    );
+  });
+
+  it("shows when it's waiting, hearing you, and done", async () => {
+    await setupMockHost({
+      withKey: true,
+      onboarded: true,
+      windowKind: "island",
+      voice: "Meeting moved to Friday",
+    });
+    render(<App />);
+    await act(() => useVoice.getState().dictate());
+    // Words arrive: the words show while you're heard…
+    expect(await screen.findByText("Meeting moved to Friday")).toBeInTheDocument();
+    // …then "Got it" when it's done.
+    expect(await screen.findByText("Got it")).toBeInTheDocument();
+    expect(useVoice.getState().outcome?.kind).toBe("done");
+  });
+
+  it("says when it didn't catch anything, or why it stopped", async () => {
+    await setupMockHost({ withKey: true, onboarded: true, windowKind: "island", voice: "" });
+    render(<App />);
+    await act(() => useVoice.getState().dictate());
+    expect(await screen.findByText("Listening… start talking")).toBeInTheDocument();
+    expect(await screen.findByText("Didn't catch that")).toBeInTheDocument();
+  });
+
+  it("explains a session Windows ended (no network)", async () => {
+    await setupMockHost({
+      withKey: true,
+      onboarded: true,
+      windowKind: "island",
+      voice: "",
+      voiceError: "Couldn't reach Microsoft's speech service. Check your internet connection.",
+    });
+    render(<App />);
+    await act(() => useVoice.getState().dictate());
+    expect(
+      await screen.findByText(/couldn't reach microsoft's speech service/i),
+    ).toBeInTheDocument();
+    expect(useVoice.getState().outcome?.kind).toBe("error");
+  });
+
+  it("never stays stuck listening if Windows doesn't confirm the stop", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    // Windows hears something, then never answers the stop.
+    vi.spyOn(h, "voiceStart").mockResolvedValue(undefined);
+    vi.spyOn(h, "voiceStop").mockResolvedValue(undefined);
+    const cancel = vi.spyOn(h, "voiceCancel");
+    render(<App />);
+    await act(() => useVoice.getState().dictate());
+    act(() => useVoice.getState().heard({ target: "app", text: "half a sentence" }));
+    act(() => useVoice.getState().stop());
+    expect(useVoice.getState().listening).toBe(true);
+    await waitFor(() => expect(useVoice.getState().listening).toBe(false), {
+      timeout: STOP_GRACE_MS + 1000,
+    });
+    expect(cancel).toHaveBeenCalled();
+    expect(useVoice.getState().outcome).toMatchObject({ kind: "done", text: "half a sentence" });
+  });
+
+  it("knows whether you're being heard", () => {
+    const now = 10_000;
+    expect(voicePhase({ listening: false, live: "", heardAt: 0 }, now)).toBe("off");
+    expect(voicePhase({ listening: true, live: "", heardAt: 0 }, now)).toBe("waiting");
+    expect(voicePhase({ listening: true, live: "hi", heardAt: now - 100 }, now)).toBe("hearing");
+    expect(voicePhase({ listening: true, live: "hi", heardAt: now - SPEAKING_MS }, now)).toBe(
+      "paused",
     );
   });
 });

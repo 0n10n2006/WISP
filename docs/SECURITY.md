@@ -91,7 +91,9 @@ code; if you change one of the boundaries below, update this file in the same ch
 - Voice uses Windows' `SpeechRecognizer` (dictation topic) through continuous recognition, under Windows' own
   speech privacy settings (online speech recognition, Microsoft's speech service). Wisp receives text only:
   it never opens the microphone itself, records, stores or uploads audio. Listening starts only on the user's
-  key, shortcut or button, and ends after ~1.3 s of silence, 6 s with nothing said, or when the user stops it.
+  key, shortcut or button (held or tapped), and ends after ~1.2 s of silence, 6 s with nothing said, 60 s at
+  most, when the keys are released, or when the user stops it. Only new words count as speech, so background
+  noise can't keep it listening.
 - When dictating, each recognised phrase is typed into the app that was in front with `SendInput`
   (`KEYEVENTF_UNICODE`, no clipboard), only while that app is still in front and after any held modifier keys
   are released. Control characters are dropped, and into terminals line breaks are removed, so dictation can

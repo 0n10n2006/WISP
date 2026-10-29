@@ -4,6 +4,7 @@ import { App } from "../../src/App";
 import { useConversation } from "../../src/state/conversation";
 import { useNotch } from "../../src/state/notch";
 import { useSettings } from "../../src/state/settings";
+import { useVoice } from "../../src/state/voice";
 import { setupMockHost } from "../helpers";
 
 async function openBar() {
@@ -236,17 +237,29 @@ describe("voice keys", () => {
     expect(await screen.findByPlaceholderText("Speak now…")).toBeInTheDocument();
   });
 
-  it("a held chord starts on release; a chord that became a shortcut does nothing", async () => {
-    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+  it("hold to talk: listening while held, done on release; a shortcut cancels", async () => {
+    const h = await setupMockHost({
+      withKey: true,
+      onboarded: true,
+      windowKind: "island",
+      voice: "one two three four five six seven eight nine ten",
+    });
     const typing = vi.spyOn(h, "voiceStart");
+    const stop = vi.spyOn(h, "voiceStop");
+    const cancel = vi.spyOn(h, "voiceCancel");
     render(<App />);
     act(() => mock().hold({ chord: "dictate", phase: "start" }));
-    act(() => mock().hold({ chord: "dictate", phase: "cancel" }));
-    await new Promise((r) => setTimeout(r, 50));
-    expect(typing).not.toHaveBeenCalled();
-    act(() => mock().hold({ chord: "dictate", phase: "start" }));
+    await waitFor(() => expect(typing).toHaveBeenCalledWith("app"));
+    expect(useVoice.getState().listening).toBe(true);
     act(() => mock().hold({ chord: "dictate", phase: "stop" }));
-    await waitFor(() => expect(typing).toHaveBeenCalledOnce());
+    await waitFor(() => expect(stop).toHaveBeenCalled());
+    await waitFor(() => expect(useVoice.getState().listening).toBe(false));
+    // Ctrl+Win+D after holding: the desktop switch, not voice.
+    act(() => mock().hold({ chord: "dictate", phase: "start" }));
+    await waitFor(() => expect(useVoice.getState().listening).toBe(true));
+    act(() => mock().hold({ chord: "dictate", phase: "cancel" }));
+    expect(cancel).toHaveBeenCalled();
+    expect(useVoice.getState().listening).toBe(false);
   });
 });
 

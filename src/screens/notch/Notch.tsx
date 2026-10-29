@@ -110,12 +110,23 @@ function SliverGlow() {
   );
 }
 
-/** Voice keys: tapping Ctrl+Win (dictate) or Win+Alt (ask), or holding and
- * letting go, starts listening; doing it again stops. */
+/** Voice keys (Ctrl+Win dictates, Win+Alt asks). Hold them while you talk
+ * and let go when you're done; or tap once to start (Wisp stops when you
+ * pause) and tap again to stop sooner. */
 function onHold(e: HoldEvent) {
-  if (e.phase !== "tap" && e.phase !== "stop") return;
-  if (e.chord === "dictate") void useVoice.getState().dictate();
-  else void useVoice.getState().ask();
+  const v = useVoice.getState();
+  const start = () => void (e.chord === "dictate" ? v.dictate() : v.ask());
+  if (e.phase === "start") {
+    if (!v.listening) start();
+  } else if (e.phase === "stop") {
+    if (v.listening) v.stop();
+  } else if (e.phase === "cancel") {
+    // The keys became a Windows shortcut (Ctrl+Win+D…): not voice after all.
+    if (v.listening) v.cancel();
+  } else if (e.phase === "tap") {
+    if (v.listening) v.stop();
+    else start();
+  }
 }
 
 export function Notch() {

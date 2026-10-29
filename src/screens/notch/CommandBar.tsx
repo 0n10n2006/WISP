@@ -23,7 +23,8 @@ import { useConversation } from "../../state/conversation";
 import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
-import { spokenQuery, useVoice } from "../../state/voice";
+import { spokenQuery, useVoice, voicePhase } from "../../state/voice";
+import { VoiceMeter } from "./Peek";
 import {
   chordLabel,
   type BrowserItem,
@@ -579,16 +580,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
           </div>
         )}
       </div>
-      {listening && (
-        <p className="voice-hint" role="status">
-          <Icon name="mic" size={14} />
-          <span>
-            {query.trim()
-              ? "Listening… Wisp asks when you pause. Type to edit instead."
-              : "Listening — just speak."}
-          </span>
-        </p>
-      )}
+      {listening && <VoiceHint />}
       {results.length > 0 && (
         <div className="cmd-body">
           <ul className="cmd-results" id={listId} role="listbox" aria-label="Results">
@@ -681,5 +673,29 @@ function FilePreviewPane({ file, preview }: { file: FileHit; preview: FilePrevie
         {file.kind === "folder" ? date : `${formatSize(file.size)} · ${date}`}
       </p>
     </aside>
+  );
+}
+
+/** While asking by voice: are you being heard, and how to finish. */
+function VoiceHint() {
+  const live = useVoice((v) => v.live);
+  const heardAt = useVoice((v) => v.heardAt);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(t);
+  }, []);
+  const phase = voicePhase({ listening: true, live, heardAt }, now);
+  return (
+    <p className={`voice-hint voice-${phase}`} role="status">
+      <VoiceMeter phase={phase} />
+      <span>
+        {phase === "waiting"
+          ? "Listening — start talking. Tap the keys or click the mic to stop."
+          : phase === "hearing"
+            ? "Hearing you…"
+            : "Pause a moment and Wisp asks. Type to edit instead."}
+      </span>
+    </p>
   );
 }

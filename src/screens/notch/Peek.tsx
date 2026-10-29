@@ -5,7 +5,7 @@ import { useOrbState } from "../../hooks/useOrbState";
 import { host } from "../../services/host";
 import type { AgentJob, NowPlaying } from "../../services/types";
 import { useDueReminders } from "../../state/assist";
-import { useVoice } from "../../state/voice";
+import { OUTCOME_MS, useVoice, voicePhase } from "../../state/voice";
 import { formatCountdown, useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 
@@ -39,6 +39,20 @@ export function lastWords(text: string, max = 48): string {
   return t.length <= max ? t : `…${t.slice(t.length - max + 1).trimStart()}`;
 }
 
+/** A mic with bars that move while you're heard (still while waiting). */
+export function VoiceMeter({ phase }: { phase: "off" | "waiting" | "hearing" | "paused" }) {
+  return (
+    <span className={`voice-meter voice-meter-${phase}`} aria-hidden>
+      <Icon name="mic" size={14} />
+      <span className="voice-bars">
+        <span />
+        <span />
+        <span />
+      </span>
+    </span>
+  );
+}
+
 /** What the hover notch shows: the most relevant live thing, else the time. */
 export function Peek() {
   const state = useOrbState();
@@ -48,6 +62,12 @@ export function Peek() {
   const reminder = useDueReminders((r) => r.due[0]);
   const dictating = useVoice((v) => v.listening && v.target === "app");
   const live = useVoice((v) => v.live);
+  const heardAt = useVoice((v) => v.heardAt);
+  const outcome = useVoice((v) => v.outcome);
+  // Ticks fast only while listening, so "hearing you" follows your voice.
+  const tick = useNow(dictating ? 200 : 1000);
+  const phase = voicePhase({ listening: dictating, live, heardAt }, tick);
+  const showOutcome = !dictating && outcome && tick - outcome.at < OUTCOME_MS;
   const [playing, setPlaying] = useState<NowPlaying | null>(null);
 
   useEffect(() => {
@@ -64,9 +84,24 @@ export function Peek() {
   let main: React.ReactNode;
   if (dictating)
     main = (
-      <span className="peek-listening">
-        <Icon name="mic" size={14} />
-        <span className="peek-ellipsis">{live ? lastWords(live) : "Listening…"}</span>
+      <span className={`peek-listening voice-${phase}`}>
+        <VoiceMeter phase={phase} />
+        <span className="peek-ellipsis">
+          {phase === "waiting" ? "Listening… start talking" : lastWords(live)}
+        </span>
+      </span>
+    );
+  else if (showOutcome)
+    main = (
+      <span className={`peek-listening voice-${outcome.kind}`}>
+        <Icon name={outcome.kind === "done" ? "check" : "mic-off"} size={14} />
+        <span className="peek-ellipsis">
+          {outcome.kind === "done"
+            ? "Got it"
+            : outcome.kind === "nothing"
+              ? "Didn't catch that"
+              : "Voice stopped"}
+        </span>
       </span>
     );
   else if (state === "thinking") main = <span>Thinking…</span>;

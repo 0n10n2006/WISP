@@ -32,6 +32,8 @@ export interface Settings {
   globalShortcuts: Shortcuts;
   selectedModel: string;
   voiceEnabled: boolean;
+  /** Soft sounds when Wisp starts and stops listening. */
+  voiceSounds: boolean;
   /** Skip the model's thinking step for much faster answers. */
   fastMode: boolean;
   /** Tap Ctrl+Win to dictate, Win+Alt to ask by voice (keys configurable). */
@@ -276,6 +278,7 @@ export const DEFAULT_SETTINGS: Settings = {
   globalShortcuts: DEFAULT_SHORTCUTS,
   selectedModel: "gemini-2.5-flash",
   voiceEnabled: true,
+  voiceSounds: true,
   fastMode: true,
   holdToTalk: true,
   holdDictate: "ctrl+win",
@@ -527,6 +530,8 @@ export type VoiceTarget = "app" | "bar";
 export interface Heard {
   target: VoiceTarget;
   text: string;
+  /** Why listening ended early (no network, no microphone…). */
+  error?: string;
 }
 
 /** A confirmed action waiting to run ("open Chrome in 20 seconds"). */

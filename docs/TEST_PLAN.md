@@ -43,6 +43,16 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Reliable voice (v0.2.15)
+
+- [ ] Hold `Ctrl+Win`, say a sentence into Notepad, let go: it's typed and the notch says "Got it" within a moment of letting go.
+- [ ] Tap `Ctrl+Win`, say a sentence, stop talking: it ends about a second later, even with music or a fan in the background.
+- [ ] While listening, the notch shows "Listening… start talking", its bars move only while you speak, and a soft sound plays at start and end (Settings → Voice can turn the sounds off).
+- [ ] Say nothing: "Didn't catch that" after about 6 s. Tap again mid-sentence: what you said so far is kept.
+- [ ] Start voice 20 times in a row, quickly: it never says voice isn't available. Unplug the headset mic between two uses: the next one still works.
+- [ ] Turn Wi-Fi off and try: Wisp says it can't reach Microsoft's speech service. Block desktop apps' microphone access: Wisp says so.
+- [ ] `Ctrl+Win+D` (new desktop) after holding the keys a moment: voice cancels, nothing is typed.
+
 ### Fluent-style search (v0.2.14)
 
 - [ ] `t:` lists the tabs open in Chrome, Edge and Firefox; Enter brings the right window forward with that tab selected.

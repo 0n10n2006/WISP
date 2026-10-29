@@ -50,6 +50,7 @@ const SAFE_SETTINGS: &[&str] = &[
     "globalShortcuts",
     "selectedModel",
     "voiceEnabled",
+    "voiceSounds",
     "fastMode",
     "holdToTalk",
     "holdDictate",

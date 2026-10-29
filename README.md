@@ -41,6 +41,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2.11–12: voice with Windows' own speech recognition, no pop-up                        | ✅    |
 | v0.2.13: instant file search, quick PC answers, instant app list                         | ✅    |
 | v0.2.14: tags, tabs and history, calculator, programs, web shortcuts, file preview       | ✅    |
+| v0.2.15: voice that stops when you do, hold-to-talk, clear listening states              | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
@@ -200,9 +201,12 @@ Wisp listens with Windows' built-in speech recognition, with no pop-up: what you
 you speak, and listening stops by itself a moment after you pause (or tap the keys again). There's nothing
 to download; Wisp never records audio itself.
 
-- **Dictate:** tap `Ctrl+Win` (or press `Ctrl+Shift+D`, or the mic button) and talk: each phrase is typed
-  into the app you're in as soon as it's recognised.
-- **Ask by voice:** tap `Win+Alt` (or press `Ctrl+Alt+V`, or the talk button): the words fill Wisp's bar and
+- **Hold to talk:** hold the voice keys while you speak and let go when you're done; or tap them once and
+  Wisp stops when you pause (tap again to stop sooner). The notch says "Listening… start talking", its bars
+  move while it hears you, and it shows "Got it" when it's done, with a soft sound at start and end.
+- **Dictate:** `Ctrl+Win` (or `Ctrl+Shift+D`, or the mic button): each phrase is typed into the app you're in
+  as soon as it's recognised.
+- **Ask by voice:** `Win+Alt` (or `Ctrl+Alt+V`, or the talk button): the words fill Wisp's bar and
   the question is asked when you pause. Type to edit instead. Spoken commands like "timer 25" or "night light
   on" run instantly.
 

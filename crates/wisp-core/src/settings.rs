@@ -164,6 +164,8 @@ pub struct Settings {
     pub global_shortcuts: Shortcuts,
     pub selected_model: String,
     pub voice_enabled: bool,
+    /// Soft sounds when Wisp starts and stops listening.
+    pub voice_sounds: bool,
     /// Skip the model's "thinking" step for much faster answers.
     pub fast_mode: bool,
     /// Tap Ctrl+Win to dictate and Win+Alt to ask by voice.
@@ -353,6 +355,7 @@ impl Default for Settings {
             global_shortcuts: Shortcuts::default(),
             selected_model: DEFAULT_MODEL.into(),
             voice_enabled: true,
+            voice_sounds: true,
             fast_mode: true,
             hold_to_talk: true,
             hold_dictate: "ctrl+win".into(),

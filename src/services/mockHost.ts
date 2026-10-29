@@ -373,6 +373,8 @@ export interface MockHostOptions {
   persist?: boolean;
   /** What Windows voice typing "types" into Wisp's bar when asked by voice. */
   voice?: string;
+  /** Why the simulated listening ends early (no network…). */
+  voiceError?: string;
   /** Indexed files (defaults to a small sample). */
   files?: FileHit[];
 }
@@ -448,7 +450,9 @@ export function createMockHost(opts: MockHostOptions = {}): Host {
     if (!speechTimer) return;
     clearInterval(speechTimer);
     speechTimer = null;
-    const h = { target: speechTarget, text: speechHeard };
+    const h = opts.voiceError
+      ? { target: speechTarget, text: speechHeard, error: opts.voiceError }
+      : { target: speechTarget, text: speechHeard };
     speechHeard = "";
     listeners.speechDone.forEach((cb) => cb(h));
   };
