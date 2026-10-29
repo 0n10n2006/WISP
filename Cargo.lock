@@ -6704,7 +6704,7 @@ dependencies = [
 
 [[package]]
 name = "wisp"
-version = "0.2.15"
+version = "0.2.16"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -6735,7 +6735,7 @@ dependencies = [
 
 [[package]]
 name = "wisp-core"
-version = "0.2.15"
+version = "0.2.16"
 dependencies = [
  "base64 0.23.1",
  "bytes",

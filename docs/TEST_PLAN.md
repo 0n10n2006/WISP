@@ -43,6 +43,12 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Voice does what you said (v0.2.16)
+
+- [ ] Hold `Win+Alt`, ask "what's the weather in Leeds", let go: it's asked (not dropped).
+- [ ] Hold `Ctrl+Win` in Notepad and keep holding through a long sentence: nothing is typed (and no shortcuts fire) until you let go, then the whole sentence appears.
+- [ ] While asking by voice, press Enter mid-sentence: it asks right away with what you've said.
+
 ### Reliable voice (v0.2.15)
 
 - [ ] Hold `Ctrl+Win`, say a sentence into Notepad, let go: it's typed and the notch says "Got it" within a moment of letting go.

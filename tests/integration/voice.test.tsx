@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/preact";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../src/App";
 import { lastWords } from "../../src/screens/notch/Peek";
@@ -85,6 +85,44 @@ describe("voice (Windows speech recognition, no pop-up)", () => {
     expect(ask).not.toHaveBeenCalled();
     await user.type(box, "{Enter}");
     await waitFor(() => expect(ask).toHaveBeenCalledOnce());
+  });
+
+  it("holding the voice keys doesn't count as typing; the question is still asked", async () => {
+    const h = await setupMockHost({
+      withKey: true,
+      onboarded: true,
+      windowKind: "island",
+      voice: "What time is it in Tokyo",
+    });
+    const ask = vi.spyOn(h, "ask");
+    const cancel = vi.spyOn(h, "voiceCancel");
+    const user = await openBar();
+    await user.click(await screen.findByRole("button", { name: "Ask by voice" }));
+    const box = screen.getByRole("combobox", { name: /ask wisp/i });
+    // Windows repeats held Win and Alt keys into the focused box.
+    fireEvent.keyDown(box, { key: "Alt", altKey: true });
+    fireEvent.keyDown(box, { key: "Alt", altKey: true, repeat: true });
+    fireEvent.keyDown(box, { key: "Meta", metaKey: true, repeat: true });
+    expect(cancel).not.toHaveBeenCalled();
+    await waitFor(() => expect(ask).toHaveBeenCalledOnce(), { timeout: 3000 });
+    expect(ask.mock.calls[0]![0].prompt).toBe("What time is it in Tokyo");
+  });
+
+  it("Enter while listening asks what was said so far", async () => {
+    const h = await setupMockHost({
+      withKey: true,
+      onboarded: true,
+      windowKind: "island",
+      voice: "Summarise my whole week for me please right now",
+    });
+    const ask = vi.spyOn(h, "ask");
+    const user = await openBar();
+    await user.click(await screen.findByRole("button", { name: "Ask by voice" }));
+    const box = screen.getByRole("combobox", { name: /ask wisp/i });
+    await waitFor(() => expect(box).toHaveValue("Summarise my"));
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(ask).toHaveBeenCalledOnce());
+    expect(ask.mock.calls[0]![0].prompt).toMatch(/^Summarise my/);
   });
 
   it("a spoken command runs like a typed one", async () => {

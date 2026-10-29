@@ -398,14 +398,29 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   });
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Typing while Wisp listens means editing: stop listening, keep the words.
     if (listening) {
-      useVoice.getState().cancel();
+      // Holding the voice keys (Win+Alt) repeats them here: that's not typing.
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
+        useVoice.getState().cancel();
         return;
       }
+      if (e.key === "Enter") {
+        // Ask what was said so far, now.
+        e.preventDefault();
+        useVoice.getState().stop();
+        return;
+      }
+      const typing =
+        !e.repeat &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        (e.key.length === 1 || e.key === "Backspace" || e.key === "Delete");
+      if (!typing) return;
+      // Typing while Wisp listens means editing: stop listening, keep the words.
+      useVoice.getState().cancel();
     }
     if (e.key === "Backspace" && tag && !query) {
       // Backspace on an empty search removes the tag.

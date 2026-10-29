@@ -62,6 +62,31 @@ pub async fn voice_start(
         }
     }
     let (a, b, c) = (app.clone(), app.clone(), app.clone());
+    // Phrases are typed on their own thread, in order, and only once the
+    // voice keys are let go: a letter typed while Ctrl or Win is held would
+    // be a shortcut, not text. The thread ends with the session.
+    let (to_type, queue) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        for piece in queue {
+            if !voicetyping::wait_for_release(
+                voicetyping::modifiers_down,
+                Duration::from_secs(90),
+                Duration::from_millis(15),
+            ) {
+                continue;
+            }
+            let into = *b.state::<AppState>().insert_target.lock().expect("target");
+            let Some(into) = into.filter(|t| foreground::is_valid(*t)) else {
+                continue;
+            };
+            // Only type while that app is still in front.
+            if foreground::current() != Some(into) {
+                continue;
+            }
+            let text = for_typing(&piece, foreground::process_name(into).as_deref());
+            voicetyping::type_text(&text);
+        }
+    });
     let events = speech::Events {
         live: Box::new(move |text| {
             let _ = a.emit_to(
@@ -75,24 +100,9 @@ pub async fn voice_start(
             );
         }),
         phrase: Box::new(move |piece| {
-            if target != VoiceTarget::App {
-                return;
+            if target == VoiceTarget::App {
+                let _ = to_type.send(piece);
             }
-            let into = *b.state::<AppState>().insert_target.lock().expect("target");
-            let Some(into) = into.filter(|t| foreground::is_valid(*t)) else {
-                return;
-            };
-            // Only type while that app is still in front.
-            if foreground::current() != Some(into) {
-                return;
-            }
-            let text = for_typing(&piece, foreground::process_name(into).as_deref());
-            voicetyping::wait_for_release(
-                voicetyping::modifiers_down,
-                Duration::from_millis(1500),
-                Duration::from_millis(15),
-            );
-            voicetyping::type_text(&text);
         }),
         done: Box::new(move |text, error| {
             let _ = c.emit_to(

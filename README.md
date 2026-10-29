@@ -42,6 +42,7 @@ the security model, and [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for testing.
 | v0.2.13: instant file search, quick PC answers, instant app list                         | ✅    |
 | v0.2.14: tags, tabs and history, calculator, programs, web shortcuts, file preview       | ✅    |
 | v0.2.15: voice that stops when you do, hold-to-talk, clear listening states              | ✅    |
+| v0.2.16: held voice keys no longer drop questions or turn dictation into shortcuts       | ✅    |
 
 What's left is the manual Windows 11 smoke test in `docs/TEST_PLAN.md`.
 
