@@ -43,6 +43,15 @@ Run as a **standard (non-admin) user**. Tick each item.
 - [ ] `Ctrl+Alt+Space` opens the bar without a visible jump in size; a second open is instant.
 - [ ] Unplugging headphones: the volume slider controls the new default device within a few seconds.
 
+### Review fixes and speed (v0.2.17)
+
+- [ ] Press `Win+Alt` for about half a second (a slow tap) and then ask a question: Wisp keeps listening and asks it when you pause.
+- [ ] Type `history of rome`, `apps like notion`, `maps of europe`: each one is asked (Ask is the first row), not turned into a tag or site search.
+- [ ] `t: gmail`, Enter: the tab opens; reopen the bar and type a question: no Tabs chip is left behind.
+- [ ] `p: notepad`, Ctrl+Enter, confirm: Notepad is gone from the list straight away; CPU figures aren't all 0%.
+- [ ] Run a large download into Downloads and save a file to Desktop meanwhile: the Desktop file shows in search within about 10 s.
+- [ ] Typing quickly in the bar with lots of browser history stays smooth; Task Manager shows no repeated multi-MB copies in `%TEMP%`.
+
 ### Voice does what you said (v0.2.16)
 
 - [ ] Hold `Win+Alt`, ask "what's the weather in Leeds", let go: it's asked (not dropped).

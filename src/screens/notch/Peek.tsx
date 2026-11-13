@@ -56,7 +56,6 @@ export function VoiceMeter({ phase }: { phase: "off" | "waiting" | "hearing" | "
 /** What the hover notch shows: the most relevant live thing, else the time. */
 export function Peek() {
   const state = useOrbState();
-  const now = useNow(1000);
   const timer = useNotch((n) => n.timer);
   const jobs = useRunningJobs();
   const reminder = useDueReminders((r) => r.due[0]);
@@ -64,8 +63,9 @@ export function Peek() {
   const live = useVoice((v) => v.live);
   const heardAt = useVoice((v) => v.heardAt);
   const outcome = useVoice((v) => v.outcome);
-  // Ticks fast only while listening, so "hearing you" follows your voice.
-  const tick = useNow(dictating ? 200 : 1000);
+  // One clock: fast only while listening, so "hearing you" follows your voice.
+  const now = useNow(dictating ? 200 : 1000);
+  const tick = now;
   const phase = voicePhase({ listening: dictating, live, heardAt }, tick);
   const showOutcome = !dictating && outcome && tick - outcome.at < OUTCOME_MS;
   const [playing, setPlaying] = useState<NowPlaying | null>(null);

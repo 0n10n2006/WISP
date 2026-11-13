@@ -819,6 +819,7 @@ impl FileIndex {
         let starts = format!("name : ^{any}");
         let mut hits = self.with(|c| {
             let mut out: Vec<FileHit> = Vec::new();
+            let mut seen = std::collections::HashSet::new();
             for (m, extra, cap) in [
                 (&starts, "", 300),
                 (&any, "AND f.opened > 0", 100),
@@ -831,7 +832,7 @@ impl FileIndex {
                 let rows = stmt.query_map(params![m, kind], hit_from)?;
                 for h in rows {
                     let h = h?;
-                    if !out.iter().any(|o| o.id == h.id) {
+                    if seen.insert(h.id) {
                         out.push(h);
                     }
                 }

@@ -3,6 +3,7 @@
 // Web Audio (no sound files), very quiet, and skipped where audio isn't there.
 
 let ctx: AudioContext | null = null;
+let idle: ReturnType<typeof setTimeout> | null = null;
 
 function audio(): AudioContext | null {
   if (typeof window === "undefined" || typeof window.AudioContext !== "function") return null;
@@ -32,6 +33,15 @@ function tone(freqs: number[], step = 0.07, volume = 0.05) {
     osc.start(at);
     osc.stop(at + step + 0.1);
   });
+  // Let go of the audio device once the cue has played, so Wisp doesn't
+  // keep it open (and the PC can sleep its sound hardware).
+  if (idle) clearTimeout(idle);
+  idle = setTimeout(
+    () => {
+      if (a.state === "running") void a.suspend().catch(() => {});
+    },
+    (freqs.length * step + 0.5) * 1000,
+  );
 }
 
 export type Cue = "start" | "done" | "nothing";
