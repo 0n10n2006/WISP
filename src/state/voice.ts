@@ -19,6 +19,8 @@ export const SPEAKING_MS = 700;
 export const OUTCOME_MS = 1400;
 /** If Windows doesn't confirm a stop by then, Wisp stops anyway. */
 export const STOP_GRACE_MS = 2000;
+/** Keys held for less than this count as a tap, not hold-to-talk. */
+export const MIN_HOLD_MS = 900;
 
 export type VoiceOutcome = { kind: "done" | "nothing" | "error"; text: string; at: number };
 
@@ -80,6 +82,8 @@ let stopGuard: ReturnType<typeof setTimeout> | null = null;
 let foldTimer: ReturnType<typeof setTimeout> | null = null;
 /** Each session's number, so a late event from an old one is ignored. */
 let session = 0;
+/** The host starting to listen; a stop waits for it, so it has a session to stop. */
+let starting: Promise<unknown> = Promise.resolve();
 
 export const useVoice = create<VoiceState>((set, get) => {
   const begin = async (target: VoiceTarget) => {
@@ -89,7 +93,9 @@ export const useVoice = create<VoiceState>((set, get) => {
     listen(true);
     if (sounds()) playCue("start");
     try {
-      await host().voiceStart(target);
+      const started = host().voiceStart(target);
+      starting = started.catch(() => {});
+      await started;
     } catch (e) {
       if (mine !== session) return;
       const message = toWispError(e).message;
@@ -130,19 +136,24 @@ export const useVoice = create<VoiceState>((set, get) => {
     stop() {
       if (!get().listening) return;
       const mine = session;
-      void host()
-        .voiceStop()
-        .catch(() => {});
-      // Never stay "listening" because Windows didn't answer.
       if (stopGuard) clearTimeout(stopGuard);
-      stopGuard = setTimeout(() => {
-        const v = get();
-        if (mine !== session || !v.listening || !v.target) return;
-        v.done({ target: v.target, text: v.live });
+      stopGuard = null;
+      void starting.then(() => {
+        if (mine !== session || !get().listening) return;
         void host()
-          .voiceCancel()
+          .voiceStop()
           .catch(() => {});
-      }, STOP_GRACE_MS);
+        // Never stay "listening" because Windows didn't answer.
+        if (stopGuard) clearTimeout(stopGuard);
+        stopGuard = setTimeout(() => {
+          const v = get();
+          if (mine !== session || !v.listening || !v.target) return;
+          v.done({ target: v.target, text: v.live });
+          void host()
+            .voiceCancel()
+            .catch(() => {});
+        }, STOP_GRACE_MS);
+      });
     },
 
     cancel() {

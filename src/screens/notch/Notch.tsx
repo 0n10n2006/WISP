@@ -13,7 +13,7 @@ import { useNotch } from "../../state/notch";
 import { ORB_LABELS } from "../../state/orb";
 import { useSettings } from "../../state/settings";
 import { toast } from "../../state/toast";
-import { useVoice } from "../../state/voice";
+import { MIN_HOLD_MS, useVoice } from "../../state/voice";
 import { preloadDashboard } from "../dashboard/load";
 import { busy } from "./busy";
 import { blurCloseAllowed, changeMode, closeBar as close, openBar as open } from "./control";
@@ -113,14 +113,22 @@ function SliverGlow() {
 /** Voice keys (Ctrl+Win dictates, Win+Alt asks). Hold them while you talk
  * and let go when you're done; or tap once to start (Wisp stops when you
  * pause) and tap again to stop sooner. */
+let heldSince: number | null = null;
 function onHold(e: HoldEvent) {
   const v = useVoice.getState();
   const start = () => void (e.chord === "dictate" ? v.dictate() : v.ask());
   if (e.phase === "start") {
+    // Holding the keys while Wisp already listens is a way to stop it.
+    heldSince = v.listening ? null : Date.now();
     if (!v.listening) start();
   } else if (e.phase === "stop") {
-    if (v.listening) v.stop();
+    // A press only a little longer than a tap is still a tap: keep
+    // listening, and Wisp stops when you pause.
+    const brief = heldSince !== null && Date.now() - heldSince < MIN_HOLD_MS;
+    heldSince = null;
+    if (v.listening && !brief) v.stop();
   } else if (e.phase === "cancel") {
+    heldSince = null;
     // The keys became a Windows shortcut (Ctrl+Win+D…): not voice after all.
     if (v.listening) v.cancel();
   } else if (e.phase === "tap") {

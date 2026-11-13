@@ -4,7 +4,7 @@ import { App } from "../../src/App";
 import { useConversation } from "../../src/state/conversation";
 import { useNotch } from "../../src/state/notch";
 import { useSettings } from "../../src/state/settings";
-import { useVoice } from "../../src/state/voice";
+import { MIN_HOLD_MS, useVoice } from "../../src/state/voice";
 import { setupMockHost } from "../helpers";
 
 async function openBar() {
@@ -242,7 +242,7 @@ describe("voice keys", () => {
       withKey: true,
       onboarded: true,
       windowKind: "island",
-      voice: "one two three four five six seven eight nine ten",
+      voice: Array.from({ length: 60 }, (_, i) => `word${i}`).join(" "),
     });
     const typing = vi.spyOn(h, "voiceStart");
     const stop = vi.spyOn(h, "voiceStop");
@@ -251,6 +251,19 @@ describe("voice keys", () => {
     act(() => mock().hold({ chord: "dictate", phase: "start" }));
     await waitFor(() => expect(typing).toHaveBeenCalledWith("app"));
     expect(useVoice.getState().listening).toBe(true);
+    // Letting go after only a moment is a slow tap: Wisp keeps listening.
+    act(() => mock().hold({ chord: "dictate", phase: "stop" }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(stop).not.toHaveBeenCalled();
+    expect(useVoice.getState().listening).toBe(true);
+    // Tapping again stops it.
+    act(() => mock().hold({ chord: "dictate", phase: "tap" }));
+    await waitFor(() => expect(useVoice.getState().listening).toBe(false));
+    stop.mockClear();
+    // A real hold: listening while held, done on release.
+    act(() => mock().hold({ chord: "dictate", phase: "start" }));
+    await waitFor(() => expect(useVoice.getState().listening).toBe(true));
+    await new Promise((r) => setTimeout(r, MIN_HOLD_MS + 50));
     act(() => mock().hold({ chord: "dictate", phase: "stop" }));
     await waitFor(() => expect(stop).toHaveBeenCalled());
     await waitFor(() => expect(useVoice.getState().listening).toBe(false));

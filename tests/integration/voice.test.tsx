@@ -230,6 +230,21 @@ describe("voice (Windows speech recognition, no pop-up)", () => {
     expect(useVoice.getState().outcome).toMatchObject({ kind: "done", text: "half a sentence" });
   });
 
+  it("a stop sent while Windows is still starting waits for the start", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    let started!: () => void;
+    vi.spyOn(h, "voiceStart").mockReturnValue(new Promise<void>((r) => (started = r)));
+    const stop = vi.spyOn(h, "voiceStop").mockResolvedValue(undefined);
+    render(<App />);
+    act(() => void useVoice.getState().dictate());
+    act(() => useVoice.getState().stop());
+    await new Promise((r) => setTimeout(r, 30));
+    // Nothing to stop yet on the host.
+    expect(stop).not.toHaveBeenCalled();
+    await act(async () => started());
+    await waitFor(() => expect(stop).toHaveBeenCalledOnce());
+  });
+
   it("knows whether you're being heard", () => {
     const now = 10_000;
     expect(voicePhase({ listening: false, live: "", heardAt: 0 }, now)).toBe("off");
