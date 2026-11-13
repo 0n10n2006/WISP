@@ -34,7 +34,8 @@ pub async fn file_preview(app: AppHandle, id: i64) -> CmdResult<FilePreview> {
                 .files
                 .get(id)
                 .ok_or_else(|| WispError::invalid("That file isn't in the index any more."))?;
-            let path = wisp_core::files::check_openable(&hit, &state.files.roots())?;
+            let roots = crate::fileindex::roots_for(&app, &state.settings());
+            let path = wisp_core::files::check_openable(&hit, &roots)?;
             Ok(crate::preview::cached(&hit, &path))
         })
         .await,
@@ -54,9 +55,17 @@ pub async fn browser_tabs(app: AppHandle) -> CmdResult<Vec<Tab>> {
     if !app.state::<AppState>().settings().browser_search {
         return Ok(Vec::new());
     }
-    let tabs = crate::com_worker::run(crate::browsers::list_tabs).await?;
-    app.state::<AppState>().browsers.set_tabs(tabs.clone());
-    Ok(tabs)
+    // Reading tabs walks the browsers' windows, which can take a while: on
+    // its own thread (not the one volume and settings share), and at most
+    // once every few seconds.
+    join(
+        tauri::async_runtime::spawn_blocking(move || {
+            app.state::<AppState>()
+                .browsers
+                .tabs_or(crate::browsers::list_tabs)
+        })
+        .await,
+    )
 }
 
 #[tauri::command]
@@ -69,7 +78,8 @@ pub async fn browser_tab_switch(app: AppHandle, id: i64) -> CmdResult<()> {
         .browsers
         .tab(id)
         .ok_or_else(|| WispError::invalid("That tab is closed."))?;
-    let ok = crate::com_worker::run(move || crate::browsers::switch_to(&tab)).await?;
+    let ok =
+        join(tauri::async_runtime::spawn_blocking(move || crate::browsers::switch_to(&tab)).await)?;
     if ok {
         Ok(())
     } else {

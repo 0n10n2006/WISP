@@ -287,6 +287,8 @@ const PROTECTED: &[&str] = &[
     "nissrv",
     "securityhealthservice",
     "wisp",
+    // Wisp's own window runs in WebView2: ending it would end Wisp's UI.
+    "msedgewebview2",
 ];
 
 /// Process name as shown and compared: "Chrome.exe" → "chrome".
@@ -363,16 +365,37 @@ pub fn group_processes(
 impl Stats {
     /// Every running program, grouped by name.
     pub fn processes(&self, windows: &[(String, i64)]) -> Vec<ProcGroup> {
-        let _ = self.snapshot();
+        // CPU use is the change between two samples. A recent sample is the
+        // baseline; otherwise take one, wait a moment, and take another.
+        static SAMPLED: Mutex<Option<Instant>> = Mutex::new(None);
+        let refresh = |stats: &Stats| {
+            if stats.inner.lock().expect("stats").is_none() {
+                let _ = stats.snapshot();
+            }
+            if let Some(inner) = stats.inner.lock().expect("stats").as_mut() {
+                inner.sys.refresh_processes_specifics(
+                    ProcessesToUpdate::All,
+                    true,
+                    ProcessRefreshKind::nothing().with_memory().with_cpu(),
+                );
+            }
+        };
+        let age = SAMPLED.lock().expect("sampled").map(|t| t.elapsed());
+        let usable = age.is_some_and(|a| {
+            a >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL && a < std::time::Duration::from_secs(10)
+        });
+        if !usable {
+            refresh(self);
+            std::thread::sleep(
+                sysinfo::MINIMUM_CPU_UPDATE_INTERVAL + std::time::Duration::from_millis(50),
+            );
+        }
+        refresh(self);
+        *SAMPLED.lock().expect("sampled") = Some(Instant::now());
         let mut guard = self.inner.lock().expect("stats");
         let Some(inner) = guard.as_mut() else {
             return Vec::new();
         };
-        inner.sys.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing().with_memory().with_cpu(),
-        );
         let cores = inner.sys.cpus().len().max(1) as f32;
         group_processes(
             inner.sys.processes().iter().map(|(pid, p)| {
@@ -454,6 +477,7 @@ mod process_tests {
             Some(88)
         );
         assert!(is_protected("LSASS.EXE") && is_protected("wisp") && !is_protected("explorer"));
+        assert!(is_protected("msedgewebview2.exe"));
         assert!(end_processes("csrss").is_err());
         assert!(end_processes("Wisp.exe").is_err());
         assert!(end_processes("").is_err());

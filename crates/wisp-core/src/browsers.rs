@@ -359,9 +359,38 @@ pub fn host(url: &str) -> &str {
     h.strip_prefix("www.").unwrap_or(h)
 }
 
+/// A page with its words split out once, so each search only compares.
+#[derive(Debug, Clone)]
+pub struct Indexed {
+    pub page: Page,
+    title_lc: String,
+    title: Vec<String>,
+    host: String,
+    addr: Vec<String>,
+    path: Vec<String>,
+}
+
+/// Prepare pages for [`search`] (done once each time history is read).
+pub fn index(pages: Vec<Page>) -> Vec<Indexed> {
+    pages
+        .into_iter()
+        .map(|page| {
+            let h = host(&page.url).to_lowercase();
+            Indexed {
+                title_lc: page.title.to_lowercase(),
+                title: words(&page.title),
+                addr: words(&h),
+                host: h,
+                path: words(&page.url),
+                page,
+            }
+        })
+        .collect()
+}
+
 /// Pages whose title or address match every word of `query`, best first.
 /// `now` in unix milliseconds.
-pub fn search(pages: &[Page], query: &str, limit: usize, now: i64) -> Vec<Page> {
+pub fn search(pages: &[Indexed], query: &str, limit: usize, now: i64) -> Vec<Page> {
     let q = words(query);
     if q.is_empty() {
         return Vec::new();
@@ -369,29 +398,26 @@ pub fn search(pages: &[Page], query: &str, limit: usize, now: i64) -> Vec<Page> 
     let joined = q.join(" ");
     let mut scored: Vec<(f64, &Page)> = pages
         .iter()
-        .filter_map(|p| {
-            let title = words(&p.title);
-            let h = host(&p.url).to_lowercase();
-            let addr = words(&h);
-            let path = words(&p.url);
+        .filter_map(|i| {
+            let (p, title, h, addr, path) = (&i.page, &i.title, &i.host, &i.addr, &i.path);
             let all_in = |set: &[String]| {
                 q.iter()
                     .all(|w| set.iter().any(|t| t.starts_with(w.as_str())))
             };
             let mut s = if h.starts_with(&joined) {
                 700.0
-            } else if all_in(&title) {
-                if p.title.to_lowercase().starts_with(&joined) {
+            } else if all_in(title) {
+                if i.title_lc.starts_with(&joined) {
                     600.0
                 } else {
                     450.0
                 }
-            } else if all_in(&addr)
+            } else if all_in(addr)
                 || q.iter()
-                    .all(|w| title.iter().chain(&addr).any(|t| t.starts_with(w.as_str())))
+                    .all(|w| title.iter().chain(addr).any(|t| t.starts_with(w.as_str())))
             {
                 400.0
-            } else if all_in(&path) {
+            } else if all_in(path) {
                 200.0
             } else {
                 return None;
@@ -573,6 +599,7 @@ mod tests {
             (55, "bookmark", "My GitHub")
         );
 
+        let merged = index(merged);
         let r = search(&merged, "git", 5, now);
         assert_eq!(r[0].url, "https://github.com/");
         assert_eq!(r.len(), 2);

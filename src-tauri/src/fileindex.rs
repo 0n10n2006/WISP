@@ -5,7 +5,7 @@
 
 use crate::state::AppState;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Mutex};
@@ -20,6 +20,8 @@ use wisp_core::{Result, WispError};
 const FULL_EVERY: Duration = Duration::from_secs(6 * 3600);
 /// Changes are applied once the folder has been quiet this long.
 const DEBOUNCE: Duration = Duration::from_secs(2);
+/// …but never later than this after the first change, however busy it stays.
+const MAX_WAIT: Duration = Duration::from_secs(10);
 /// Wait this long after startup before the first pass.
 const START_DELAY: Duration = Duration::from_secs(4);
 const BATCH: usize = 1000;
@@ -29,7 +31,35 @@ enum Msg {
     Rescan,
     /// Forget everything (indexing turned off).
     Clear,
-    Changed(Vec<PathBuf>),
+    /// Paths that changed; `true` when they were created or renamed (a
+    /// folder may then have arrived with things already inside it).
+    Changed(Vec<PathBuf>, bool),
+}
+
+/// When pending changes should be applied: once things have been quiet for
+/// [`DEBOUNCE`], or [`MAX_WAIT`] after the first one.
+fn apply_at(first: Instant, last: Instant) -> Instant {
+    (last + DEBOUNCE).min(first + MAX_WAIT)
+}
+
+/// Changes that can't matter to the index: outside every root, inside a
+/// skipped folder (`node_modules`, `.git`…), or a temporary file. Dropping
+/// them early keeps builds and downloads from keeping the indexer busy.
+fn ignorable(path: &Path, roots: &[Root]) -> bool {
+    let Some(root) = root_of(path, roots) else {
+        return true;
+    };
+    let Ok(rel) = path.strip_prefix(&root.path) else {
+        return true;
+    };
+    let parts: Vec<String> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let Some((last, dirs)) = parts.split_last() else {
+        return false;
+    };
+    dirs.iter().any(|d| files::skip_dir(d)) || (files::skip_file(last) && !path.is_dir())
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -51,6 +81,8 @@ pub struct Indexer {
     roots: Mutex<Vec<Root>>,
     indexing: AtomicBool,
     scanned: Mutex<u64>,
+    /// How many entries the index holds (kept here so showing it is free).
+    count: std::sync::atomic::AtomicU64,
     /// Set to stop a pass in progress.
     stop: AtomicBool,
 }
@@ -68,8 +100,10 @@ impl Indexer {
                 None
             }
         };
+        let count = db.as_ref().and_then(|d| d.count().ok()).unwrap_or(0);
         Self {
             db,
+            count: count.into(),
             tx: Mutex::new(None),
             roots: Mutex::new(Vec::new()),
             indexing: AtomicBool::new(false),
@@ -100,6 +134,14 @@ impl Indexer {
         if let Some(db) = &self.db {
             let _ = db.clear();
         }
+        self.recount();
+    }
+
+    /// Read the number of entries again (after the index changed).
+    fn recount(&self) {
+        if let Some(n) = self.db.as_ref().and_then(|d| d.count().ok()) {
+            self.count.store(n, Ordering::SeqCst);
+        }
     }
 
     pub fn roots(&self) -> Vec<Root> {
@@ -111,7 +153,7 @@ impl Indexer {
         FilesStatus {
             enabled,
             indexing: self.indexing.load(Ordering::SeqCst),
-            count: db.and_then(|d| d.count().ok()).unwrap_or(0),
+            count: self.count.load(Ordering::SeqCst),
             scanned: *self.scanned.lock().expect("scanned"),
             updated_at: db.and_then(|d| d.last_full().ok().flatten()),
             folders,
@@ -207,8 +249,10 @@ fn worker(app: AppHandle, tx: mpsc::Sender<Msg>, rx: mpsc::Receiver<Msg>) {
         return;
     };
     let mut _watcher: Option<notify::RecommendedWatcher> = None;
-    let mut pending: HashSet<PathBuf> = HashSet::new();
-    let mut quiet_at: Option<Instant> = None;
+    // Changed paths waiting to be applied (true: look inside folders too),
+    // with when the first and the latest of them arrived.
+    let mut pending: HashMap<PathBuf, bool> = HashMap::new();
+    let mut waiting: Option<(Instant, Instant)> = None;
     let mut next_full = Instant::now();
     let mut first = true;
     loop {
@@ -233,30 +277,33 @@ fn worker(app: AppHandle, tx: mpsc::Sender<Msg>, rx: mpsc::Receiver<Msg>) {
             }
         } else {
             let now = Instant::now();
-            let wake = quiet_at.map_or(next_full, |q| q.min(next_full));
+            let due = waiting.map(|(first, last)| apply_at(first, last));
+            let wake = due.map_or(next_full, |d| d.min(next_full));
             match rx.recv_timeout(wake.saturating_duration_since(now)) {
                 Ok(Msg::Rescan) => rescan = true,
                 Ok(Msg::Clear) => {
                     _watcher = None;
                     pending.clear();
-                    quiet_at = None;
+                    waiting = None;
                     let _ = db.clear();
+                    state.files.recount();
                     state.files.roots.lock().expect("roots").clear();
                     emit(&app);
                     continue;
                 }
-                Ok(Msg::Changed(paths)) => {
-                    pending.extend(paths);
-                    quiet_at = Some(Instant::now() + DEBOUNCE);
-                    continue;
+                Ok(Msg::Changed(paths, deep)) => {
+                    let roots = state.files.roots();
+                    queue(&mut pending, &mut waiting, paths, deep, &roots);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
             }
-            if !rescan && quiet_at.is_some_and(|q| Instant::now() >= q) {
-                quiet_at = None;
+            let due = waiting.map(|(first, last)| apply_at(first, last));
+            if !rescan && due.is_some_and(|d| Instant::now() >= d) {
+                waiting = None;
                 if enabled {
                     apply_changes(db, &state.files.roots(), pending.drain());
+                    state.files.recount();
                     emit(&app);
                 } else {
                     pending.clear();
@@ -268,10 +315,12 @@ fn worker(app: AppHandle, tx: mpsc::Sender<Msg>, rx: mpsc::Receiver<Msg>) {
         }
         if rescan && state.settings().index_files {
             // Coalesce a burst of requests into one pass.
+            // (Changes queued so far are covered by the pass itself.)
+            pending.clear();
+            waiting = None;
             while let Ok(m) = rx.try_recv() {
                 match m {
-                    Msg::Rescan => {}
-                    Msg::Changed(p) => pending.extend(p),
+                    Msg::Rescan | Msg::Changed(..) => {}
                     Msg::Clear => {
                         let _ = tx.send(Msg::Clear);
                         break;
@@ -288,8 +337,30 @@ fn worker(app: AppHandle, tx: mpsc::Sender<Msg>, rx: mpsc::Receiver<Msg>) {
     }
 }
 
+/// Add watcher-reported paths to the pending set, dropping the ones that
+/// can't matter.
+fn queue(
+    pending: &mut HashMap<PathBuf, bool>,
+    waiting: &mut Option<(Instant, Instant)>,
+    paths: Vec<PathBuf>,
+    deep: bool,
+    roots: &[Root],
+) {
+    let before = pending.len();
+    for p in paths {
+        if !ignorable(&p, roots) {
+            *pending.entry(p).or_insert(false) |= deep;
+        }
+    }
+    if pending.len() > before || (deep && !pending.is_empty()) {
+        let now = Instant::now();
+        *waiting = Some((waiting.map_or(now, |(first, _)| first), now));
+    }
+}
+
 /// Watch every root for changes (the OS tells us; nothing is polled).
 fn watch(app: &AppHandle, tx: &mpsc::Sender<Msg>) -> Option<notify::RecommendedWatcher> {
+    use notify::event::ModifyKind;
     use notify::{EventKind, RecursiveMode, Watcher};
     let tx = tx.clone();
     let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
@@ -297,7 +368,14 @@ fn watch(app: &AppHandle, tx: &mpsc::Sender<Msg>) -> Option<notify::RecommendedW
             let _ = tx.send(Msg::Rescan);
         }
         Ok(ev) if !matches!(ev.kind, EventKind::Access(_)) && !ev.paths.is_empty() => {
-            let _ = tx.send(Msg::Changed(ev.paths));
+            // Only something new (created, or renamed into place) can bring
+            // unseen contents with it. A folder merely "modified" (Windows
+            // says so whenever something inside it changes) is not re-walked.
+            let deep = matches!(
+                ev.kind,
+                EventKind::Create(_) | EventKind::Modify(ModifyKind::Name(_)) | EventKind::Any
+            );
+            let _ = tx.send(Msg::Changed(ev.paths, deep));
         }
         _ => {}
     })
@@ -337,6 +415,9 @@ fn full_pass(app: &AppHandle, db: &FileIndex, roots: &[Root]) {
                 let _ = db.upsert(&batch, seen);
                 batch.clear();
                 *files.scanned.lock().expect("scanned") = total;
+                if bulk {
+                    files.count.store(total, Ordering::SeqCst);
+                }
                 if last_emit.elapsed() > Duration::from_millis(500) {
                     last_emit = Instant::now();
                     emit(app);
@@ -361,6 +442,7 @@ fn full_pass(app: &AppHandle, db: &FileIndex, roots: &[Root]) {
         let _ = db.finish_pass(seen, &keys);
     }
     *files.scanned.lock().expect("scanned") = total;
+    files.recount();
     files.indexing.store(false, Ordering::SeqCst);
     emit(app);
 }
@@ -374,10 +456,10 @@ fn root_of<'a>(path: &Path, roots: &'a [Root]) -> Option<&'a Root> {
 }
 
 /// Bring the index up to date for paths the watcher reported.
-fn apply_changes(db: &FileIndex, roots: &[Root], paths: impl Iterator<Item = PathBuf>) {
+fn apply_changes(db: &FileIndex, roots: &[Root], paths: impl Iterator<Item = (PathBuf, bool)>) {
     let seen = now_ms();
     let mut batch = Vec::new();
-    for path in paths {
+    for (path, deep) in paths {
         let Some(root) = root_of(&path, roots) else {
             continue;
         };
@@ -397,7 +479,7 @@ fn apply_changes(db: &FileIndex, roots: &[Root], paths: impl Iterator<Item = Pat
             let _ = db.remove(&key);
             continue;
         }
-        if is_dir {
+        if is_dir && deep {
             // A new or renamed folder: take in what's inside it.
             let inner: Vec<PathBuf> = roots
                 .iter()
@@ -429,7 +511,8 @@ pub fn open(app: &AppHandle, id: i64, reveal: bool) -> Result<String> {
         .files
         .get(id)
         .ok_or_else(|| WispError::invalid("That file isn't in the index any more."))?;
-    let path = files::check_openable(&hit, &state.files.roots())?;
+    // The folders as they are now (the worker's copy may not be set yet).
+    let path = files::check_openable(&hit, &roots_for(app, &state.settings()))?;
     let res = if reveal {
         app.opener().reveal_item_in_dir(&path)
     } else {
@@ -480,22 +563,67 @@ mod tests {
             &db,
             &roots,
             [
-                docs.join("Trip"),
-                docs.join("new.txt"),
-                docs.join("tool.exe"),
-                dir.join("outside.txt"),
+                (docs.join("Trip"), true),
+                (docs.join("new.txt"), false),
+                (docs.join("tool.exe"), false),
+                (dir.join("outside.txt"), true),
             ]
             .into_iter(),
         );
         assert_eq!(db.search("plan", 5, 0).unwrap().len(), 1);
         assert_eq!(db.search("new", 5, 0).unwrap().len(), 1);
         assert!(db.search("tool", 5, 0).unwrap().is_empty());
+        // A folder that was only "modified" isn't walked again.
+        std::fs::create_dir_all(docs.join("Work")).unwrap();
+        std::fs::write(docs.join("Work/budget.xlsx"), "x").unwrap();
+        apply_changes(&db, &roots, [(docs.join("Work"), false)].into_iter());
+        assert_eq!(db.search("work", 5, 0).unwrap().len(), 1);
+        assert!(db.search("budget", 5, 0).unwrap().is_empty());
         // Deleted: gone from the index, with what was inside.
         std::fs::remove_dir_all(docs.join("Trip")).unwrap();
-        apply_changes(&db, &roots, [docs.join("Trip")].into_iter());
+        apply_changes(&db, &roots, [(docs.join("Trip"), false)].into_iter());
         assert!(db.search("plan", 5, 0).unwrap().is_empty());
-        assert_eq!(db.count().unwrap(), 1);
+        assert_eq!(db.count().unwrap(), 2);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn noise_is_dropped_and_busy_folders_still_update() {
+        let roots = vec![Root::new("/home/u/Documents", false)];
+        let p = |s: &str| PathBuf::from(format!("/home/u/Documents/{s}"));
+        assert!(ignorable(Path::new("/home/u/elsewhere/a.txt"), &roots));
+        assert!(ignorable(&p("app/node_modules/x/index.md"), &roots));
+        assert!(ignorable(&p("repo/.git/index"), &roots));
+        assert!(ignorable(&p("movie.mkv.crdownload"), &roots));
+        assert!(!ignorable(&p("Work/plan.docx"), &roots));
+        assert!(!ignorable(&p("node_modules"), &roots));
+
+        let mut pending = HashMap::new();
+        let mut waiting = None;
+        queue(
+            &mut pending,
+            &mut waiting,
+            vec![p("repo/.git/index")],
+            false,
+            &roots,
+        );
+        assert!(pending.is_empty() && waiting.is_none());
+        queue(&mut pending, &mut waiting, vec![p("a.txt")], false, &roots);
+        queue(
+            &mut pending,
+            &mut waiting,
+            vec![p("a.txt"), p("New folder")],
+            true,
+            &roots,
+        );
+        assert_eq!(pending.get(&p("a.txt")), Some(&true));
+        assert_eq!(pending.len(), 2);
+
+        // Quiet: applied after the debounce. Busy: after the longest wait.
+        let t0 = Instant::now();
+        assert_eq!(apply_at(t0, t0), t0 + DEBOUNCE);
+        let busy = t0 + Duration::from_secs(60);
+        assert_eq!(apply_at(t0, busy), t0 + MAX_WAIT);
     }
 
     #[test]
