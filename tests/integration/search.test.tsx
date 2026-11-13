@@ -49,6 +49,19 @@ describe("Fluent-style search in the bar", () => {
     await waitFor(async () => expect(await first()).toHaveTextContent("Inbox (3) - Gmail"));
     await user.keyboard("{Enter}");
     await waitFor(() => expect(sw).toHaveBeenCalledWith(1));
+    // The tag goes with the result, so the next thing typed can be asked.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /searching tabs/i })).toBeNull(),
+    );
+  });
+
+  it("tabs are only read when they're searched for", async () => {
+    const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
+    const tabs = vi.spyOn(h, "browserTabs");
+    const user = await openBar();
+    await user.type(await box(), "f: resume");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(tabs).not.toHaveBeenCalled();
   });
 
   it("opens a page from history by id", async () => {
@@ -64,14 +77,18 @@ describe("Fluent-style search in the bar", () => {
   it("ends a program after asking; Windows' own are refused", async () => {
     const h = await setupMockHost({ withKey: true, onboarded: true, windowKind: "island" });
     const end = vi.spyOn(h, "processEnd");
+    const list = vi.spyOn(h, "processesList");
     const user = await openBar();
     await user.type(await box(), "p: notepad");
     await waitFor(async () => expect(await first()).toHaveTextContent("notepad"));
     await user.keyboard("{Control>}{Enter}{/Control}");
     await waitFor(() => expect(useConfirm.getState().pending?.label).toBe("End notepad"));
     expect(end).not.toHaveBeenCalled();
+    const before = list.mock.calls.length;
     await useConfirm.getState().pending!.run();
     expect(end).toHaveBeenCalledWith("notepad");
+    // The list is read again, so the ended program isn't offered twice.
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(before));
 
     await user.clear(await box());
     await user.type(await box(), "csrss");

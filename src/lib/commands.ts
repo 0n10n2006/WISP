@@ -195,7 +195,8 @@ const SHORT_TAGS: Record<string, SearchTag> = {
   c: "calc",
 };
 
-/** Words that become a tag when followed by a search, or on Tab. */
+/** Words that become a tag on Tab (never just by typing them: "history of
+ * Rome" is a question). */
 const TAG_WORDS: Record<string, SearchTag> = {
   files: "files",
   apps: "apps",
@@ -209,11 +210,10 @@ const TAG_WORDS: Record<string, SearchTag> = {
 /** "t: github" → tabs + "github"; "= 2+2" → calc. */
 export function parseTag(query: string): { tag: SearchTag | null; rest: string } {
   const q = query.replace(/^\s+/, "");
-  let m = q.match(/^([fawthbpc]):\s*/i);
+  // A drive path ("C:\Users") isn't the calculator tag.
+  const m = q.match(/^([fawthbpc]):(?![\\/])\s*/i);
   if (m) return { tag: SHORT_TAGS[m[1]!.toLowerCase()]!, rest: q.slice(m[0].length) };
   if (q.startsWith("=")) return { tag: "calc", rest: q.slice(1).trimStart() };
-  m = q.match(/^(files|apps|tabs|history|bookmarks|processes|calc)\s+(?=\S)/i);
-  if (m) return { tag: TAG_WORDS[m[1]!.toLowerCase()]!, rest: q.slice(m[0].length) };
   return { tag: null, rest: query };
 }
 
@@ -233,6 +233,19 @@ export const DEFAULT_WEB_SHORTCUTS: WebShortcut[] = [
   { prefix: "amz", name: "Amazon", url: "https://www.amazon.com/s?k=%s" },
   { prefix: "r", name: "Reddit", url: "https://www.reddit.com/search/?q=%s" },
 ];
+
+/** Whether "maps of europe" / "r u there?" reads as a sentence, not as a
+ * shortcut followed by search words. */
+export function shortcutLooksLikeSentence(query: string): boolean {
+  const m = query.trim().match(/^\S+\s+(\S+)/);
+  if (!m) return false;
+  return (
+    /[?]$/.test(query.trim()) ||
+    /^(of|is|are|was|were|in|on|at|to|for|the|a|an|and|or|vs|u|you|i|do|does|did|can|with|about)$/i.test(
+      m[1]!,
+    )
+  );
+}
 
 /** "g cats" → a Google search for cats. */
 export function webShortcut(query: string, shortcuts: WebShortcut[]): WebResult | null {
@@ -504,8 +517,14 @@ export function fuzzyScore(query: string, name: string): number {
   const initials = words.map((w) => w[0]).join("");
   if (q.length >= 2 && initials.startsWith(q)) return 500;
   if (n.includes(q)) return 400 - n.indexOf(q);
-  // One typo in a longer word ("spotfy", "chorme").
-  if (q.length >= 4 && words.some((w) => w.length >= 4 && withinOneEdit(q, w)))
+  // One typo in a longer word ("spotfy", "chorme"). Typos rarely hit the
+  // first letter, so only words starting the same way are compared.
+  if (
+    q.length >= 4 &&
+    words.some(
+      (w) => w.length >= 4 && w[0] === q[0] && w.length >= q.length - 1 && withinOneEdit(q, w),
+    )
+  )
     return 300 - Math.min(n.length, 100);
   // In-order subsequence with a penalty for gaps.
   let i = 0;
@@ -671,11 +690,16 @@ export interface BarExtras {
   rates?: Rates | null;
 }
 
-export function tabResults(query: string, tabs: BrowserTab[], limit = 6): TabResult[] {
+export function tabResults(
+  query: string,
+  tabs: BrowserTab[],
+  limit = 6,
+  minScore = 1,
+): TabResult[] {
   const q = query.trim();
   return tabs
     .map((tab, i) => ({ tab, score: q ? fuzzyScore(q, tab.title) : 1000 - i }))
-    .filter((x) => x.score > 0)
+    .filter((x) => x.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map(({ tab }) => ({
@@ -710,22 +734,25 @@ function memory(bytes: number): string {
   return bytes >= GB ? `${(bytes / GB).toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
-export function processResults(query: string, procs: ProcInfo[], limit = 8): ProcessResult[] {
+export function processResults(
+  query: string,
+  procs: ProcInfo[],
+  limit = 8,
+  minScore = 0,
+): ProcessResult[] {
   const q = query.trim();
   return procs
-    .map((proc) => ({ proc, score: q ? fuzzyScore(q, proc.name) : proc.memoryBytes / GB }))
-    .filter((x) => x.score > 0)
+    .map((proc) => ({ proc, score: q ? fuzzyScore(q, proc.name) : proc.memoryBytes / GB + 1 }))
+    .filter((x) => x.score > minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map(({ proc, score }) => ({
+    .map(({ proc }) => ({
       kind: "process" as const,
       id: `process:${proc.pid}`,
       title: proc.count > 1 ? `${proc.name} (${proc.count})` : proc.name,
       hint: `${memory(proc.memoryBytes)} · ${Math.round(proc.cpu)}% CPU`,
       proc,
-      score,
-    }))
-    .map(({ score: _score, ...r }) => r);
+    }));
 }
 
 function calcRow(calc: CalcResult): CalcResultItem {
@@ -747,26 +774,34 @@ export function barResults(
   const history = extras.history ?? [];
   const procs = extras.processes ?? [];
   if (tag) {
-    switch (tag) {
-      case "files":
-        return fileResults(files, 8);
-      case "apps":
-        return rest.trim() ? rankApps(rest, items, starred, recent, 8) : [];
-      case "windows":
-        return rest.trim()
-          ? rankWindows(rest, windows, 8)
-          : windows.slice(0, 8).flatMap((w) => rankWindows(w.title || w.app, [w], 1));
-      case "tabs":
-        return tabResults(rest, tabs, 8);
-      case "history":
-        return historyResults(history, 8);
-      case "processes":
-        return processResults(rest, procs, 8);
-      case "calc": {
-        const c = calculate(rest, extras.rates ?? null);
-        return c ? [calcRow(c)] : [];
+    const scoped = (): BarResult[] => {
+      switch (tag) {
+        case "files":
+          return fileResults(files, 8);
+        case "apps":
+          return rest.trim() ? rankApps(rest, items, starred, recent, 8) : [];
+        case "windows":
+          return rest.trim()
+            ? rankWindows(rest, windows, 8)
+            : windows.slice(0, 8).flatMap((w) => rankWindows(w.title || w.app, [w], 1));
+        case "tabs":
+          return tabResults(rest, tabs, 8);
+        case "history":
+          return historyResults(history, 8);
+        case "processes":
+          return processResults(rest, procs, 8);
+        case "calc": {
+          const c = calculate(rest, extras.rates ?? null);
+          return c ? [calcRow(c)] : [];
+        }
       }
-    }
+    };
+    // Asking stays possible in a scoped search, so Enter always does something.
+    const r = rest.trim();
+    const ask: AskResultItem[] = r
+      ? [{ kind: "ask", id: "ask", title: r, hint: "Ask Wisp", prompt: r }]
+      : [];
+    return [...scoped(), ...ask];
   }
   const q = query.trim();
   if (!q) return [];
@@ -779,16 +814,22 @@ export function barResults(
   const more: BarResult[] = looksLikeQuestion(q)
     ? []
     : [
-        ...tabResults(q, tabs, 3).filter((t) => fuzzyScore(q, t.tab.title) >= 400),
+        ...tabResults(q, tabs, 3, 400),
         ...historyResults(history, 3),
-        ...processResults(q, procs, 2).filter((p) => fuzzyScore(q, p.proc.name) >= 700),
+        ...processResults(q, procs, 2, 699),
       ];
   const askAt = base.findIndex((r) => r.kind === "ask");
   const merged =
     askAt > 0 && !web
       ? [...base.slice(0, askAt), ...more, ...base.slice(askAt)]
       : [...base, ...more];
-  return web ? [web, ...merged] : merged;
+  if (!web) return merged;
+  // "maps of europe" reads as a question: asking comes first, the search after.
+  if (shortcutLooksLikeSentence(q)) {
+    const at = merged.findIndex((r) => r.kind === "ask");
+    return [...merged.slice(0, at + 1), web, ...merged.slice(at + 1)];
+  }
+  return [web, ...merged];
 }
 
 function baseResults(

@@ -72,8 +72,11 @@ describe("search tags", () => {
     expect(parseTag("t: github")).toEqual({ tag: "tabs", rest: "github" });
     expect(parseTag("F:resume")).toEqual({ tag: "files", rest: "resume" });
     expect(parseTag("= 2+2")).toEqual({ tag: "calc", rest: "2+2" });
-    expect(parseTag("tabs gmail")).toEqual({ tag: "tabs", rest: "gmail" });
-    expect(parseTag("history rust")).toEqual({ tag: "history", rest: "rust" });
+    // Words never become tags by typing: these are questions.
+    expect(parseTag("history of rome").tag).toBeNull();
+    expect(parseTag("apps like notion").tag).toBeNull();
+    // A drive path isn't the calculator.
+    expect(parseTag("C:\\Users\\me").tag).toBeNull();
     expect(parseTag("windows update")).toEqual({ tag: null, rest: "windows update" });
     expect(parseTag("what is t: here")).toEqual({ tag: null, rest: "what is t: here" });
     expect(tagForWord("Tabs")).toBe("tabs");
@@ -91,8 +94,13 @@ describe("search tags", () => {
   };
 
   it("scopes the bar to one kind", () => {
+    // Asking is always the last row, so Enter never does nothing.
     expect(barResults("t: gmail", items, [], [], [], [], extras).map((r) => r.kind)).toEqual([
       "tab",
+      "ask",
+    ]);
+    expect(barResults("t: nothing like it", items, [], [], [], [], extras)).toMatchObject([
+      { kind: "ask", prompt: "nothing like it" },
     ]);
     expect(barResults("t:", items, [], [], [], [], extras)).toHaveLength(3);
     expect(barResults("p: chrome", items, [], [], [], [], extras)[0]).toMatchObject({
@@ -135,6 +143,11 @@ describe("web shortcuts", () => {
     expect(webShortcut("zz cats", DEFAULT_WEB_SHORTCUTS)).toBeNull();
     const r = barResults("g cats", [], [], [], [], [], { shortcuts: DEFAULT_WEB_SHORTCUTS });
     expect(r[0]?.kind).toBe("web");
+    // A sentence that happens to start with a shortcut is asked first.
+    for (const q of ["maps of europe", "r u there", "g is for what?"]) {
+      const rows = barResults(q, [], [], [], [], [], { shortcuts: DEFAULT_WEB_SHORTCUTS });
+      expect(rows.map((x) => x.kind)).toEqual(["ask", "web"]);
+    }
     expect(DEFAULT_SETTINGS.webShortcuts).toEqual(DEFAULT_WEB_SHORTCUTS);
   });
 });

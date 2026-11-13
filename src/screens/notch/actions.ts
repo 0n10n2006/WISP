@@ -13,6 +13,9 @@ import { toast } from "../../state/toast";
 export { useConfirm } from "./confirm";
 import { useConfirm } from "./confirm";
 
+/** Fired on `window` after a program is ended, so lists of them reload. */
+export const PROCESSES_CHANGED = "wisp:processes-changed";
+
 async function guarded(fn: () => Promise<unknown>, done?: string) {
   try {
     await fn();
@@ -198,6 +201,7 @@ export async function runResult(
         : `End ${p.name}${p.count > 1 ? ` (${p.count} processes)` : ""}? Unsaved work in it is lost.`;
     useConfirm.getState().ask(warn, `End ${p.name}`, async () => {
       await guarded(() => host().processEnd(p.name), `Ended ${p.name}`);
+      if (typeof window !== "undefined") window.dispatchEvent(new Event(PROCESSES_CHANGED));
     });
     return;
   }

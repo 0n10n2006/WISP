@@ -36,7 +36,7 @@ import {
   type OpenWindow,
   type ProcInfo,
 } from "../../services/types";
-import { runResult } from "./actions";
+import { PROCESSES_CHANGED, runResult } from "./actions";
 
 export interface CommandBarHandle {
   focus(): void;
@@ -160,14 +160,21 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   const query = useNotch((n) => n.query);
   const setQuery = useNotch((n) => n.setQuery);
   // A search tag ("t:", "f:"…) shows as a chip; the input holds the rest.
-  const [tag, setTag] = useState<SearchTag | null>(null);
+  // It lives with the query, so it goes when a result runs or voice starts.
+  const tag = useNotch((n) => n.tag);
+  const setTag = useNotch((n) => n.setTag);
   const full = tag ? `${TAG_PREFIX[tag]} ${query}` : query;
+  const chooseTag = (t: SearchTag, rest: string) => {
+    setTag(t);
+    setQuery(rest, true);
+    // Running programs and open tabs change: look again when asked for.
+    if (t === "processes") setProcs(null);
+    if (t === "tabs") setTabs(null);
+  };
   const onInput = (value: string) => {
     const parsed = tag ? null : parseTag(value);
-    if (parsed?.tag) {
-      setTag(parsed.tag);
-      setQuery(parsed.rest);
-    } else setQuery(value);
+    if (parsed?.tag) chooseTag(parsed.tag, parsed.rest);
+    else setQuery(value, true);
   };
   const web = useNotch((n) => n.web);
   const think = useNotch((n) => n.think);
@@ -241,10 +248,13 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
   // running programs (when asked for) and exchange rates (when converting).
   const browserOn = useSettings((s) => s.snapshot?.settings.browserSearch ?? true);
   const webShortcuts = useSettings((s) => s.snapshot?.settings.webShortcuts ?? NO_SHORTCUTS);
-  const [openTabs, setTabs] = useState<BrowserTab[]>([]);
-  const tabs = browserOn ? openTabs : NO_TABS;
+  // Tabs are read from the browsers' windows, which takes a moment: only
+  // when they're searched for, once per open (and again on "t:").
+  const [openTabs, setTabs] = useState<BrowserTab[] | null>(null);
+  const tabs = browserOn && openTabs ? openTabs : NO_TABS;
+  const wantTabs = browserOn && (tag === "tabs" || (!tag && query.trim().length >= 3));
   useEffect(() => {
-    if (!browserOn) return;
+    if (!wantTabs || openTabs) return;
     let live = true;
     host()
       .browserTabs()
@@ -253,7 +263,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
     return () => {
       live = false;
     };
-  }, [browserOn, tag]);
+  }, [wantTabs, openTabs]);
   const [pages, setPages] = useState<{ query: string; pages: BrowserItem[] }>({
     query: "",
     pages: NO_PAGES,
@@ -292,6 +302,12 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
       live = false;
     };
   }, [wantProcs, procs]);
+  // A program was ended: the list is out of date.
+  useEffect(() => {
+    const refresh = () => setProcs(null);
+    window.addEventListener(PROCESSES_CHANGED, refresh);
+    return () => window.removeEventListener(PROCESSES_CHANGED, refresh);
+  }, []);
   const [rates, setRates] = useState<CurrencyRates | null>(null);
   const needRates = !rates && /getting today's rates/.test(calculate(full)?.hint ?? "");
   useEffect(() => {
@@ -444,8 +460,7 @@ export const CommandBar = forwardRef<CommandBarHandle, { onClose(): void }>(func
     } else if (e.key === "Tab" && !tag && tagForWord(query) && !e.shiftKey) {
       // "tabs" + Tab searches tabs only.
       e.preventDefault();
-      setTag(tagForWord(query));
-      setQuery("");
+      chooseTag(tagForWord(query)!, "");
     } else if (e.key === "Tab" && query.trim() && !e.shiftKey) {
       // Tab adds (or removes) the web for this question.
       e.preventDefault();

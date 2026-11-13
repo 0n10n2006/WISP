@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DASHBOARD_TABS, type DashboardTab } from "../lib/commands";
+import { DASHBOARD_TABS, type DashboardTab, type SearchTag } from "../lib/commands";
 import { host } from "../services/host";
 import type { NotchMode } from "../services/types";
 import { toast } from "./toast";
@@ -42,6 +42,8 @@ interface NotchState {
   mode: NotchMode;
   tab: DashboardTab;
   query: string;
+  /** What the bar is scoped to ("t:" tabs, "f:" files…), shown as a chip. */
+  tag: SearchTag | null;
   /** Ground the next question with Google Search. */
   web: boolean;
   /** Let the model think longer for the next question. */
@@ -49,7 +51,10 @@ interface NotchState {
   timer: FocusTimer | null;
   setMode(mode: NotchMode): void;
   setTab(tab: DashboardTab): void;
-  setQuery(q: string): void;
+  /** Set the bar's text. Emptying it (a result ran, a new question starts)
+   * also drops the search tag, unless the user is just deleting text. */
+  setQuery(q: string, typing?: boolean): void;
+  setTag(tag: SearchTag | null): void;
   setWeb(v: boolean): void;
   setThink(v: boolean): void;
   startTimer(minutes: number): Promise<void>;
@@ -62,6 +67,7 @@ export const useNotch = create<NotchState>((set, get) => ({
   mode: "sliver",
   tab: knownTab(load<string>(TAB_KEY, "today")),
   query: "",
+  tag: null,
   web: false,
   think: false,
   timer: load<FocusTimer | null>(TIMER_KEY, null),
@@ -71,7 +77,8 @@ export const useNotch = create<NotchState>((set, get) => ({
     store(TAB_KEY, tab);
     set({ tab });
   },
-  setQuery: (query) => set({ query }),
+  setQuery: (query, typing = false) => set(query || typing ? { query } : { query, tag: null }),
+  setTag: (tag) => set({ tag }),
   setWeb: (web) => set({ web }),
   setThink: (think) => set({ think }),
 

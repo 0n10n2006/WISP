@@ -31,6 +31,7 @@ export async function setupMockHost(
     mode: "sliver",
     tab: "today",
     query: "",
+    tag: null,
     web: false,
     think: false,
     timer: null,
